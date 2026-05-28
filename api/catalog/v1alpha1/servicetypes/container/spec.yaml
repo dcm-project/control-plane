@@ -1,0 +1,211 @@
+openapi: 3.0.4
+
+info:
+  title: DCM Container Specification
+  description: |
+    Provider-agnostic container specification based on OCI standards.
+
+    This schema defines minimal portable fields common across all container
+    platforms (Kubernetes, Docker, Podman, OpenShift, CRI-O, containerd).
+
+    Platform-specific configuration (security contexts, probes, volumes)
+    should be specified via provider_hints.
+  version: v1alpha1
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+paths: {}
+
+components:
+  schemas:
+    ContainerSpec:
+      type: object
+      description: |
+        Provider-agnostic container specification.
+
+        Includes common fields (service_type, metadata, provider_hints)
+        plus container-specific fields for image, resources, process, and network.
+
+        Providers translate this abstract specification to their native format.
+      allOf:
+        - $ref: '../common.yaml#/components/schemas/CommonFields'
+        - type: object
+          required:
+            - image
+            - resources
+          properties:
+            image:
+              $ref: '#/components/schemas/Image'
+
+            resources:
+              $ref: '#/components/schemas/ContainerResources'
+
+            process:
+              $ref: '#/components/schemas/Process'
+
+            network:
+              $ref: '#/components/schemas/Network'
+
+          additionalProperties: true
+
+    Image:
+      type: object
+      description: |
+        Container image specification.
+        Based on OCI Image Specification for portable image references.
+      required:
+        - reference
+      properties:
+        reference:
+          type: string
+          description: |
+            Complete OCI image reference.
+
+            Format: [REGISTRY/]REPOSITORY[:TAG|@DIGEST]
+            Examples:
+            - quay.io/organization/app:v1.2.3 (registry + tag)
+            - docker.io/library/nginx:latest (Docker Hub)
+            - gcr.io/project/image@sha256:abc123... (digest)
+          example: quay.io/app/webserver:v1.2.3
+      additionalProperties: true
+
+    ContainerResources:
+      type: object
+      description: Resource allocation (CPU and memory)
+      required:
+        - cpu
+        - memory
+      properties:
+        cpu:
+          $ref: '#/components/schemas/CpuResources'
+        memory:
+          $ref: '#/components/schemas/MemoryResources'
+      additionalProperties: true
+
+    CpuResources:
+      type: object
+      description: CPU allocation (in cores)
+      required:
+        - min
+        - max
+      properties:
+        min:
+          type: integer
+          description: Minimum guaranteed CPU cores
+          minimum: 1
+          example: 1
+        max:
+          type: integer
+          description: Maximum allowed CPU cores
+          minimum: 1
+          example: 2
+      additionalProperties: true
+
+    MemoryResources:
+      type: object
+      description: Memory allocation
+      required:
+        - min
+        - max
+      properties:
+        min:
+          type: string
+          description: Minimum guaranteed memory with unit suffix
+          pattern: '^[0-9]+(MB|GB|TB)$'
+          example: 1GB
+        max:
+          type: string
+          description: Maximum allowed memory with unit suffix
+          pattern: '^[0-9]+(MB|GB|TB)$'
+          example: 2GB
+      additionalProperties: true
+
+    Process:
+      type: object
+      description: Container process configuration (optional)
+      properties:
+        command:
+          type: array
+          description: |
+            Entrypoint override.
+            Replaces the container image's default entrypoint.
+          items:
+            type: string
+          example:
+            - /bin/sh
+            - -c
+        args:
+          type: array
+          description: |
+            Arguments to the entrypoint.
+            Passed to the command or the container's default entrypoint.
+          items:
+            type: string
+          example:
+            - --config
+            - /etc/app/config.yaml
+        env:
+          type: array
+          description: Environment variables
+          items:
+            $ref: '#/components/schemas/EnvVar'
+      additionalProperties: true
+
+    EnvVar:
+      type: object
+      description: Environment variable definition
+      required:
+        - name
+        - value
+      properties:
+        name:
+          type: string
+          description: Variable name
+          example: PORT
+        value:
+          type: string
+          description: Variable value
+          example: "8080"
+      additionalProperties: true
+
+    Network:
+      type: object
+      description: Network and port configuration (optional)
+      properties:
+        ports:
+          type: array
+          description: Container ports to expose
+          items:
+            $ref: '#/components/schemas/ContainerPort'
+      additionalProperties: true
+
+    ContainerPort:
+      type: object
+      description: Container port specification
+      required:
+        - container_port
+        - visibility
+      properties:
+        container_port:
+          type: integer
+          description: Port number inside container
+          minimum: 1
+          maximum: 65535
+          example: 8080
+        visibility:
+          type: string
+          description: |
+            How this port is exposed to consumers.
+
+            - none: Port is not exposed outside the container process
+            - internal: Exposed to the host or cluster network
+              (e.g., Docker -p, Kubernetes ClusterIP Service)
+            - external: Reachable from outside the host/cluster
+              (e.g., OpenShift Route, Kubernetes Ingress/LoadBalancer)
+          enum:
+            - none
+            - internal
+            - external
+          example: internal
+      additionalProperties: true

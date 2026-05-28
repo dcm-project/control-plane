@@ -12,7 +12,8 @@ formatters:
 linters:
   exclusions:
     paths:
-      - api
+      - api/catalog/v1alpha1
+      - pkg/catalog/client
   enable:
     - asasalint
     - asciicheck
@@ -25,6 +26,7 @@ linters:
     - errchkjson
     - exptostd
     - fatcontext
+    - ginkgolinter
     - gocheckcompilerdirectives
     - gochecksumtype
     - gocritic

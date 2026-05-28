@@ -1,0 +1,87 @@
+openapi: 3.0.4
+
+info:
+  title: DCM Database Specification
+  description: |
+    Provider-agnostic database specification.
+
+    This schema defines minimal portable fields for database provisioning.
+    Database-specific configuration (HA, backups, connection settings,
+    engine parameters) should be specified via provider_hints.
+  version: v1alpha1
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+paths: {}
+
+components:
+  schemas:
+    DatabaseSpec:
+      type: object
+      description: |
+        Provider-agnostic database specification.
+
+        Includes common fields (service_type, metadata, provider_hints)
+        plus fields for engine, version, and resources.
+
+        Providers translate this specification to their native format.
+      allOf:
+        - $ref: '../common.yaml#/components/schemas/CommonFields'
+        - type: object
+          required:
+            - engine
+            - version
+            - resources
+          properties:
+            engine:
+              type: string
+              description: |
+                Database engine type.
+
+                Common engines include:
+                - Relational: postgresql, mysql, mariadb, cockroachdb
+                - Document: mongodb, couchdb
+                - Key-Value: redis, memcached, etcd
+                - Search: elasticsearch, opensearch
+                - Time-series: influxdb, timescaledb
+                - Graph: neo4j
+                - Wide-column: cassandra, scylladb
+              example: postgresql
+
+            version:
+              type: string
+              description: |
+                Database engine version.
+                Providers map this to their supported versions.
+              example: "15"
+
+            resources:
+              $ref: '#/components/schemas/DatabaseResources'
+
+          additionalProperties: true
+
+    DatabaseResources:
+      type: object
+      description: Resource allocation for the database
+      required:
+        - cpu
+        - memory
+        - storage
+      properties:
+        cpu:
+          type: integer
+          description: CPU cores
+          minimum: 1
+          example: 4
+        memory:
+          type: string
+          description: Memory with unit suffix
+          pattern: '^[0-9]+(MB|GB|TB)$'
+          example: 16GB
+        storage:
+          type: string
+          description: Storage size with unit suffix
+          pattern: '^[0-9]+(MB|GB|TB)$'
+          example: 100GB
+      additionalProperties: true

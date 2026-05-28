@@ -1,0 +1,116 @@
+openapi: 3.0.4
+
+info:
+  title: DCM Three-Tier App Demo Specification
+  description: |
+    Schema for the three_tier_app_demo service type. Three-tier structure
+    (database, app, web). SP injects DB connection when creating the app.
+  version: v1alpha1
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+paths: {}
+
+components:
+  schemas:
+    ThreeTierAppDemoSpec:
+      type: object
+      description: |
+        Three-tier structure: database, app, web. SP injects DB connection
+        when creating the app container.
+      allOf:
+        - $ref: '../common.yaml#/components/schemas/CommonFields'
+        - type: object
+          required:
+            - database
+            - app
+            - web
+          properties:
+            database:
+              $ref: '#/components/schemas/DatabaseTier'
+            app:
+              $ref: '#/components/schemas/AppTier'
+            web:
+              $ref: '#/components/schemas/WebTier'
+          additionalProperties: false
+
+    DatabaseTier:
+      type: object
+      description: |
+        Database tier. Ports exposed internally via ClusterIP.
+        Uses abstract identifiers (engine, version). The SP maps engine+version
+        to the OCI image (e.g. postgres+16 -> docker.io/library/postgres:16).
+      required:
+        - engine
+        - version
+      properties:
+        engine:
+          type: string
+          description: Database engine (e.g. postgres, mysql).
+          example: postgres
+        version:
+          type: string
+          description: Database engine version (e.g. 16, 8).
+          example: "16"
+        network:
+          $ref: '#/components/schemas/Network'
+      additionalProperties: true
+
+    AppTier:
+      type: object
+      description: |
+        Application tier. Ports exposed internally via ClusterIP.
+        SP injects DB connection when creating the container.
+      required:
+        - image
+      properties:
+        image:
+          type: string
+          description: OCI image reference for the application.
+          example: quay.io/myorg/app:v1
+        network:
+          $ref: '#/components/schemas/Network'
+      additionalProperties: true
+
+    WebTier:
+      type: object
+      description: |
+        Web tier. Ports exposed externally via route or LoadBalancer.
+      required:
+        - image
+      properties:
+        image:
+          type: string
+          description: OCI image reference for the web server (e.g. nginx).
+          example: quay.io/myorg/nginx:1.25
+        network:
+          $ref: '#/components/schemas/Network'
+      additionalProperties: true
+
+    Network:
+      type: object
+      description: |
+        Port configuration. Database and app tiers use internal exposure
+        (ClusterIP service for container-to-container). Web tier uses external
+        exposure (route or LoadBalancer for user access).
+      properties:
+        ports:
+          type: array
+          description: Ports the container listens on
+          items:
+            $ref: '#/components/schemas/ContainerPort'
+      additionalProperties: true
+
+    ContainerPort:
+      type: object
+      description: Port specification
+      required:
+        - container_port
+      properties:
+        container_port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          example: 8080
+      additionalProperties: true

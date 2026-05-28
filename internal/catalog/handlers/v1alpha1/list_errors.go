@@ -1,0 +1,22 @@
+package v1alpha1
+
+import (
+	"errors"
+
+	v1alpha1 "github.com/dcm-project/control-plane/api/catalog/v1alpha1"
+	"github.com/dcm-project/control-plane/internal/catalog/api/server"
+	"github.com/dcm-project/control-plane/internal/catalog/store"
+)
+
+func isInvalidPageToken(err error) bool {
+	return errors.Is(err, store.ErrInvalidPageToken)
+}
+
+func invalidPageTokenBadRequest(err error) server.BadRequestJSONResponse {
+	return server.BadRequestJSONResponse(v1alpha1.Error{
+		Type:   v1alpha1.INVALIDARGUMENT,
+		Status: 400,
+		Title:  "Bad Request",
+		Detail: stringPtr(err.Error()),
+	})
+}

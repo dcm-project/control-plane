@@ -1,0 +1,173 @@
+openapi: 3.0.4
+
+info:
+  title: DCM Virtual Machine Specification
+  description: |
+    Provider-agnostic virtual machine specification.
+
+    This schema defines minimal portable fields common across all virtualization
+    platforms (KubeVirt, VMware vSphere, OpenStack, AWS, Azure, Google Cloud, etc.).
+
+    Platform-specific configuration (CPU topology, disk format, network model)
+    should be specified via provider_hints.
+  version: v1alpha1
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+paths: {}
+
+components:
+  schemas:
+    VMSpec:
+      type: object
+      description: |
+        Provider-agnostic virtual machine specification.
+
+        Includes common fields (service_type, metadata, provider_hints)
+        plus VM-specific fields for compute, storage, and operating system.
+
+        Providers translate this abstract specification to their native format.
+      allOf:
+        - $ref: '../common.yaml#/components/schemas/CommonFields'
+        - type: object
+          required:
+            - vcpu
+            - memory
+            - storage
+            - guest_os
+          properties:
+            vcpu:
+              $ref: '#/components/schemas/Vcpu'
+
+            memory:
+              $ref: '#/components/schemas/Memory'
+
+            storage:
+              $ref: '#/components/schemas/Storage'
+
+            guest_os:
+              $ref: '#/components/schemas/GuestOS'
+
+            access:
+              $ref: '#/components/schemas/Access'
+
+          additionalProperties: true
+
+    Vcpu:
+      type: object
+      description: Virtual CPU configuration
+      required:
+        - count
+      properties:
+        count:
+          type: integer
+          description: |
+            Number of virtual CPUs.
+            Maps to vCPU count in all providers.
+          minimum: 1
+          example: 4
+      additionalProperties: true
+
+    Memory:
+      type: object
+      description: Memory configuration (RAM)
+      required:
+        - size
+      properties:
+        size:
+          type: string
+          description: |
+            Memory size with unit suffix (MB, GB, TB).
+            Maps to guest memory in all providers.
+          pattern: '^[0-9]+(MB|GB|TB)$'
+          example: 16GB
+      additionalProperties: true
+
+    Storage:
+      type: object
+      description: Storage configuration
+      required:
+        - disks
+      properties:
+        disks:
+          type: array
+          description: |
+            Virtual disk specifications.
+
+            Requirements:
+            - Must contain at least one disk named "boot" for the root volume
+            - Disk names must be unique within the VM
+
+            Note: The boot disk requirement is enforced at application level.
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Disk'
+      additionalProperties: true
+
+    Disk:
+      type: object
+      description: Virtual disk specification
+      required:
+        - name
+        - capacity
+      properties:
+        name:
+          type: string
+          description: |
+            Disk identifier (unique within VM).
+            The root volume must be named "boot".
+            Additional disks can use names like "data", "log", etc.
+          pattern: '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'
+          example: boot
+        capacity:
+          type: string
+          description: Disk capacity with unit suffix (MB, GB, TB)
+          pattern: '^[0-9]+(MB|GB|TB)$'
+          example: 100GB
+      additionalProperties: true
+
+    GuestOS:
+      type: object
+      description: |
+        Guest operating system configuration.
+        Providers map the OS type to their image catalog.
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          description: |
+            Operating system identifier.
+
+            Naming convention: <distro>-<version>
+            Examples:
+            - Linux: rhel-9, ubuntu-22.04, fedora-39, centos-stream-9
+            - Windows: windows-server-2022, windows-11
+
+            Providers map this to their image catalog:
+            - KubeVirt: Container image or DataVolume
+            - VMware: VM template or content library item
+            - AWS: AMI ID
+            - Azure: Image reference
+          example: rhel-9
+      additionalProperties: true
+
+    Access:
+      type: object
+      description: VM access configuration
+      properties:
+        ssh_public_key:
+          type: string
+          description: |
+            SSH public key for VM access.
+            Injected via cloud-init/cloudbase-init by providers.
+
+            Provider mapping:
+            - KubeVirt: cloud-init userData
+            - AWS: key pair
+            - Azure: SSH public key
+            - GCP: instance metadata
+            - VMware: guest customization
+          example: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample...
+      additionalProperties: true

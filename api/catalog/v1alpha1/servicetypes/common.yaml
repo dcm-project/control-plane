@@ -1,0 +1,143 @@
+openapi: 3.0.4
+
+info:
+  title: DCM Common Schema Fields
+  description: |
+    Common fields shared by all DCM service type specifications
+    (VM, Container, Database, Cluster).
+
+    These fields provide:
+    - Schema versioning for evolution
+    - Metadata for governance and tagging
+    - Provider hints for platform-specific configuration
+  version: v1alpha1
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+paths: {}
+
+components:
+  schemas:
+    ServiceType:
+      type: string
+      description: |
+        Service type identifier.
+        Makes the payload self-describing and enables routing/validation.
+      enum:
+        - vm
+        - container
+        - database
+        - cluster
+        - three-tier-app-demo
+      example: vm
+
+    ServiceMetadata:
+      type: object
+      description: |
+        Resource metadata for identification and governance.
+        Used by all service type specifications.
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: |
+            Resource name identifier.
+            Must be unique within the namespace.
+          pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+          minLength: 1
+          maxLength: 63
+          example: my-dev-vm
+
+        labels:
+          type: object
+          description: |
+            Key-value pairs for tagging and filtering.
+            Both keys and values must be strings.
+          additionalProperties:
+            type: string
+          example:
+            environment: production
+            owner: platform-team
+
+    ProviderHints:
+      type: object
+      description: |
+        Optional provider-specific configuration.
+
+        Allows platform-specific settings without breaking portability.
+        Providers use hints they recognize and ignore unknown hints.
+
+        Keys are provider identifiers (e.g., kubevirt, vmware, aws).
+        Values are provider-specific configuration objects.
+      additionalProperties:
+        type: object
+        additionalProperties: true
+      example:
+        kubevirt:
+          instanceType: u1.large
+        vmware:
+          vmxVersion: "17"
+        aws:
+          instanceType: t3.xlarge
+
+    CommonFields:
+      type: object
+      description: |
+        Common fields included in all service type specifications.
+        These provide versioning, extensibility, and provider-specific configuration.
+      required:
+        - service_type
+        - metadata
+      properties:
+        id:
+          type: string
+          description: |
+            Unique identifier for the resource.
+          pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+          readOnly: true
+          example: "vm-abc123"
+        
+        status:
+          type: string
+          description: |
+            Current status of the resource.
+          readOnly: true
+          example: running
+        
+        status_message:
+          type: string
+          description: Human-readable message providing details about the current status
+          readOnly: true
+          example: "Resource is running normally"
+        
+        path:
+          type: string
+          description: |
+            Resource path or location within the system hierarchy.
+          readOnly: true
+          example: "/production/us-east/compute"
+        
+        create_time:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Timestamp when the resource was created (RFC 3339)
+          example: '2026-01-13T10:30:00Z'
+        
+        update_time:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Timestamp when the resource was last updated (RFC 3339)
+          example: '2026-01-13T15:45:30Z'
+        
+        service_type:
+          $ref: '#/components/schemas/ServiceType'
+        
+        metadata:
+          $ref: '#/components/schemas/ServiceMetadata'
+
+        provider_hints:
+          $ref: '#/components/schemas/ProviderHints'
