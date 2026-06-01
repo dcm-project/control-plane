@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	pmv1alpha1 "github.com/dcm-project/placement-manager/api/v1alpha1"
-	pmclient "github.com/dcm-project/placement-manager/pkg/client"
+	pmv1alpha1 "github.com/dcm-project/control-plane/api/placement/v1alpha1"
+	pmclient "github.com/dcm-project/control-plane/pkg/placement/client"
 )
 
 // PlacementError represents a structured error from the Placement Manager,

@@ -14,6 +14,8 @@ linters:
     paths:
       - api/catalog/v1alpha1
       - pkg/catalog/client
+      - api/placement/v1alpha1
+      - pkg/placement/client
   enable:
     - asasalint
     - asciicheck

@@ -3,7 +3,9 @@ module github.com/dcm-project/control-plane
 go 1.25.5
 
 require (
-	github.com/dcm-project/placement-manager v0.1.0-rc.1
+	github.com/cenkalti/backoff/v5 v5.0.3
+	github.com/dcm-project/policy-manager v0.1.0-rc.1
+	github.com/dcm-project/service-provider-manager v0.1.0-rc.1
 	github.com/getkin/kin-openapi v0.139.0
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/google/uuid v1.6.0

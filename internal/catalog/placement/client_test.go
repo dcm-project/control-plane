@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	pmclient "github.com/dcm-project/placement-manager/pkg/client"
+	pmclient "github.com/dcm-project/control-plane/pkg/placement/client"
 
 	"github.com/dcm-project/control-plane/internal/catalog/placement"
 )

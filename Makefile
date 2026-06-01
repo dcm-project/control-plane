@@ -20,6 +20,7 @@ CONTAINER_IMAGE_NAME ?= quay.io/dcm-project/$(BINARY_NAME)
 CONTAINER_IMAGE_TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 
 include make/catalog.mk
+include make/placement.mk
 
 build:
 	go build -o bin/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
