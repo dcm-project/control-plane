@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"time"
 
+	enginev1alpha1 "github.com/dcm-project/control-plane/api/policy/v1alpha1/engine"
 	"github.com/dcm-project/control-plane/internal/placement/policy"
-	enginev1alpha1 "github.com/dcm-project/policy-manager/api/v1alpha1/engine"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

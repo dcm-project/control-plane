@@ -1,0 +1,672 @@
+openapi: 3.0.3
+info:
+  title: Policy Manager API
+  description: |
+    AEP-compliant REST API for managing OPA (Open Policy Agent) policies in the DCM Policy Manager.
+
+    This API follows the API Enhancement Proposals (AEP) standard methods for
+    resource-oriented design, providing CRUD operations for Policy resources.
+
+    ## Key Features
+    - Full CRUD operations for policy management
+    - Support for client-specified and server-generated IDs
+    - Flexible filtering and pagination
+    - Partial updates (PATCH / merge)
+    - AEP-compliant error handling
+
+  version: v1alpha1
+  contact: {}
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: /api/v1alpha1
+
+tags:
+  - name: Policies
+    description: Operations for managing OPA policies
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: Health check for DCM Policy Manager API
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /policies:
+    post:
+      tags:
+        - Policies
+      summary: Create a new policy
+      description: |
+        Creates a new policy resource. The caller may optionally specify a
+        client-assigned ID via the `id` query parameter. If not provided, the
+        server will generate a UUID.
+      operationId: createPolicy
+      parameters:
+        - name: id
+          in: query
+          description: |
+            Optional client-specified ID for the policy. If not provided, the
+            server will generate a UUID.
+
+            Requirements (per AEP-122):
+            - 1-63 characters long
+            - Start with lowercase letter
+            - Contain only lowercase letters, numbers, and hyphens
+            - End with letter or number
+          schema:
+            type: string
+            pattern: '^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$'
+            minLength: 1
+            maxLength: 63
+          example: global-auth-policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policy'
+      responses:
+        '201':
+          description: Policy created successfully
+          headers:
+            Location:
+              description: URI of the created resource
+              schema:
+                type: string
+                format: uri
+                example: https://api.example.com/v1/policies/global-auth-policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/AlreadyExists'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    get:
+      tags:
+        - Policies
+      summary: List policies
+      description: |
+        Lists policies with support for pagination, filtering, and ordering.
+
+        ## Filtering
+        Use the `filter` parameter with CEL-style expressions:
+        - `policy_type='GLOBAL'`
+        - `enabled=true`
+        - `policy_type='USER' AND enabled=true`
+
+        ## Ordering
+        Use the `order_by` parameter:
+        - `priority asc` (default)
+        - `priority desc`
+        - `display_name asc`
+        - `create_time desc`
+
+      operationId: listPolicies
+      parameters:
+        - name: page_token
+          in: query
+          description: |
+            Token for retrieving the next page of results. Leave empty for
+            the first page. Use the `next_page_token` from the previous
+            response to get the next page.
+          schema:
+            type: string
+          example: eyJvZmZzZXQiOjUwfQ==
+        - name: max_page_size
+          in: query
+          description: |
+            Maximum number of policies to return per page. Server may return
+            fewer results. If unspecified, defaults to 50. Maximum value is 1000.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 1000
+            default: 50
+          example: 100
+        - name: filter
+          in: query
+          description: |
+            Filter expression to apply to the list. Supports filtering by:
+            - `policy_type`: GLOBAL or USER
+            - `enabled`: true or false
+
+            Examples:
+            - `policy_type='GLOBAL'`
+            - `enabled=true`
+            - `policy_type='GLOBAL' AND enabled=true`
+          schema:
+            type: string
+          example: policy_type='GLOBAL' AND enabled=true
+        - name: order_by
+          in: query
+          description: |
+            Comma-separated list of fields to order by. Each field can be
+            followed by 'asc' or 'desc'. Defaults to 'priority asc'.
+
+            Supported fields:
+            - priority
+            - display_name
+            - create_time
+
+            Examples:
+            - `priority asc`
+            - `display_name desc`
+            - `create_time desc,priority asc`
+          schema:
+            type: string
+            default: priority asc
+          example: priority asc
+      responses:
+        '200':
+          description: List of policies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /policies/{policyId}:
+    get:
+      tags:
+        - Policies
+      summary: Get a policy
+      description: |
+        Retrieves a single policy by its ID.
+
+        This method implements AEP-131 Get standard method.
+
+      operationId: getPolicy
+      parameters:
+        - $ref: '#/components/parameters/PolicyIdPath'
+      responses:
+        '200':
+          description: Policy retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    patch:
+      tags:
+        - Policies
+      summary: Update a policy
+      description: |
+        Updates an existing policy using partial update (merge).
+
+        This method implements AEP-134 Update standard method. It uses PATCH
+        with JSON Merge Patch per RFC 7396. Only provided fields are updated;
+        omitted fields are left unchanged. Use `null` to clear optional fields.
+
+        ## Partial Update (Merge)
+        Send only the fields you want to change. The server merges the patch
+        onto the existing resource. Content-Type must be
+        `application/merge-patch+json`.
+
+        ## Immutable Fields
+        The following fields cannot be updated (ignored if sent):
+        - path
+        - id
+        - policy_type (cannot be changed after creation)
+        - create_time
+        - update_time
+
+      operationId: updatePolicy
+      parameters:
+        - $ref: '#/components/parameters/PolicyIdPath'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/Policy'
+      responses:
+        '200':
+          description: Policy updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/AlreadyExists'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - Policies
+      summary: Delete a policy
+      description: |
+        Deletes a policy. This operation is immediate and cannot be undone.
+
+        Returns 204 No Content on successful deletion. The operation provides
+        strong consistency - attempting to read the resource immediately after
+        deletion will return 404 Not Found.
+
+      operationId: deletePolicy
+      parameters:
+        - $ref: '#/components/parameters/PolicyIdPath'
+      responses:
+        '204':
+          description: Policy deleted successfully (no content)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  parameters:
+    PolicyIdPath:
+      name: policyId
+      in: path
+      required: true
+      description: |
+        The resource identifier for the policy. Must be a valid policy ID
+        that conforms to AEP-122 requirements:
+        - 1-63 characters long
+        - Lowercase letters, numbers, and hyphens only
+        - Must start with a letter
+        - Must end with a letter or number
+      schema:
+        type: string
+        pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+        minLength: 1
+        maxLength: 63
+      example: global-auth-policy
+
+  schemas:
+    Policy:
+      type: object
+      description: |
+        Represents an OPA (Open Policy Agent) policy resource.
+
+        Policies define authorization rules using Rego code and can be scoped
+        to different levels (GLOBAL or USER). They are matched against
+        requests using label selectors and evaluated in priority order.
+
+        Used for both create (POST) and update (PATCH). On create, display_name,
+        policy_type, and rego_code are required (enforced by the service). On
+        update, only fields present in the request body are merged (RFC 7396).
+      properties:
+        path:
+          type: string
+          description: |
+            Resource path in the format "policies/{policyId}".
+            This field is output-only and set by the server.
+
+            Follows AEP-122 resource path conventions.
+          readOnly: true
+          pattern: '^policies/[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+          example: policies/global-auth-policy
+        id:
+          type: string
+          description: |
+            Unique identifier for the policy. This field is output-only and
+            immutable after creation. The ID can be optionally specified via
+            query parameter on creation; if not provided, the server generates a UUID.
+
+            Follows AEP-122 resource ID conventions.
+          readOnly: true
+          pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+          minLength: 1
+          maxLength: 63
+          example: global-auth-policy
+        display_name:
+          type: string
+          description: |
+            Human-readable name for the policy. This is typically shown in
+            user interfaces and should be descriptive.
+          minLength: 1
+          maxLength: 255
+          example: Global Authentication Policy
+        description:
+          type: string
+          description: |
+            Optional detailed description of the policy's purpose and behavior.
+            Supports markdown formatting.
+          maxLength: 2048
+          example: Enforces authentication requirements across all services in the production environment
+        policy_type:
+          type: string
+          description: |
+            Scope of the policy application. This field is immutable after creation.
+
+            - GLOBAL: Applies to all requests across the system
+            - USER: Applies to requests for a specific user
+
+            Policies are evaluated in hierarchical order: Global -> User
+          enum:
+            - GLOBAL
+            - USER
+          example: GLOBAL
+        label_selector:
+          type: object
+          description: |
+            Key-value pairs used to match this policy against incoming requests.
+            The policy is evaluated only if all labels match the request context.
+            If no label selector is provided, the policy is evaluated for all requests.
+
+            Common label keys:
+            - environment: production, staging, development
+            - user_id: user identifier
+            - service: service name
+            - region: geographical region
+            - tier: service tier (critical, standard, etc.)
+          additionalProperties:
+            type: string
+          example:
+            environment: production
+            tier: critical
+            region: us-east-1
+        priority:
+          type: integer
+          format: int32
+          description: |
+            Priority value for policy evaluation order. Lower numbers have
+            higher priority and are evaluated first.
+
+            Valid range: 1-1000
+            - 1-100: Critical/system policies
+            - 101-500: Standard policies
+            - 501-1000: Low-priority policies
+          minimum: 1
+          maximum: 1000
+          default: 500
+          example: 100
+        rego_code:
+          type: string
+          description: |
+            The OPA Rego policy code. This code is executed when the policy
+            is evaluated. Must be valid Rego syntax.
+
+            The code should define a package and decision rules. Common patterns:
+            - Define a default allow/deny
+            - Implement conditional logic based on input
+            - Reference data from the policy engine
+
+            The Rego code is validated on create and update operations.
+          minLength: 1
+          maxLength: 65536
+          example: |
+            package authz
+
+            default allow = false
+
+            allow {
+              input.user.authenticated == true
+              input.user.role == "admin"
+            }
+        enabled:
+          type: boolean
+          description: |
+            Whether the policy is currently active. Disabled policies are not
+            evaluated during authorization decisions.
+          default: true
+          example: true
+        create_time:
+          type: string
+          format: date-time
+          description: |
+            Timestamp when the policy was created. This field is output-only
+            and automatically set by the server.
+
+            Uses ISO 8601 format with timezone per AEP-140.
+          readOnly: true
+          example: '2026-01-09T10:30:00Z'
+        update_time:
+          type: string
+          format: date-time
+          description: |
+            Timestamp when the policy was last updated. This field is output-only
+            and automatically updated by the server on any modification.
+
+            Uses ISO 8601 format with timezone per AEP-140.
+          readOnly: true
+          example: '2026-01-09T15:45:00Z'
+      x-aep-resource:
+        type: policy-manager.dcm.io/policy
+        singular: policy
+        plural: policies
+        patterns:
+          - policies/{policy_id}
+
+    PolicyList:
+      type: object
+      description: |
+        Response message for listing policies.
+
+        Implements AEP-132 List standard method requirements.
+      required:
+        - policies
+      properties:
+        policies:
+          type: array
+          description: List of policy resources matching the request criteria
+          items:
+            $ref: '#/components/schemas/Policy'
+        next_page_token:
+          type: string
+          description: |
+            Token for retrieving the next page of results. If empty or not
+            present, there are no more results.
+
+            This token is opaque and should not be parsed by clients.
+          example: eyJvZmZzZXQiOjUwfQ==
+
+    Health:
+      type: object
+      x-aep-resource:
+        type: policy-manager.dcm.io/health
+        singular: health
+        plural: health
+        singleton: true
+        patterns:
+          - health
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          description: Health status
+          example: healthy
+
+        path:
+          type: string
+          readOnly: true
+          description: Canonical path of the resource
+          example: health
+
+    Error:
+      type: object
+      description: |
+        Error response following RFC 7807 Problem Details and AEP-193.
+
+        Provides structured error information for API failures.
+      required:
+        - type
+        - status
+        - title
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: |
+            URI reference identifying the problem type. This is the canonical
+            error code.
+          enum:
+            - INVALID_ARGUMENT
+            - NOT_FOUND
+            - ALREADY_EXISTS
+            - RESOURCE_EXHAUSTED
+            - FAILED_PRECONDITION
+            - ABORTED
+            - OUT_OF_RANGE
+            - UNIMPLEMENTED
+            - INTERNAL
+            - UNAVAILABLE
+            - DEADLINE_EXCEEDED
+            - UNAUTHENTICATED
+            - PERMISSION_DENIED
+          example: INVALID_ARGUMENT
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code
+          example: 400
+        title:
+          type: string
+          description: Human-readable summary of the problem type
+          example: Invalid request parameters
+        detail:
+          type: string
+          description: |
+            Human-readable explanation specific to this occurrence of the problem.
+            Should provide actionable information for developers.
+          example: Field 'rego_code' is required but was not provided
+        instance:
+          type: string
+          format: uri-reference
+          description: |
+            Unique identifier for this specific error occurrence. Useful for
+            tracking and debugging.
+          example: 7934df3e-4b63-429b-b0f5-b8d350ec165e
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: INVALID_ARGUMENT
+            status: 400
+            title: Invalid request parameters
+            detail: Field 'rego_code' must not be empty
+            instance: '7934df3e-4b63-429b-b0f5-b8d350ec165e'
+
+    Unauthorized:
+      description: Authentication is required but was not provided or is invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: UNAUTHENTICATED
+            status: 401
+            title: Authentication required
+            detail: Valid authentication credentials are required to access this resource
+            instance: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+
+    Forbidden:
+      description: The authenticated user does not have permission to perform this operation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: PERMISSION_DENIED
+            status: 403
+            title: Permission denied
+            detail: You do not have sufficient permissions to perform this operation
+            instance: 'b2c3d4e5-f6a7-8901-bcde-f12345678901'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: NOT_FOUND
+            status: 404
+            title: Resource not found
+            detail: Policy 'global-auth-policy' does not exist
+            instance: 9b56f05a-6d85-54bd-d7a7-d0f572ae387a
+
+    AlreadyExists:
+      description: Resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: ALREADY_EXISTS
+            status: 409
+            title: Resource already exists
+            detail: Policy with ID 'global-auth-policy' already exists
+            instance: 0c676060-7e96-65ce-e808-e1a683bf498b
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: FAILED_PRECONDITION
+            status: 422
+            title: Validation error
+            detail: Invalid Rego syntax in 'rego_code' field
+            instance: 2e891171-9fa8-87f0-0a1a-2c9905cb609d
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: INTERNAL
+            status: 500
+            title: Internal server error
+            detail: An unexpected error occurred while processing the request
+            instance: 1d780070-8fa7-76df-f909-f2b794ca509c

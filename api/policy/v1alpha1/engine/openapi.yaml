@@ -1,0 +1,174 @@
+openapi: 3.0.3
+info:
+  title: Policy Engine Evaluation API
+  description: Internal API for policy evaluation (not exposed to end users)
+  version: v1alpha1
+  contact: {}
+servers:
+  - url: /api/v1alpha1
+tags:
+  - name: Evaluation
+    description: Policy evaluation operations
+
+paths:
+  /policies:evaluateRequest:
+    post:
+      operationId: :EvaluateRequest
+      summary: Evaluate request payload against policies
+      description: Evaluates a service instance request against all applicable policies to determine approval and select a provider
+      tags:
+        - Evaluation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluateRequest'
+      responses:
+        '200':
+          description: Evaluation successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/Rejected'
+        '409':
+          $ref: '#/components/responses/PolicyConflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  schemas:
+    EvaluateRequest:
+      type: object
+      required:
+        - service_instance
+      properties:
+        service_instance:
+          $ref: '#/components/schemas/ServiceInstance'
+
+    ServiceInstance:
+      type: object
+      required:
+        - spec
+      properties:
+        spec:
+          type: object
+          additionalProperties: true
+          description: Service specification (flexible schema)
+
+    EvaluateResponse:
+      type: object
+      required:
+        - evaluated_service_instance
+        - selected_provider
+        - status
+      properties:
+        evaluated_service_instance:
+          $ref: '#/components/schemas/ServiceInstance'
+        selected_provider:
+          type: string
+          description: Service provider selected by policies
+        status:
+          type: string
+          enum: [APPROVED, MODIFIED]
+          description: |
+            APPROVED - Request unchanged by policies
+            MODIFIED - Request was modified by policies
+
+    Error:
+      type: object
+      required:
+        - type
+        - status
+        - title
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: Error type identifier
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code
+        title:
+          type: string
+          description: Short error summary
+        detail:
+          type: string
+          description: Detailed error message
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: BAD_REQUEST
+            status: 400
+            title: Invalid request
+            detail: Invalid request parameters
+
+    Unauthorized:
+      description: Authentication is required but was not provided or is invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: UNAUTHENTICATED
+            status: 401
+            title: Authentication required
+            detail: Valid authentication credentials are required to access this resource
+
+    Forbidden:
+      description: The authenticated user does not have permission to perform this operation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: PERMISSION_DENIED
+            status: 403
+            title: Permission denied
+            detail: You do not have sufficient permissions to perform this operation
+
+    Rejected:
+      description: Policy rejected the request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: REJECTED
+            status: 406
+            title: Policy rejected
+            detail: Policy explicitly rejected the request
+
+    PolicyConflict:
+      description: Policy conflict between lower-priority and higher-priority policies
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: POLICY_CONFLICT
+            status: 409
+            title: Policy conflict
+            detail: Lower-priority policy tried to override higher-priority policy
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

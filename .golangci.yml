@@ -16,6 +16,9 @@ linters:
       - pkg/catalog/client
       - api/placement/v1alpha1
       - pkg/placement/client
+      - api/policy/v1alpha1
+      - pkg/policy/client
+      - pkg/policy/engineclient
   enable:
     - asasalint
     - asciicheck

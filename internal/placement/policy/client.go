@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
+	enginev1alpha1 "github.com/dcm-project/control-plane/api/policy/v1alpha1/engine"
 	"github.com/dcm-project/control-plane/internal/placement/httputil"
-	enginev1alpha1 "github.com/dcm-project/policy-manager/api/v1alpha1/engine"
-	"github.com/dcm-project/policy-manager/pkg/engineclient"
+	"github.com/dcm-project/control-plane/pkg/policy/engineclient"
 )
 
 // EvaluateRequest is the request body for policy evaluation
