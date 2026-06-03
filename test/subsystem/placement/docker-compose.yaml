@@ -37,8 +37,8 @@ services:
 
   placement-manager:
     build:
-      context: ../../..
-      dockerfile: Containerfile.placement
+      context: ../..
+      dockerfile: Containerfile
     environment:
       SVC_ADDRESS: "0.0.0.0:8080"
       DB_TYPE: pgsql
