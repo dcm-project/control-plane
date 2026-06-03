@@ -2,9 +2,7 @@ package store
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
-	"strconv"
 	"strings"
 
 	"github.com/dcm-project/control-plane/internal/policy/store/model"
@@ -69,14 +67,12 @@ func (s *PolicyStore) List(ctx context.Context, opts *PolicyListOptions) (*Polic
 		pageSize = opts.PageSize
 	}
 
-	// Decode page token to get offset
 	offset := 0
 	if opts != nil && opts.PageToken != nil && *opts.PageToken != "" {
-		decoded, err := base64.StdEncoding.DecodeString(*opts.PageToken)
-		if err == nil {
-			if parsedOffset, err := strconv.Atoi(string(decoded)); err == nil {
-				offset = parsedOffset
-			}
+		var err error
+		offset, err = decodePageToken(*opts.PageToken)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -117,9 +113,12 @@ func (s *PolicyStore) List(ctx context.Context, opts *PolicyListOptions) (*Polic
 	if len(policies) > pageSize {
 		// Trim to requested page size
 		result.Policies = policies[:pageSize]
-		// Encode next offset as page token
 		nextOffset := offset + pageSize
-		result.NextPageToken = base64.StdEncoding.EncodeToString([]byte(strconv.Itoa(nextOffset)))
+		nextPageToken, err := encodePageToken(nextOffset)
+		if err != nil {
+			return nil, err
+		}
+		result.NextPageToken = nextPageToken
 	}
 
 	return result, nil

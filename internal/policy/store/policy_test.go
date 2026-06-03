@@ -325,6 +325,14 @@ var _ = Describe("Policy Store", func() {
 			Expect(result.Policies).To(HaveLen(50))
 			Expect(result.NextPageToken).NotTo(BeEmpty())
 		})
+
+		It("rejects invalid page_token", func() {
+			badToken := "not-valid-base64!!!"
+			_, err := policyStore.List(ctx, &store.PolicyListOptions{
+				PageToken: &badToken,
+			})
+			Expect(err).To(MatchError(store.ErrInvalidPageToken))
+		})
 	})
 
 	Describe("ListAll", func() {

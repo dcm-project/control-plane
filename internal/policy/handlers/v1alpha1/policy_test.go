@@ -6,6 +6,7 @@ import (
 	"github.com/dcm-project/control-plane/api/policy/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/policy/api/server"
 	"github.com/dcm-project/control-plane/internal/policy/service"
+	"github.com/dcm-project/control-plane/internal/policy/store"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -328,6 +329,21 @@ var _ = Describe("PolicyHandler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			_, ok := response.(server.ListPolicies400JSONResponse)
 			Expect(ok).To(BeTrue(), "response should be ListPolicies400JSONResponse")
+		})
+
+		It("should return 400 for invalid page_token", func() {
+			ctx := context.Background()
+
+			mockService.ListPoliciesFn = func(_ context.Context, _ *string, _ *string, _ *string, _ *int32) (*v1alpha1.PolicyList, error) {
+				return nil, store.ErrInvalidPageToken
+			}
+
+			response, err := handler.ListPolicies(ctx, server.ListPoliciesRequestObject{})
+
+			Expect(err).NotTo(HaveOccurred())
+			badRequest, ok := response.(server.ListPolicies400JSONResponse)
+			Expect(ok).To(BeTrue())
+			Expect(badRequest.Status).To(Equal(int32(400)))
 		})
 	})
 

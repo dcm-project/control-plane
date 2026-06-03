@@ -103,6 +103,12 @@ func (h *PolicyHandler) ListPolicies(ctx context.Context, request server.ListPol
 		request.Params.MaxPageSize,
 	)
 	if err != nil {
+		if isInvalidPageToken(err) {
+			log.Warn("Invalid page_token", "error", err)
+			return server.ListPolicies400JSONResponse{
+				BadRequestJSONResponse: invalidPageTokenBadRequest(err),
+			}, nil
+		}
 		logServiceError(ctx, "ListPolicies failed", err)
 		return h.handleListPoliciesError(err, request), nil
 	}

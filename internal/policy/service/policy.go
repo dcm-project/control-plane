@@ -266,6 +266,9 @@ func (s *PolicyServiceImpl) ListPolicies(ctx context.Context, filter *string, or
 	// List policies from store
 	result, err := s.store.Policy().List(ctx, opts)
 	if err != nil {
+		if errors.Is(err, store.ErrInvalidPageToken) {
+			return nil, err
+		}
 		log.Error("Failed to list policies from store", "error", err)
 		return nil, NewInternalError("Failed to list policies", err.Error(), err)
 	}

@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/dcm-project/control-plane/api/policy/v1alpha1"
@@ -636,6 +637,14 @@ var _ = Describe("PolicyService", func() {
 			serviceErr, ok := err.(*service.ServiceError)
 			Expect(ok).To(BeTrue())
 			Expect(serviceErr.Type).To(Equal(service.ErrorTypeInvalidArgument))
+		})
+
+		It("should return error for invalid page_token", func() {
+			pageToken := "not-valid-base64!!!"
+			_, err := policyService.ListPolicies(ctx, nil, nil, &pageToken, nil)
+
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, store.ErrInvalidPageToken)).To(BeTrue())
 		})
 
 		It("should return error for invalid order by", func() {
