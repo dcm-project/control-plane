@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	apiv1alpha1 "github.com/dcm-project/control-plane/api/placement/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/placement/logging"
@@ -14,6 +15,8 @@ import (
 	"github.com/dcm-project/control-plane/internal/placement/store/model"
 	"github.com/google/uuid"
 )
+
+const resourceRollbackTimeout = 10 * time.Second
 
 // PlacementService handles business logic for placement request management.
 type PlacementService struct {
@@ -109,7 +112,7 @@ func (s *PlacementService) CreateResource(ctx context.Context, req *apiv1alpha1.
 	if err != nil {
 		// SPRM call failed, rollback the database record
 		log.Error("SPRM provisioning failed, rolling back", "resource_id", resourceIDStr, "error", err)
-		if delErr := s.store.Resource().Delete(ctx, created.ID); delErr != nil {
+		if delErr := s.rollbackResourceDelete(created.ID); delErr != nil {
 			log.Error("Failed to rollback resource after SPRM error",
 				"resource_id", created.ID,
 				"db_error", delErr,
@@ -320,7 +323,7 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, resourceID, ne
 	if err != nil {
 		// Rollback the new DB record
 		log.Error("SPRM provisioning failed during rehydration, rolling back", "new_resource_id", newResourceID, "error", err)
-		if delErr := s.store.Resource().Delete(ctx, newResourceID); delErr != nil {
+		if delErr := s.rollbackResourceDelete(newResourceID); delErr != nil {
 			log.Error("Failed to rollback new resource after SPRM error",
 				"new_resource_id", newResourceID,
 				"db_error", delErr,
@@ -359,6 +362,12 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, resourceID, ne
 		"approval_status", approvalStatus,
 	)
 	return storeModelToResource(created), nil
+}
+
+func (s *PlacementService) rollbackResourceDelete(id string) error {
+	rbCtx, cancel := context.WithTimeout(context.Background(), resourceRollbackTimeout)
+	defer cancel()
+	return s.store.Resource().Delete(rbCtx, id)
 }
 
 func getOrGenerateStringId(id *string) string {

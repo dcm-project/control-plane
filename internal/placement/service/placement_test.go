@@ -389,6 +389,28 @@ var _ = Describe("PlacementService", func() {
 			Expect(resources.Resources).To(BeEmpty())
 		})
 
+		It("returns error and rolls back DB when SPRM create fails with canceled request context", func() {
+			reqCtx, cancelReq := context.WithCancel(ctx)
+			mockSPRM.CreateResourceFunc = func(context.Context, sprm.CreateResourceRequest) (*sprm.CreateResourceResponse, error) {
+				cancelReq()
+				return nil, context.Canceled
+			}
+
+			resource := &apiv1alpha1.Resource{
+				CatalogItemInstanceId: "catalog-sprm-cancel",
+				Spec:                  map[string]any{"cpu": 2},
+			}
+
+			result, err := placementSvc.CreateResource(reqCtx, resource, nil)
+
+			Expect(err).To(HaveOccurred())
+			Expect(result).To(BeNil())
+
+			resources, err := dataStore.Resource().List(ctx, &store.ResourceListOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resources.Resources).To(BeEmpty())
+		})
+
 		It("returns error and rolls back DB when SPRM creation fails (500)", func() {
 			mockSPRM.CreateResourceFunc = func(_ context.Context, _ sprm.CreateResourceRequest) (*sprm.CreateResourceResponse, error) {
 				return nil, &sprm.HTTPError{StatusCode: 500, Body: "internal error"}
