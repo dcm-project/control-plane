@@ -9,9 +9,9 @@ import (
 
 func TestGormLogLevelFromString(t *testing.T) {
 	tests := []struct {
-		level    string
-		gormLvl  logger.LogLevel
-		slogLvl  slog.Level
+		level   string
+		gormLvl logger.LogLevel
+		slogLvl slog.Level
 	}{
 		{"debug", logger.Info, slog.LevelDebug},
 		{"info", logger.Info, slog.LevelInfo},
