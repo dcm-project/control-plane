@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
+	sprmv1alpha1 "github.com/dcm-project/control-plane/api/sp/v1alpha1/resource_manager"
 	"github.com/dcm-project/control-plane/internal/placement/httputil"
-	sprmv1alpha1 "github.com/dcm-project/service-provider-manager/api/v1alpha1/resource_manager"
-	sprmclient "github.com/dcm-project/service-provider-manager/pkg/client/resource_manager"
+	sprmclient "github.com/dcm-project/control-plane/pkg/sp/client/resource_manager"
 )
 
 // CreateResourceRequest is the request body for creating a resource in SPRM

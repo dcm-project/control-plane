@@ -1,0 +1,382 @@
+openapi: 3.0.4
+info:
+  contact: {}
+  description: |
+    DCM SP Resource Management API - Creation and management of Service type instances.
+    This API implements the Service Type Instance flow as defined in the
+    DCM enhancement proposal.
+  title: Service Provider(SP) Resource Management API
+  version: v1alpha1
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: /api/v1alpha1
+
+tags:
+  - name: instance
+    description: SP Resource Management operations
+  - name: health
+    description: Health check operations
+
+paths:
+  /health:
+    get:
+      tags:
+        - health
+      summary: Health check
+      operationId: getHealth
+      description: Health check for DCM SP Resource Management API
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /service-type-instances:
+    get:
+      tags:
+        - instance
+      summary: List all service type instances
+      operationId: listInstances
+      description: Returns a list of service type instances with optional filtering
+      parameters:
+        - name: provider
+          in: query
+          description: Filter service provider
+          schema:
+            type: string
+        - name: service_type
+          in: query
+          description: Filter instances by service type
+          schema:
+            type: string
+        - name: show_deleted
+          in: query
+          description: |
+            If true, soft-deleted instances are included in the results
+            alongside active instances. Defaults to false.
+          schema:
+            type: boolean
+            default: false
+        - name: max_page_size
+          in: query
+          description: Maximum number of results per page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - name: page_token
+          in: query
+          description: Token for pagination
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceTypeInstanceList'
+        '400':
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags:
+        - instance
+      summary: Create an instance of a service type
+      operationId: createInstance
+      description: |
+        Create a new instance of a service type.
+        Optionally specify a client-assigned ID
+        via the `id` query parameter. If not provided, the
+        server will generate an ID.
+      parameters:
+        - name: id
+          in: query
+          description: Optional ID for service type instance
+          schema:
+            type: string
+            pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+            minLength: 1
+            maxLength: 63
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceTypeInstance'
+      responses:
+        '201':
+          description: Instance created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceTypeInstance'
+        '400':
+          description: Invalid input
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Conflict - instanceID already in use
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation exception
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /service-type-instances/{instanceId}:
+    get:
+      tags:
+        - instance
+      summary: Get an instance of service type
+      operationId: getInstance
+      description: Get an instance by its unique ID
+      parameters:
+        - $ref: '#/components/parameters/InstanceIdPath'
+        - name: show_deleted
+          in: query
+          description: |
+            If true, soft-deleted instances are returned instead of 404.
+            Defaults to false.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceTypeInstance'
+        '400':
+          description: Invalid ID supplied
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Instance not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags:
+        - instance
+      summary: Delete an instance
+      operationId: deleteInstance
+      description: |
+        Remove an instance. When `deferred` is true, deletion failures are
+        recorded in a cleanup queue and the request returns success. This is
+        used during rehydration flows to avoid blocking on provider errors.
+      parameters:
+        - $ref: '#/components/parameters/InstanceIdPath'
+        - name: deferred
+          in: query
+          description: |
+            When true, deletion failures are deferred to a cleanup queue
+            instead of returning an error. Used during rehydration flows.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '204':
+          description: Instance deleted successfully
+        '400':
+          description: Invalid ID supplied
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Instance not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          description: Unexpected error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  parameters:
+    InstanceIdPath:
+      name: instanceId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+        minLength: 1
+        maxLength: 63
+      description: Unique identifier of the instance
+      example: "123e4567-e89b-12d3-a456-426614174000"
+  schemas:
+    ServiceTypeInstance:
+      type: object
+      description: Full service type instance resource representation
+      x-aep-resource:
+        type: serviceprovider.dcm.io/service-type-instance
+        singular: service-type-instance
+        plural: service-type-instance
+        patterns:
+          - service-type-instances/{instance_id}
+      required:
+        - provider_name
+        - spec
+      properties:
+        id:
+          type: string
+          readOnly: true
+          description: Unique identifier for the Service Type Instance
+          pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+          minLength: 1
+          maxLength: 63
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        path:
+          type: string
+          readOnly: true
+          description: Resource path identifier
+          example: "service-type-instance/123e4567-e89b-12d3-a456-426614174000"
+        provider_name:
+          type: string
+          description: Name of the provider
+          example: "kubevirt-123"
+        status:
+          type: string
+          readOnly: true
+          description: Status of the instance
+          example: "READY"
+        deletion_status:
+          type: string
+          readOnly: true
+          description: |
+            Deletion status for deferred deletions. Absent for active
+            instances. SCHEDULED indicates the instance is queued for cleanup.
+            FAILED indicates the cleanup has exceeded maximum retries.
+            PENDING_PROVIDER indicates the instance is waiting for its
+            provider to become healthy before cleanup is retried.
+          enum: [SCHEDULED, FAILED, PENDING_PROVIDER]
+        spec:
+          type: object
+          description: |
+            Service specification following one of the supported service type
+            schemas (VMSpec, ContainerSpec, DatabaseSpec, or ClusterSpec).
+          additionalProperties: true
+        create_time:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Timestamp when the instance was first created
+        update_time:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Timestamp when the instance was last updated
+    ServiceTypeInstanceList:
+      type: object
+      description: Paginated list of instances
+      properties:
+        instances:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceTypeInstance'
+        next_page_token:
+          type: string
+          description: Token for retrieving the next page of results
+          example: "eyJpZCI6IjEyM2U0NTY3LWU4OWItMTJkMy1hNDU2LTQyNjYxNDE3NDAwMCJ9"
+
+    Error:
+      type: object
+      description: RFC 7807 compliant error response
+      required:
+        - type
+        - title
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: URI reference identifying the error type
+          example: "https://dcm.example.com/errors/invalid-input"
+        title:
+          type: string
+          description: Short human-readable summary of the problem
+          example: "Invalid Input"
+        status:
+          type: integer
+          description: HTTP status code
+          example: 400
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence
+          example: "The 'name' field is required but was not provided"
+        instance:
+          type: string
+          format: uri-reference
+          description: URI reference for this specific error occurrence
+          example: "/errors/123e4567-e89b-12d3-a456-426614174000"
+
+    Health:
+      type: object
+      description: Health status singleton resource
+      x-aep-resource:
+        singular: health
+        plural: healths
+        singleton: true
+        type: serviceprovider.dcm.io/health
+        patterns:
+          - health
+      properties:
+        status:
+          type: string
+          description: Health status
+          example: "healthy"
+        path:
+          type: string
+          description: Canonical path of the resource
+          example: "health"
+          readOnly: true

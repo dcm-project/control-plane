@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"time"
 
+	sprmv1alpha1 "github.com/dcm-project/control-plane/api/sp/v1alpha1/resource_manager"
 	"github.com/dcm-project/control-plane/internal/placement/sprm"
-	sprmv1alpha1 "github.com/dcm-project/service-provider-manager/api/v1alpha1/resource_manager"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

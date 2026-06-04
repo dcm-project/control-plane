@@ -22,6 +22,7 @@ CONTAINER_IMAGE_TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo un
 include make/catalog.mk
 include make/placement.mk
 include make/policy.mk
+include make/sp.mk
 
 build:
 	go build -o bin/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
