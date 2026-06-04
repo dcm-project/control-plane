@@ -79,7 +79,7 @@ func gormLogLevelFromString(level string) (logger.LogLevel, slog.Level) {
 	case "debug":
 		return logger.Info, slog.LevelDebug
 	case "info":
-		return logger.Warn, slog.LevelWarn
+		return logger.Info, slog.LevelInfo
 	case "warn", "warning":
 		return logger.Warn, slog.LevelWarn
 	case "error":
