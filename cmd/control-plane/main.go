@@ -1,15 +1,11 @@
 package main
 
 import (
-	"log/slog"
 	"os"
+
+	"github.com/dcm-project/control-plane/internal/app"
 )
 
 func main() {
-	os.Exit(run())
-}
-
-func run() int {
-	slog.Info("control-plane skeleton")
-	return 0
+	os.Exit(app.Run())
 }

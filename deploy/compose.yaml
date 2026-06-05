@@ -1,0 +1,61 @@
+# Local control-plane monolith stack (Postgres + NATS + control-plane).
+#
+# Credentials: set POSTGRES_USER and POSTGRES_PASSWORD in the environment or in
+# a .env file. Defaults are for local dev only.
+
+x-db-common: &db-common
+  DB_TYPE: pgsql
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_USER: ${POSTGRES_USER:-admin}
+  DB_PASSWORD: ${POSTGRES_PASSWORD:-adminpass}
+  DB_PASS: ${POSTGRES_PASSWORD:-adminpass}
+
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-adminpass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro,z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nats:
+    image: docker.io/library/nats:2-alpine
+    command: ["--jetstream", "--store_dir=/data"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+
+  control-plane:
+    build:
+      context: ..
+      dockerfile: Containerfile
+    environment:
+      <<: *db-common
+      BIND_ADDRESS: ":8080"
+      DB_NAME: control-plane
+      LOG_LEVEL: info
+      NATS_URL: "nats://nats:4222"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+
+volumes:
+  postgres_data: {}
+  nats_data: {}

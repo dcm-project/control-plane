@@ -1,16 +1,19 @@
+# Placement subsystem test stack. Credentials: set POSTGRES_USER and
+# POSTGRES_PASSWORD in the environment or in a .env file (see ../../../.env.example).
+
 services:
   postgres:
     image: quay.io/sclorg/postgresql-16-c9s:latest
     environment:
       POSTGRESQL_DATABASE: placement-manager
-      POSTGRESQL_USER: admin
-      POSTGRESQL_PASSWORD: adminpass
+      POSTGRESQL_USER: ${POSTGRES_USER:-admin}
+      POSTGRESQL_PASSWORD: ${POSTGRES_PASSWORD:-adminpass}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/pgsql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d placement-manager"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d placement-manager"]
       interval: 2s
       timeout: 5s
       retries: 10
@@ -35,20 +38,21 @@ services:
       timeout: 5s
       retries: 10
 
-  placement-manager:
+  control-plane:
     build:
-      context: ../..
+      context: ../../..
       dockerfile: Containerfile
     environment:
-      SVC_ADDRESS: "0.0.0.0:8080"
+      BIND_ADDRESS: "0.0.0.0:8080"
       DB_TYPE: pgsql
       DB_HOST: postgres
       DB_PORT: "5432"
       DB_NAME: placement-manager
-      DB_USER: admin
-      DB_PASSWORD: adminpass
+      DB_USER: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-adminpass}
       POLICY_MANAGER_EVALUATION_URL: "http://policy-manager:8080"
       SP_RESOURCE_MANAGER_URL: "http://sp-resource-manager:8080"
+      NATS_DISABLED: "true"
     ports:
       - "28080:8080"
     depends_on:

@@ -1,31 +1,55 @@
 # control-plane
 
-Monorepo for the DCM control plane.
+Monorepo for the DCM control plane monolith.
 
 ## Layout
 
 ```text
-cmd/control-plane/              # monolith entrypoint (skeleton)
-cmd/catalog-manager/            # catalog manager entrypoint (interim)
-internal/catalog/               # catalog manager domain
-internal/placement/             # placement manager domain (placeholder)
-internal/policy/                # policy manager domain (placeholder)
-internal/serviceprovider/       # service provider manager domain (placeholder)
-api/catalog/                    # catalog OpenAPI and generated types
-pkg/catalog/                    # catalog generated client
-test/subsystem/catalog/         # catalog subsystem tests
-deploy/                         # deployment assets (to be added)
+cmd/control-plane/              # monolith entrypoint
+internal/app/                   # wiring, config, shared DB bootstrap
+internal/catalog/               # catalog manager
+internal/placement/             # placement manager
+internal/policy/                # policy manager (CRUD + OPA engine)
+internal/sp/                    # service provider manager
+api/                            # OpenAPI specs per domain
+pkg/                            # generated HTTP clients
+test/subsystem/                 # per-domain subsystem tests
+deploy/                         # compose and postgres init
 ```
 
 See the [control plane monolith enhancement](https://github.com/dcm-project/enhancements/tree/main/enhancements/control-plane-monolith).
 
 ## Development
 
+Build and unit tests:
+
 ```bash
 make build
-make build-catalog
 make test
 make lint
-make run-catalog
 make check-catalog-aep
 ```
+
+Run the monolith (pick one):
+
+| Command | Where it runs | Database | Other deps |
+|---------|---------------|----------|------------|
+| `make run` | host | SQLite at `/tmp/control-plane.db` | NATS disabled |
+| `make run-dev` | host | Postgres (`DB_*` defaults) | Postgres + NATS running locally |
+| `make compose-up` | containers | Postgres in compose | also starts NATS and control-plane |
+
+```bash
+make run              # SQLite, no containers
+make compose-up       # full stack in containers
+make compose-down     # stop stack and remove volumes
+```
+
+Compose uses `POSTGRES_USER` and `POSTGRES_PASSWORD` (defaults in compose
+are for local dev only). Override via environment or a `.env` file; see
+`.env.example`.
+
+Per-domain subsystem tests still run separately; compose uses the monolith
+with optional `PLACEMENT_MANAGER_URL`, `POLICY_MANAGER_EVALUATION_URL`, and
+`SP_RESOURCE_MANAGER_URL` to reach WireMock dependencies.
+
+Legacy `cmd/*-manager` binaries were removed. Use `make build` / `make run`.

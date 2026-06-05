@@ -1,16 +1,9 @@
-# Catalog manager (imported from catalog-manager repo layout).
+# Catalog domain (codegen and subsystem tests).
 CATALOG_DOMAIN := catalog
-CATALOG_BINARY := catalog-manager
 CATALOG_API := api/$(CATALOG_DOMAIN)/v1alpha1
 CATALOG_SERVER_DIR := internal/$(CATALOG_DOMAIN)/api/server
 CATALOG_CLIENT_DIR := pkg/$(CATALOG_DOMAIN)/client
 CATALOG_SERVICETYPES_MODULE := github.com/dcm-project/control-plane/api/$(CATALOG_DOMAIN)/v1alpha1/servicetypes
-
-build-catalog:
-	go build -o bin/$(CATALOG_BINARY) ./cmd/$(CATALOG_BINARY)
-
-run-catalog:
-	DB_TYPE=sqlite DB_NAME=/tmp/catalog.db go run ./cmd/$(CATALOG_BINARY)
 
 generate-catalog-types:
 	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
@@ -78,6 +71,9 @@ generate-catalog-service-types:
 		-o $(CATALOG_API)/servicetypes/three_tier_app_demo/types.gen.go \
 		$(CATALOG_API)/servicetypes/three_tier_app_demo/spec.yaml
 
+test-catalog:
+	$(GINKGO) $(GINKGO_FLAGS) ./internal/$(CATALOG_DOMAIN) ./pkg/$(CATALOG_DOMAIN)
+
 catalog-subsystem-test-up:
 	$(COMPOSE) -f test/subsystem/$(CATALOG_DOMAIN)/docker-compose.yaml up -d --build
 
@@ -85,9 +81,9 @@ catalog-subsystem-test-down:
 	$(COMPOSE) -f test/subsystem/$(CATALOG_DOMAIN)/docker-compose.yaml down -v
 
 catalog-subsystem-test:
-	go run github.com/onsi/ginkgo/v2/ginkgo -r --randomize-all --fail-on-pending -tags=subsystem ./test/subsystem/$(CATALOG_DOMAIN)
+	$(GINKGO) $(GINKGO_FLAGS) -tags=subsystem ./test/subsystem/$(CATALOG_DOMAIN)
 
-.PHONY: build-catalog run-catalog generate-catalog-types generate-catalog-spec \
+.PHONY: generate-catalog-types generate-catalog-spec \
 	generate-catalog-server generate-catalog-client generate-catalog-api check-catalog-aep \
-	generate-catalog-service-types catalog-subsystem-test-up catalog-subsystem-test-down \
+	generate-catalog-service-types test-catalog catalog-subsystem-test-up catalog-subsystem-test-down \
 	catalog-subsystem-test
