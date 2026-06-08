@@ -49,23 +49,6 @@ var _ = BeforeSuite(func() {
 		}
 		return nil
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "Service should be healthy")
-
-	// Get Engine API URL from environment or use default
-	engineURL := getEnvOrDefault("ENGINE_API_URL", "http://localhost:8081/api/v1alpha1")
-
-	// Basic connectivity check for engine API
-	Eventually(func() error {
-		resp, err := http.Get(engineURL + "/policies:evaluateRequest")
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		// Expect any response (stub returns 501)
-		if resp.StatusCode == 0 {
-			return fmt.Errorf("no response from engine API")
-		}
-		return nil
-	}, 10*time.Second, 1*time.Second).Should(Succeed(), "Engine API should be reachable")
 })
 
 // Helper functions

@@ -5,9 +5,8 @@ import "github.com/kelseyhightower/envconfig"
 
 // ServiceConfig holds service-level configuration
 type ServiceConfig struct {
-	BindAddress       string `envconfig:"BIND_ADDRESS" default:"0.0.0.0:8080"`
-	EngineBindAddress string `envconfig:"ENGINE_BIND_ADDRESS" default:"0.0.0.0:8081"`
-	LogLevel          string `envconfig:"LOG_LEVEL" default:"info"`
+	BindAddress string `envconfig:"BIND_ADDRESS" default:"0.0.0.0:8080"`
+	LogLevel    string `envconfig:"LOG_LEVEL" default:"info"`
 }
 
 // DBConfig holds database configuration

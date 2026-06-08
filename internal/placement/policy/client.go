@@ -2,15 +2,18 @@
 package policy
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	enginev1alpha1 "github.com/dcm-project/control-plane/api/policy/v1alpha1/engine"
 	"github.com/dcm-project/control-plane/internal/placement/httputil"
-	"github.com/dcm-project/control-plane/pkg/policy/engineclient"
 )
 
 // EvaluateRequest is the request body for policy evaluation
@@ -41,61 +44,107 @@ func (e *HTTPError) Error() string {
 }
 
 type client struct {
-	engine    *engineclient.ClientWithResponses
-	retryOpts []backoff.RetryOption
+	endpoint   string
+	httpClient *http.Client
+	retryOpts  []backoff.RetryOption
 }
 
-// NewClient creates a new policy engine client
-func NewClient(baseURL string, timeout time.Duration, opts ...engineclient.ClientOption) (Client, error) {
-	httpClient := &http.Client{Timeout: timeout}
-	opts = append([]engineclient.ClientOption{engineclient.WithHTTPClient(httpClient)}, opts...)
+type evaluateRequestBody struct {
+	ServiceInstance struct {
+		Spec map[string]any `json:"spec"`
+	} `json:"service_instance"`
+}
 
-	engine, err := engineclient.NewClientWithResponses(baseURL+"/api/v1alpha1", opts...)
+type evaluateResponseBody struct {
+	Status                   string `json:"status"`
+	SelectedProvider         string `json:"selected_provider"`
+	EvaluatedServiceInstance struct {
+		Spec map[string]any `json:"spec"`
+	} `json:"evaluated_service_instance"`
+}
+
+// NewClient creates a remote policy evaluation client for subsystem tests and
+// split deployments. Production monolith wiring uses NewLocalClient instead.
+func NewClient(baseURL string, timeout time.Duration) (Client, error) {
+	endpoint, err := buildEvaluateURL(baseURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create policy engine client: %w", err)
+		return nil, err
+	}
+
+	if timeout <= 0 {
+		timeout = 10 * time.Second
 	}
 
 	return &client{
-		engine:    engine,
-		retryOpts: httputil.DefaultRetryOpts(),
+		endpoint:   endpoint,
+		httpClient: &http.Client{Timeout: timeout},
+		retryOpts:  httputil.DefaultRetryOpts(),
 	}, nil
 }
 
 // Evaluate sends a service instance spec to the policy engine for evaluation
 func (c *client) Evaluate(ctx context.Context, req EvaluateRequest) (*EvaluateResponse, error) {
-	body := enginev1alpha1.EvaluateRequest{
-		ServiceInstance: enginev1alpha1.ServiceInstance{
-			Spec: req.Spec,
-		},
+	body := evaluateRequestBody{}
+	body.ServiceInstance.Spec = req.Spec
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal policy evaluation request: %w", err)
 	}
 
 	operation := func() (*EvaluateResponse, error) {
-		resp, err := c.engine.EvaluateRequestWithResponse(ctx, body)
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(payload))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create policy evaluation request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(httpReq)
 		if err != nil {
 			return nil, fmt.Errorf("failed to call policy engine: %w", err)
 		}
+		defer func() { _ = resp.Body.Close() }()
 
-		if resp.JSON200 == nil {
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read policy engine response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
 			httpErr := &HTTPError{
-				StatusCode: resp.StatusCode(),
-				Body:       string(resp.Body),
+				StatusCode: resp.StatusCode,
+				Body:       string(respBody),
 			}
-			if httputil.IsPermanentHTTPError(resp.StatusCode()) {
+			if httputil.IsPermanentHTTPError(resp.StatusCode) {
 				return nil, backoff.Permanent(httpErr)
 			}
 			return nil, httpErr
 		}
 
-		return mapEvaluateResponse(resp.JSON200), nil
+		var parsed evaluateResponseBody
+		if err := json.Unmarshal(respBody, &parsed); err != nil {
+			return nil, fmt.Errorf("failed to decode policy evaluation response: %w", err)
+		}
+
+		return &EvaluateResponse{
+			Status:           parsed.Status,
+			SelectedProvider: parsed.SelectedProvider,
+			EvaluatedSpec:    parsed.EvaluatedServiceInstance.Spec,
+		}, nil
 	}
 
 	return backoff.Retry(ctx, operation, c.retryOpts...)
 }
 
-func mapEvaluateResponse(r *enginev1alpha1.EvaluateResponse) *EvaluateResponse {
-	return &EvaluateResponse{
-		Status:           string(r.Status),
-		SelectedProvider: r.SelectedProvider,
-		EvaluatedSpec:    r.EvaluatedServiceInstance.Spec,
+func buildEvaluateURL(baseURL string) (string, error) {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return "", fmt.Errorf("policy evaluation URL is required")
 	}
+
+	apiBase, err := url.JoinPath(strings.TrimRight(baseURL, "/"), "api", "v1alpha1")
+	if err != nil {
+		return "", fmt.Errorf("failed to build policy evaluation URL: %w", err)
+	}
+	return apiBase + "/policies:evaluateRequest", nil
 }

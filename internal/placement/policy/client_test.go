@@ -8,11 +8,16 @@ import (
 	"net/http/httptest"
 	"time"
 
-	enginev1alpha1 "github.com/dcm-project/control-plane/api/policy/v1alpha1/engine"
 	"github.com/dcm-project/control-plane/internal/placement/policy"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+type evaluateResponseFixture struct {
+	Status                   string         `json:"status"`
+	SelectedProvider         string         `json:"selected_provider"`
+	EvaluatedServiceInstance map[string]any `json:"evaluated_service_instance"`
+}
 
 var _ = Describe("Policy Engine Client", func() {
 	var (
@@ -20,17 +25,17 @@ var _ = Describe("Policy Engine Client", func() {
 		client     policy.Client
 		ctx        context.Context
 		statusCode int
-		response   interface{}
+		response   any
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		statusCode = http.StatusOK
-		response = enginev1alpha1.EvaluateResponse{
-			Status:           enginev1alpha1.APPROVED,
+		response = evaluateResponseFixture{
+			Status:           "APPROVED",
 			SelectedProvider: "aws",
-			EvaluatedServiceInstance: enginev1alpha1.ServiceInstance{
-				Spec: map[string]interface{}{
+			EvaluatedServiceInstance: map[string]any{
+				"spec": map[string]any{
 					"cpu":    "2",
 					"memory": "4Gi",
 				},
@@ -72,11 +77,11 @@ var _ = Describe("Policy Engine Client", func() {
 		})
 
 		It("handles MODIFIED status", func() {
-			response = enginev1alpha1.EvaluateResponse{
-				Status:           enginev1alpha1.MODIFIED,
+			response = evaluateResponseFixture{
+				Status:           "MODIFIED",
 				SelectedProvider: "gcp",
-				EvaluatedServiceInstance: enginev1alpha1.ServiceInstance{
-					Spec: map[string]interface{}{
+				EvaluatedServiceInstance: map[string]any{
+					"spec": map[string]any{
 						"cpu":    "4",
 						"memory": "8Gi",
 					},
@@ -101,10 +106,10 @@ var _ = Describe("Policy Engine Client", func() {
 
 		It("returns error for non-200 response", func() {
 			statusCode = http.StatusBadRequest
-			response = enginev1alpha1.BadRequest{
-				Type:   "bad-request",
-				Title:  "Bad Request",
-				Status: 400,
+			response = map[string]any{
+				"type":   "bad-request",
+				"title":  "Bad Request",
+				"status": 400,
 			}
 
 			req := policy.EvaluateRequest{
@@ -115,7 +120,6 @@ var _ = Describe("Policy Engine Client", func() {
 
 			Expect(err).To(HaveOccurred())
 
-			// Verify it's an HTTPError with correct fields
 			var httpErr *policy.HTTPError
 			Expect(errors.As(err, &httpErr)).To(BeTrue())
 			Expect(httpErr.StatusCode).To(Equal(400))
@@ -139,7 +143,6 @@ var _ = Describe("Policy Engine Client", func() {
 
 			Expect(err).To(HaveOccurred())
 
-			// Verify we can extract HTTPError using errors.As
 			var httpErr *policy.HTTPError
 			Expect(errors.As(err, &httpErr)).To(BeTrue(), "errors.As should be able to extract policy.HTTPError")
 			Expect(httpErr).To(HaveOccurred())
@@ -163,7 +166,6 @@ var _ = Describe("Policy Engine Client", func() {
 
 			Expect(err).To(HaveOccurred())
 
-			// Verify HTTPError can be extracted
 			var httpErr *policy.HTTPError
 			Expect(errors.As(err, &httpErr)).To(BeTrue())
 			Expect(httpErr.StatusCode).To(Equal(500))
