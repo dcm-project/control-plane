@@ -18,8 +18,6 @@ import (
 	catalogplacement "github.com/dcm-project/control-plane/internal/catalog/placement"
 	catalogservice "github.com/dcm-project/control-plane/internal/catalog/service"
 	catalogstore "github.com/dcm-project/control-plane/internal/catalog/store"
-	placementserver "github.com/dcm-project/control-plane/internal/placement/api/server"
-	placementhandlers "github.com/dcm-project/control-plane/internal/placement/handlers/v1alpha1"
 	placementlogging "github.com/dcm-project/control-plane/internal/placement/logging"
 	placementpolicy "github.com/dcm-project/control-plane/internal/placement/policy"
 	placementservice "github.com/dcm-project/control-plane/internal/placement/service"
@@ -170,7 +168,6 @@ func Run() int {
 
 	router := newRouter(RouteHandlers{
 		Catalog:    cataloghandlers.NewHandler(catalogSvc, logger),
-		Placement:  placementhandlers.NewHandler(placementService),
 		Policy:     policyhandlers.NewPolicyHandler(policyService),
 		SPProvider: spproviderhandler.NewHandler(spProviderService),
 		SPRM:       sprmhandler.NewHandler(spInstanceService),
@@ -210,7 +207,6 @@ func Run() int {
 
 type RouteHandlers struct {
 	Catalog    catalogserver.StrictServerInterface
-	Placement  placementserver.StrictServerInterface
 	Policy     policyserver.StrictServerInterface
 	SPProvider spproviderserver.StrictServerInterface
 	SPRM       sprmserver.StrictServerInterface
@@ -229,11 +225,6 @@ func newRouter(h RouteHandlers) chi.Router {
 
 	catalogserver.HandlerFromMuxWithBaseURL(
 		catalogserver.NewStrictHandler(h.Catalog, nil),
-		router,
-		baseURL,
-	)
-	placementserver.HandlerFromMuxWithBaseURL(
-		placementserver.NewStrictHandler(h.Placement, nil),
 		router,
 		baseURL,
 	)

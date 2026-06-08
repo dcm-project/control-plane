@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"time"
 
-	apiv1alpha1 "github.com/dcm-project/control-plane/api/placement/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/placement/store/model"
+	"github.com/dcm-project/control-plane/internal/placement/types"
 )
 
 // storeModelToResource converts a database model to an API response type
-func storeModelToResource(m *model.Resource) *apiv1alpha1.Resource {
+func storeModelToResource(m *model.Resource) *types.Resource {
 	idStr := m.ID
 	path := fmt.Sprintf("resources/%s", idStr)
 
-	resource := &apiv1alpha1.Resource{
+	resource := &types.Resource{
 		Id:                    &idStr,
 		Path:                  &path,
 		CatalogItemInstanceId: m.CatalogItemInstanceId,
@@ -27,7 +27,7 @@ func storeModelToResource(m *model.Resource) *apiv1alpha1.Resource {
 }
 
 // resourceToStoreModel converts an API request to a database model
-func resourceToStoreModel(req *apiv1alpha1.Resource, id, path string) model.Resource {
+func resourceToStoreModel(req *types.Resource, id, path string) model.Resource {
 	return model.Resource{
 		ID:                    id,
 		CatalogItemInstanceId: req.CatalogItemInstanceId,

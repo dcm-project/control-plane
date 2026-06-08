@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 
-	apiv1alpha1 "github.com/dcm-project/control-plane/api/placement/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/placement/policy"
 	"github.com/dcm-project/control-plane/internal/placement/service"
 	"github.com/dcm-project/control-plane/internal/placement/sprm"
 	"github.com/dcm-project/control-plane/internal/placement/store"
 	"github.com/dcm-project/control-plane/internal/placement/store/model"
+	"github.com/dcm-project/control-plane/internal/placement/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gorm.io/driver/sqlite"
@@ -111,7 +111,7 @@ var _ = Describe("PlacementService", func() {
 				}, nil
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-123",
 				Spec:                  map[string]any{"cpu": 2, "memory": "4GB"},
 			}
@@ -153,7 +153,7 @@ var _ = Describe("PlacementService", func() {
 				}, nil
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-456",
 				Spec:                  map[string]any{"cpu": 4},
 			}
@@ -180,7 +180,7 @@ var _ = Describe("PlacementService", func() {
 
 		It("creates resource with specified ID", func() {
 			specifiedID := "custom-resource-id"
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-789",
 				Spec:                  map[string]any{"cpu": 1},
 			}
@@ -197,7 +197,7 @@ var _ = Describe("PlacementService", func() {
 				return nil, &policy.HTTPError{StatusCode: 400, Body: "bad request"}
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-invalid",
 				Spec:                  map[string]any{"invalid": "spec"},
 			}
@@ -217,7 +217,7 @@ var _ = Describe("PlacementService", func() {
 				return nil, &policy.HTTPError{StatusCode: 406, Body: "rejected"}
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-rejected",
 				Spec:                  map[string]any{"cpu": 100},
 			}
@@ -237,7 +237,7 @@ var _ = Describe("PlacementService", func() {
 				return nil, &policy.HTTPError{StatusCode: 409, Body: "conflict"}
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-conflict",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -257,7 +257,7 @@ var _ = Describe("PlacementService", func() {
 				return nil, &policy.HTTPError{StatusCode: 500, Body: "internal error"}
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-error",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -277,7 +277,7 @@ var _ = Describe("PlacementService", func() {
 				return nil, &policy.HTTPError{StatusCode: 418, Body: "I'm a teapot"}
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-teapot",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -303,7 +303,7 @@ var _ = Describe("PlacementService", func() {
 				}, nil
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-no-provider",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -324,7 +324,7 @@ var _ = Describe("PlacementService", func() {
 				return nil, errors.New("connection refused")
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-network-error",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -343,7 +343,7 @@ var _ = Describe("PlacementService", func() {
 
 		It("returns conflict error when duplicate ID is used", func() {
 			resourceID := "duplicate-id"
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-dup",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -369,7 +369,7 @@ var _ = Describe("PlacementService", func() {
 				return nil, &sprm.HTTPError{StatusCode: 400, Body: "invalid request"}
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-sprm-400",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -396,7 +396,7 @@ var _ = Describe("PlacementService", func() {
 				return nil, context.Canceled
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-sprm-cancel",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -416,7 +416,7 @@ var _ = Describe("PlacementService", func() {
 				return nil, &sprm.HTTPError{StatusCode: 500, Body: "internal error"}
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-sprm-500",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -441,7 +441,7 @@ var _ = Describe("PlacementService", func() {
 				return nil, &sprm.HTTPError{StatusCode: 422, Body: "provider validation failed"}
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-sprm-422",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -465,7 +465,7 @@ var _ = Describe("PlacementService", func() {
 	Describe("GetResource", func() {
 		It("retrieves existing resource", func() {
 			// Create a resource first
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-get",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -509,7 +509,7 @@ var _ = Describe("PlacementService", func() {
 						EvaluatedSpec:    req.Spec,
 					}, nil
 				}
-				resource := &apiv1alpha1.Resource{
+				resource := &types.Resource{
 					CatalogItemInstanceId: fmt.Sprintf("catalog-%d", i),
 					Spec:                  map[string]any{"cpu": i + 1},
 				}
@@ -594,7 +594,7 @@ var _ = Describe("PlacementService", func() {
 	Describe("DeleteResource", func() {
 		It("deletes existing resource", func() {
 			// Create a resource first
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-delete",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -627,7 +627,7 @@ var _ = Describe("PlacementService", func() {
 
 		It("returns error when SPRM deletion fails (404)", func() {
 			// Create a resource first
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-sprm-404",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -656,7 +656,7 @@ var _ = Describe("PlacementService", func() {
 
 		It("returns error when SPRM deletion fails (500)", func() {
 			// Create a resource first
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-sprm-500",
 				Spec:                  map[string]any{"cpu": 2},
 			}
@@ -702,7 +702,7 @@ var _ = Describe("PlacementService", func() {
 				}, nil
 			}
 
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: catalogID,
 				Spec:                  map[string]any{"cpu": 2, "memory": "4GB"},
 			}
@@ -851,7 +851,7 @@ var _ = Describe("PlacementService", func() {
 		It("returns conflict when new resource ID already exists", func() {
 			// Create another resource with the ID we want to rehydrate to
 			existingID := "existing-id"
-			resource := &apiv1alpha1.Resource{
+			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-existing",
 				Spec:                  map[string]any{"cpu": 1},
 			}

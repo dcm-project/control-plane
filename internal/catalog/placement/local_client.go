@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	pmv1alpha1 "github.com/dcm-project/control-plane/api/placement/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/placement/service"
+	"github.com/dcm-project/control-plane/internal/placement/types"
 )
 
 type localClient struct {
@@ -27,7 +27,7 @@ func (c *localClient) CreateResource(ctx context.Context, req CreateResourceRequ
 		"resource_id", id,
 	)
 
-	body := &pmv1alpha1.Resource{
+	body := &types.Resource{
 		CatalogItemInstanceId: req.CatalogItemInstanceID,
 		Spec:                  req.Spec,
 	}
@@ -63,7 +63,7 @@ func (c *localClient) RehydrateResource(ctx context.Context, resourceID string, 
 	return mapAPIResource(result), nil
 }
 
-func mapAPIResource(r *pmv1alpha1.Resource) *Resource {
+func mapAPIResource(r *types.Resource) *Resource {
 	res := &Resource{Spec: r.Spec}
 	if r.Id != nil {
 		res.ID = *r.Id

@@ -12,8 +12,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	pmclient "github.com/dcm-project/control-plane/pkg/placement/client"
-
 	"github.com/dcm-project/control-plane/internal/catalog/placement"
 )
 
@@ -22,7 +20,6 @@ func newTestClient(serverURL string) placement.Client {
 		serverURL,
 		10*time.Second,
 		slog.Default(),
-		pmclient.WithHTTPClient(http.DefaultClient),
 	)
 	Expect(err).ToNot(HaveOccurred())
 	return client

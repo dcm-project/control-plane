@@ -14,11 +14,8 @@ linters:
     paths:
       - api/catalog/v1alpha1
       - pkg/catalog/client
-      - api/placement/v1alpha1
-      - pkg/placement/client
       - api/policy/v1alpha1
       - pkg/policy/client
-      - pkg/policy/engineclient
       - api/sp/v1alpha1
       - pkg/sp/client
   enable:

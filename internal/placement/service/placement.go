@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"time"
 
-	apiv1alpha1 "github.com/dcm-project/control-plane/api/placement/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/placement/logging"
 	"github.com/dcm-project/control-plane/internal/placement/policy"
 	"github.com/dcm-project/control-plane/internal/placement/sprm"
 	"github.com/dcm-project/control-plane/internal/placement/store"
 	"github.com/dcm-project/control-plane/internal/placement/store/model"
+	"github.com/dcm-project/control-plane/internal/placement/types"
 	"github.com/google/uuid"
 )
 
@@ -35,7 +35,7 @@ func NewPlacementService(store store.Store, policyClient policy.Client, sprmClie
 }
 
 // CreateResource creates a new placement request.
-func (s *PlacementService) CreateResource(ctx context.Context, req *apiv1alpha1.Resource, queryId *string) (*apiv1alpha1.Resource, error) {
+func (s *PlacementService) CreateResource(ctx context.Context, req *types.Resource, queryId *string) (*types.Resource, error) {
 	log := logging.FromContext(ctx)
 
 	// Get or Generate ID
@@ -133,7 +133,7 @@ func (s *PlacementService) CreateResource(ctx context.Context, req *apiv1alpha1.
 }
 
 // GetResource retrieves a placement request by ID.
-func (s *PlacementService) GetResource(ctx context.Context, requestID string) (*apiv1alpha1.Resource, error) {
+func (s *PlacementService) GetResource(ctx context.Context, requestID string) (*types.Resource, error) {
 	log := logging.FromContext(ctx)
 	log.Debug("Getting resource", "resource_id", requestID)
 
@@ -151,7 +151,7 @@ func (s *PlacementService) GetResource(ctx context.Context, requestID string) (*
 }
 
 // ListResources returns placement requests with optional filtering and pagination.
-func (s *PlacementService) ListResources(ctx context.Context, providerName *string, maxPageSize *int, pageToken *string) (*apiv1alpha1.ResourceList, error) {
+func (s *PlacementService) ListResources(ctx context.Context, providerName *string, maxPageSize *int, pageToken *string) (*types.ResourceList, error) {
 	log := logging.FromContext(ctx)
 	log.Debug("Listing resources",
 		"provider_filter", providerName,
@@ -184,7 +184,7 @@ func (s *PlacementService) ListResources(ctx context.Context, providerName *stri
 	}
 
 	// Convert to API types
-	resources := make([]apiv1alpha1.Resource, len(result.Resources))
+	resources := make([]types.Resource, len(result.Resources))
 	for i, resource := range result.Resources {
 		resources[i] = *storeModelToResource(&resource)
 	}
@@ -193,7 +193,7 @@ func (s *PlacementService) ListResources(ctx context.Context, providerName *stri
 		"count", len(resources),
 		"has_next_page", result.NextPageToken != nil,
 	)
-	return &apiv1alpha1.ResourceList{
+	return &types.ResourceList{
 		Resources:     resources,
 		NextPageToken: result.NextPageToken,
 	}, nil
@@ -246,7 +246,7 @@ func (s *PlacementService) DeleteResource(ctx context.Context, requestID string)
 // RehydrateResource re-evaluates an existing resource against current policies
 // and creates a new resource with the given newResourceID. The old resource is
 // deleted after the new one is successfully provisioned.
-func (s *PlacementService) RehydrateResource(ctx context.Context, resourceID, newResourceID string) (*apiv1alpha1.Resource, error) {
+func (s *PlacementService) RehydrateResource(ctx context.Context, resourceID, newResourceID string) (*types.Resource, error) {
 	log := logging.FromContext(ctx)
 	log.Debug("Rehydrating resource",
 		"resource_id", resourceID,
