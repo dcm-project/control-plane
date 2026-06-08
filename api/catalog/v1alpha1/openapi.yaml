@@ -25,19 +25,6 @@ servers:
   - url: /api/v1alpha1
 
 paths:
-  /health:
-    get:
-      operationId: getHealth
-      summary: Health check
-      description: Health check for DCM Catalog Manager API
-      responses:
-        '200':
-          description: Service is healthy
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Health'
-
   /service-types:
     get:
       operationId: listServiceTypes
@@ -1129,29 +1116,6 @@ components:
             Unique identifier for this specific error occurrence.
             Can be used for tracking and debugging.
           example: 7934df3e-4b63-429b-b0f5-b8d350ec165e
-
-    Health:
-      type: object
-      x-aep-resource:
-        type: catalog-manager.dcm.io/health
-        singular: health
-        plural: health
-        singleton: true
-        patterns:
-          - health
-      required:
-        - status
-      properties:
-        status:
-          type: string
-          description: Health status
-          example: ok
-
-        path:
-          type: string
-          readOnly: true
-          description: Canonical path of the resource
-          example: health
 
   responses:
     BadRequest:

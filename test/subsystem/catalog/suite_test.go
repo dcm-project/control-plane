@@ -2,7 +2,6 @@
 package subsystem_test
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -41,10 +40,11 @@ var _ = BeforeSuite(func() {
 
 	// Wait for the service to be healthy
 	Eventually(func() error {
-		resp, err := apiClient.GetHealthWithResponse(context.Background())
+		resp, err := http.Get(apiURL + "/health")
 		if err != nil {
 			return err
 		}
+		defer resp.Body.Close()
 		if resp.StatusCode() != http.StatusOK {
 			return fmt.Errorf("health check returned %d", resp.StatusCode())
 		}

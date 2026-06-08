@@ -22,13 +22,6 @@ func NewHandler(instanceService *rmsvc.InstanceService) *Handler {
 // Ensure Handler implements StrictServerInterface
 var _ server.StrictServerInterface = (*Handler)(nil)
 
-// GetHealth returns the health status of the service.
-func (h *Handler) GetHealth(_ context.Context, _ server.GetHealthRequestObject) (server.GetHealthResponseObject, error) {
-	status := "ok"
-	path := "health"
-	return server.GetHealth200JSONResponse{Status: &status, Path: &path}, nil
-}
-
 // ListInstances returns a paginated list of service type instances.
 func (h *Handler) ListInstances(ctx context.Context, request server.ListInstancesRequestObject) (server.ListInstancesResponseObject, error) {
 	log := logging.FromContext(ctx)

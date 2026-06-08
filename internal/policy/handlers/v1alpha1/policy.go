@@ -23,16 +23,6 @@ func NewPolicyHandler(service service.PolicyService) *PolicyHandler {
 	}
 }
 
-// GetHealth handles health check requests.
-func (h *PolicyHandler) GetHealth(_ context.Context, _ server.GetHealthRequestObject) (server.GetHealthResponseObject, error) {
-	status := "ok"
-	path := "health"
-	return server.GetHealth200JSONResponse{
-		Status: status,
-		Path:   &path,
-	}, nil
-}
-
 // CreatePolicy handles creating a new policy resource.
 func (h *PolicyHandler) CreatePolicy(ctx context.Context, request server.CreatePolicyRequestObject) (server.CreatePolicyResponseObject, error) {
 	log := logging.FromContext(ctx)

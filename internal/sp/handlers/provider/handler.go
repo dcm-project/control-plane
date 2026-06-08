@@ -23,12 +23,6 @@ func NewHandler(providerService *providersvc.ProviderService) *Handler {
 // Ensure Handler implements StrictServerInterface
 var _ providerserver.StrictServerInterface = (*Handler)(nil)
 
-func (h *Handler) GetHealth(_ context.Context, _ providerserver.GetHealthRequestObject) (providerserver.GetHealthResponseObject, error) {
-	status := "ok"
-	path := "health"
-	return providerserver.GetHealth200JSONResponse{Status: &status, Path: &path}, nil
-}
-
 func (h *Handler) ListProviders(ctx context.Context, request providerserver.ListProvidersRequestObject) (providerserver.ListProvidersResponseObject, error) {
 	log := logging.FromContext(ctx)
 	log.Debug("ListProviders request received",

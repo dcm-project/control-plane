@@ -17,25 +17,8 @@ servers:
 tags:
   - name: instance
     description: SP Resource Management operations
-  - name: health
-    description: Health check operations
 
 paths:
-  /health:
-    get:
-      tags:
-        - health
-      summary: Health check
-      operationId: getHealth
-      description: Health check for DCM SP Resource Management API
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Health'
-
   /service-type-instances:
     get:
       tags:
@@ -359,24 +342,3 @@ components:
           format: uri-reference
           description: URI reference for this specific error occurrence
           example: "/errors/123e4567-e89b-12d3-a456-426614174000"
-
-    Health:
-      type: object
-      description: Health status singleton resource
-      x-aep-resource:
-        singular: health
-        plural: healths
-        singleton: true
-        type: serviceprovider.dcm.io/health
-        patterns:
-          - health
-      properties:
-        status:
-          type: string
-          description: Health status
-          example: "healthy"
-        path:
-          type: string
-          description: Canonical path of the resource
-          example: "health"
-          readOnly: true

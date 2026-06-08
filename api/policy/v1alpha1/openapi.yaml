@@ -28,19 +28,6 @@ tags:
     description: Operations for managing OPA policies
 
 paths:
-  /health:
-    get:
-      operationId: getHealth
-      summary: Health check
-      description: Health check for DCM Policy Manager API
-      responses:
-        '200':
-          description: Service is healthy
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Health'
-
   /policies:
     post:
       tags:
@@ -500,29 +487,6 @@ components:
 
             This token is opaque and should not be parsed by clients.
           example: eyJvZmZzZXQiOjUwfQ==
-
-    Health:
-      type: object
-      x-aep-resource:
-        type: policy-manager.dcm.io/health
-        singular: health
-        plural: health
-        singleton: true
-        patterns:
-          - health
-      required:
-        - status
-      properties:
-        status:
-          type: string
-          description: Health status
-          example: healthy
-
-        path:
-          type: string
-          readOnly: true
-          description: Canonical path of the resource
-          example: health
 
     Error:
       type: object

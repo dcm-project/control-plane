@@ -35,12 +35,15 @@ var _ = Describe("Provider API", func() {
 
 	Describe("Health", func() {
 		It("returns healthy status", func() {
-			resp, err := apiClient.GetHealthWithResponse(ctx)
+			baseURL := os.Getenv("API_URL")
+			if baseURL == "" {
+				baseURL = "http://localhost:8080/api/v1alpha1"
+			}
 
+			resp, err := http.Get(baseURL + "/health")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode()).To(Equal(http.StatusOK))
-			Expect(resp.JSON200).NotTo(BeNil())
-			Expect(*resp.JSON200.Status).To(Equal("ok"))
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		})
 	})
 

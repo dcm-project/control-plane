@@ -223,6 +223,10 @@ func newRouter(h RouteHandlers) chi.Router {
 
 	const baseURL = "/api/v1alpha1"
 
+	// Single monolith health endpoint; domain OpenAPI specs omit /health to avoid
+	// duplicate chi route registration when mounting multiple generated servers.
+	registerMonolithHealth(router)
+
 	catalogserver.HandlerFromMuxWithBaseURL(
 		catalogserver.NewStrictHandler(h.Catalog, nil),
 		router,

@@ -38,10 +38,11 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	Eventually(func() error {
-		resp, err := apiClient.GetHealthWithResponse(context.Background())
+		resp, err := http.Get(serviceURL + "/api/v1alpha1/health")
 		if err != nil {
 			return err
 		}
+		defer resp.Body.Close()
 		if resp.StatusCode() != http.StatusOK {
 			return fmt.Errorf("health check returned %d", resp.StatusCode())
 		}

@@ -42,17 +42,6 @@ var _ = Describe("Handler", func() {
 		_ = sqlDB.Close()
 	})
 
-	Describe("GetHealth", func() {
-		It("returns ok", func() {
-			resp, err := handler.GetHealth(ctx, providerserver.GetHealthRequestObject{})
-
-			Expect(err).NotTo(HaveOccurred())
-			jsonResp, ok := resp.(providerserver.GetHealth200JSONResponse)
-			Expect(ok).To(BeTrue())
-			Expect(*jsonResp.Status).To(Equal("ok"))
-		})
-	})
-
 	Describe("CreateProvider", func() {
 		It("creates and returns 201", func() {
 			req := providerserver.CreateProviderRequestObject{

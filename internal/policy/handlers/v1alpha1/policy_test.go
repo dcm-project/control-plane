@@ -68,25 +68,6 @@ var _ = Describe("PolicyHandler", func() {
 		handler = NewPolicyHandler(mockService)
 	})
 
-	Describe("GetHealth", func() {
-		It("should return a successful health response with correct status and path", func() {
-			ctx := context.Background()
-			response, err := handler.GetHealth(ctx, server.GetHealthRequestObject{})
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(response).NotTo(BeNil())
-
-			healthResponse, ok := response.(server.GetHealth200JSONResponse)
-			Expect(ok).To(BeTrue(), "response should be GetHealth200JSONResponse")
-
-			Expect(healthResponse.Status).NotTo(BeNil())
-			Expect(healthResponse.Status).To(Equal("ok"))
-
-			Expect(healthResponse.Path).NotTo(BeNil())
-			Expect(*healthResponse.Path).To(Equal("health"))
-		})
-	})
-
 	Describe("CreatePolicy", func() {
 		It("should return 201 on successful creation", func() {
 			ctx := context.Background()

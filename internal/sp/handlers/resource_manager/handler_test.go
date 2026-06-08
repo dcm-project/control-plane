@@ -73,17 +73,6 @@ var _ = Describe("Resource Manager Handler", func() {
 		_ = sqlDB.Close()
 	})
 
-	Describe("GetHealth", func() {
-		It("returns ok", func() {
-			resp, err := handler.GetHealth(ctx, server.GetHealthRequestObject{})
-
-			Expect(err).NotTo(HaveOccurred())
-			jsonResp, ok := resp.(server.GetHealth200JSONResponse)
-			Expect(ok).To(BeTrue())
-			Expect(*jsonResp.Status).To(Equal("ok"))
-		})
-	})
-
 	Describe("CreateInstance", func() {
 		It("creates and returns 201", func() {
 			req := server.CreateInstanceRequestObject{

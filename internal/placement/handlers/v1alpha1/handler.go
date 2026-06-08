@@ -22,13 +22,6 @@ func NewHandler(placementService *service.PlacementService) *Handler {
 // Ensure Handler implements StrictServerInterface
 var _ server.StrictServerInterface = (*Handler)(nil)
 
-// GetHealth returns the health status of the service.
-func (h *Handler) GetHealth(_ context.Context, _ server.GetHealthRequestObject) (server.GetHealthResponseObject, error) {
-	status := "ok"
-	path := "health"
-	return server.GetHealth200JSONResponse{Status: status, Path: &path}, nil
-}
-
 // ListResources returns a paginated list of resources.
 func (h *Handler) ListResources(ctx context.Context, request server.ListResourcesRequestObject) (server.ListResourcesResponseObject, error) {
 	log := logging.FromContext(ctx)
