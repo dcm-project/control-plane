@@ -48,8 +48,14 @@ Compose uses `POSTGRES_USER` and `POSTGRES_PASSWORD` (defaults in compose
 are for local dev only). Override via environment or a `.env` file; see
 `.env.example`.
 
-Per-domain subsystem tests still run separately; compose uses the monolith
-with optional `PLACEMENT_MANAGER_URL`, `POLICY_MANAGER_EVALUATION_URL`, and
-`SP_RESOURCE_MANAGER_URL` to reach WireMock dependencies.
+Policy evaluation and placement provisioning run in-process in the monolith
+(`EvaluationService`, `PlacementService` via local clients). There is no public
+HTTP route for `policies:evaluateRequest` or `/resources`. Use
+`make test-policy` and `make test-placement` for unit coverage.
+
+Per-domain subsystem tests still run separately; compose may set
+`PLACEMENT_MANAGER_URL`, `POLICY_MANAGER_EVALUATION_URL`, and
+`SP_RESOURCE_MANAGER_URL` to reach WireMock stubs (catalog/placement
+subsystem tests only; not production APIs on the monolith).
 
 Legacy `cmd/*-manager` binaries were removed. Use `make build` / `make run`.
