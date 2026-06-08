@@ -10,10 +10,6 @@ import (
 	"github.com/dcm-project/control-plane/internal/catalog/service"
 )
 
-const (
-	apiPrefix = "/api/v1alpha1/"
-)
-
 type Handler struct {
 	service service.Service
 	logger  *slog.Logger
