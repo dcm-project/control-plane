@@ -67,12 +67,8 @@ type SPConfig struct {
 // WiringConfig holds optional HTTP client URLs for subsystem tests.
 // When empty, cross-domain calls use in-process implementations.
 type WiringConfig struct {
-	PlacementManagerURL      string        `envconfig:"PLACEMENT_MANAGER_URL"`
-	PlacementManagerTimeout  time.Duration `envconfig:"PLACEMENT_MANAGER_TIMEOUT" default:"10s"`
-	PolicyEvaluationURL      string        `envconfig:"POLICY_MANAGER_EVALUATION_URL"`
-	PolicyEvaluationTimeout  time.Duration `envconfig:"POLICY_MANAGER_EVALUATION_TIMEOUT" default:"10s"`
-	SPResourceManagerURL     string        `envconfig:"SP_RESOURCE_MANAGER_URL"`
-	SPResourceManagerTimeout time.Duration `envconfig:"SP_RESOURCE_MANAGER_TIMEOUT" default:"10s"`
+	PlacementManagerURL     string        `envconfig:"PLACEMENT_MANAGER_URL"`
+	PlacementManagerTimeout time.Duration `envconfig:"PLACEMENT_MANAGER_TIMEOUT" default:"10s"`
 }
 
 func LoadConfig() (*Config, error) {
