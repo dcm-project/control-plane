@@ -14,9 +14,3 @@ type Resource struct {
 	Spec                  map[string]any `json:"spec"`
 	UpdateTime            *time.Time     `json:"update_time,omitempty"`
 }
-
-// ResourceList is a paginated list of resources.
-type ResourceList struct {
-	NextPageToken *string    `json:"next_page_token,omitempty"`
-	Resources     []Resource `json:"resources"`
-}

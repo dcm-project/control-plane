@@ -31,12 +31,6 @@ type DBConfig struct {
 	Password string `envconfig:"DB_PASSWORD"`
 }
 
-// PlacementConfig holds Placement Manager configuration
-type PlacementConfig struct {
-	URL     string        `envconfig:"PLACEMENT_MANAGER_URL" default:"http://localhost:8081"`
-	Timeout time.Duration `envconfig:"PLACEMENT_MANAGER_TIMEOUT" default:"10s"`
-}
-
 // SeedConfig holds configuration for seeding default catalog items
 type SeedConfig struct {
 	// RegionDefault for metadata.labels.region; empty leaves the field without a default.
@@ -52,10 +46,9 @@ func DefaultSeedConfig() SeedConfig {
 
 // Config holds all configuration for the application
 type Config struct {
-	Service   ServiceConfig
-	Database  DBConfig
-	Placement PlacementConfig
-	Seed      SeedConfig
+	Service  ServiceConfig
+	Database DBConfig
+	Seed     SeedConfig
 }
 
 func Load() (*Config, error) {
@@ -64,9 +57,6 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if err := envconfig.Process("", &cfg.Database); err != nil {
-		return nil, err
-	}
-	if err := envconfig.Process("", &cfg.Placement); err != nil {
 		return nil, err
 	}
 	if err := envconfig.Process("", &cfg.Seed); err != nil {

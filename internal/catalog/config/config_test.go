@@ -31,24 +31,7 @@ func TestLoad_pgsqlWithCredentials(t *testing.T) {
 	}
 }
 
-func TestLoad_placementTimeoutDefault(t *testing.T) {
-	t.Setenv("DB_TYPE", "sqlite")
-	t.Setenv("DB_NAME", "/tmp/catalog-placement-timeout.db")
-	t.Setenv("DB_USER", "")
-	t.Setenv("DB_PASSWORD", "")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.Placement.Timeout != 10*time.Second {
-		t.Fatalf("PLACEMENT_MANAGER_TIMEOUT: got %v", cfg.Placement.Timeout)
-	}
-
-	_ = os.Remove("/tmp/catalog-placement-timeout.db")
-}
-
-func TestLoad_httpServerTimeoutDefaults(t *testing.T) {
+func TestLoad_serviceTimeoutsDefault(t *testing.T) {
 	t.Setenv("DB_TYPE", "sqlite")
 	t.Setenv("DB_NAME", "/tmp/catalog-test.db")
 	t.Setenv("DB_USER", "")
