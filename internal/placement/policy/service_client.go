@@ -9,16 +9,16 @@ import (
 	policyservice "github.com/dcm-project/control-plane/internal/policy/service"
 )
 
-type localClient struct {
+type serviceClient struct {
 	eval policyservice.EvaluationService
 }
 
-// NewLocalClient creates an in-process policy engine client.
-func NewLocalClient(eval policyservice.EvaluationService) Client {
-	return &localClient{eval: eval}
+// NewServiceClient adapts EvaluationService for in-process use by PlacementService.
+func NewServiceClient(eval policyservice.EvaluationService) Client {
+	return &serviceClient{eval: eval}
 }
 
-func (c *localClient) Evaluate(ctx context.Context, req EvaluateRequest) (*EvaluateResponse, error) {
+func (c *serviceClient) Evaluate(ctx context.Context, req EvaluateRequest) (*EvaluateResponse, error) {
 	response, err := c.eval.EvaluateRequest(ctx, &policyservice.EvaluationRequest{
 		ServiceInstance: req.Spec,
 	})

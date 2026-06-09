@@ -1,4 +1,4 @@
-// Package policy provides a client for the policy evaluation service.
+// Package policy provides types and an adapter boundary for policy evaluation.
 package policy
 
 import (
@@ -6,29 +6,29 @@ import (
 	"fmt"
 )
 
-// EvaluateRequest is the request body for policy evaluation
+// EvaluateRequest is the input for policy evaluation.
 type EvaluateRequest struct {
 	Spec map[string]any `json:"spec"`
 }
 
-// EvaluateResponse is the response from policy evaluation
+// EvaluateResponse is the result of policy evaluation.
 type EvaluateResponse struct {
 	Status           string         `json:"status"`
 	SelectedProvider string         `json:"selected_provider"`
 	EvaluatedSpec    map[string]any `json:"evaluated_spec"`
 }
 
-// Client defines the interface for policy evaluation.
+// Client is the port PlacementService uses to evaluate policies.
 type Client interface {
 	Evaluate(ctx context.Context, req EvaluateRequest) (*EvaluateResponse, error)
 }
 
-// HTTPError represents an HTTP error from the policy engine
+// HTTPError carries a status code and message from the evaluation adapter.
 type HTTPError struct {
 	StatusCode int
 	Body       string
 }
 
 func (e *HTTPError) Error() string {
-	return fmt.Sprintf("policy engine returned status %d: %s", e.StatusCode, e.Body)
+	return fmt.Sprintf("policy evaluation returned status %d: %s", e.StatusCode, e.Body)
 }

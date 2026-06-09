@@ -11,16 +11,16 @@ import (
 	rmsvc "github.com/dcm-project/control-plane/internal/sp/service/resource_manager"
 )
 
-type localClient struct {
+type serviceClient struct {
 	instances *rmsvc.InstanceService
 }
 
-// NewLocalClient creates an in-process SPRM client backed by InstanceService.
-func NewLocalClient(instances *rmsvc.InstanceService) Client {
-	return &localClient{instances: instances}
+// NewServiceClient adapts InstanceService for in-process use by PlacementService.
+func NewServiceClient(instances *rmsvc.InstanceService) Client {
+	return &serviceClient{instances: instances}
 }
 
-func (c *localClient) CreateResource(ctx context.Context, req CreateResourceRequest) (*CreateResourceResponse, error) {
+func (c *serviceClient) CreateResource(ctx context.Context, req CreateResourceRequest) (*CreateResourceResponse, error) {
 	body := sprmv1alpha1.ServiceTypeInstance{
 		ProviderName: req.ProviderName,
 		Spec:         req.Spec,
@@ -42,15 +42,15 @@ func (c *localClient) CreateResource(ctx context.Context, req CreateResourceRequ
 	return resp, nil
 }
 
-func (c *localClient) DeleteResource(ctx context.Context, resourceID string) error {
+func (c *serviceClient) DeleteResource(ctx context.Context, resourceID string) error {
 	return c.deleteResource(ctx, resourceID, false)
 }
 
-func (c *localClient) DeleteResourceDeferred(ctx context.Context, resourceID string) error {
+func (c *serviceClient) DeleteResourceDeferred(ctx context.Context, resourceID string) error {
 	return c.deleteResource(ctx, resourceID, true)
 }
 
-func (c *localClient) deleteResource(ctx context.Context, resourceID string, deferred bool) error {
+func (c *serviceClient) deleteResource(ctx context.Context, resourceID string, deferred bool) error {
 	if err := c.instances.DeleteInstance(ctx, resourceID, deferred); err != nil {
 		return mapInstanceError(err)
 	}

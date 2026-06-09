@@ -1,4 +1,4 @@
-// Package sprm provides a client for the Service Provider Resource Manager.
+// Package sprm provides types and an adapter boundary for SP resource instances.
 package sprm
 
 import (
@@ -6,27 +6,27 @@ import (
 	"fmt"
 )
 
-// CreateResourceRequest is the request body for creating a resource in SPRM
+// CreateResourceRequest is the input for creating a service type instance.
 type CreateResourceRequest struct {
 	ID           string         `json:"id"`
 	Spec         map[string]any `json:"spec"`
 	ProviderName string         `json:"provider_name"`
 }
 
-// CreateResourceResponse is the response from creating a resource
+// CreateResourceResponse is the result of creating a service type instance.
 type CreateResourceResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
 }
 
-// Client defines the interface for interacting with the Service Provider Resource Manager
+// Client is the port PlacementService uses to manage SP resource instances.
 type Client interface {
 	CreateResource(ctx context.Context, req CreateResourceRequest) (*CreateResourceResponse, error)
 	DeleteResource(ctx context.Context, resourceId string) error
 	DeleteResourceDeferred(ctx context.Context, resourceId string) error
 }
 
-// HTTPError represents an error from SPRM with an HTTP-style status code.
+// HTTPError carries a status code and message from the SPRM adapter.
 type HTTPError struct {
 	StatusCode int
 	Body       string

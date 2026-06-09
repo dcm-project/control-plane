@@ -92,8 +92,8 @@ func Run() int {
 	spProviderService := spprovidersvc.NewProviderService(spDataStore)
 	spInstanceService := sprmsvc.NewInstanceService(spDataStore, nil)
 
-	policyClient := placementpolicy.NewLocalClient(evaluationService)
-	sprmClient := placementsprm.NewLocalClient(spInstanceService)
+	policyClient := placementpolicy.NewServiceClient(evaluationService)
+	sprmClient := placementsprm.NewServiceClient(spInstanceService)
 
 	placementService := placementservice.NewPlacementService(placementDataStore, policyClient, sprmClient)
 	pmClient, err := buildPlacementClient(cfg, placementService, logger)
