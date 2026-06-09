@@ -238,5 +238,11 @@ main = {"rejected": false, "patch": {"cpu_limit": input.spec.cpu}} if {
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, opa.ErrInvalidRego)).To(BeTrue())
 		})
+
+		It("rejects code without a main rule", func() {
+			err := engine.ValidateRego(ctx, "package test\ndefault allow = true")
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, opa.ErrMissingMainRule)).To(BeTrue())
+		})
 	})
 })

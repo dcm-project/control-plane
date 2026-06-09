@@ -134,10 +134,23 @@ func (e *embeddedEngine) ValidateRego(_ context.Context, regoCode string) error 
 		return fmt.Errorf("%w: empty Rego code", ErrInvalidRego)
 	}
 
-	_, err := ast.ParseModuleWithOpts("validation", regoCode, ast.ParserOptions{RegoVersion: ast.RegoV1})
+	module, err := ast.ParseModuleWithOpts("validation", regoCode, ast.ParserOptions{RegoVersion: ast.RegoV1})
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidRego, err)
 	}
 
+	if !moduleHasMainRule(module) {
+		return fmt.Errorf("%w", ErrMissingMainRule)
+	}
+
 	return nil
+}
+
+func moduleHasMainRule(module *ast.Module) bool {
+	for _, rule := range module.Rules {
+		if rule.Head.Name.String() == "main" {
+			return true
+		}
+	}
+	return false
 }

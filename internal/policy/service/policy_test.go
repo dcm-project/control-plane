@@ -21,6 +21,10 @@ func strPtr(s string) *string { return &s }
 
 func policyTypePtr(t v1alpha1.PolicyPolicyType) *v1alpha1.PolicyPolicyType { return &t }
 
+const testRegoWithMain = "package test\n\nmain := {\n  \"rejected\": false\n}"
+
+const testRegoRejectedMain = "package test\n\nmain := {\n  \"rejected\": true\n}"
+
 type rollbackMockEngine struct {
 	compileFunc func(ctx context.Context, policies []opa.PolicyModule) error
 }
@@ -74,7 +78,7 @@ var _ = Describe("PolicyService", func() {
 	Describe("CreatePolicy", func() {
 		It("should create policy with client-specified ID", func() {
 			clientID := "my-custom-policy"
-			regoCode := "package test\ndefault allow = true"
+			regoCode := testRegoWithMain
 
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
@@ -99,7 +103,7 @@ var _ = Describe("PolicyService", func() {
 		})
 
 		It("should create policy with server-generated UUID", func() {
-			regoCode := "package test\ndefault allow = true"
+			regoCode := testRegoWithMain
 
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
@@ -138,7 +142,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 				Priority:    &priority,
 			}
 
@@ -156,7 +160,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 				Priority:    &priority,
 			}
 
@@ -174,7 +178,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy Min Priority"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 				Priority:    &priority,
 			}
 
@@ -190,7 +194,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy Max Priority"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 				Priority:    &priority,
 			}
 
@@ -206,7 +210,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 				Priority:    &priority,
 			}
 
@@ -224,7 +228,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy Mid Priority"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 				Priority:    &priority,
 			}
 
@@ -255,7 +259,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 
 			_, err := policyService.CreatePolicy(ctx, policy, &invalidID)
@@ -272,7 +276,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 
 			// Create first policy
@@ -292,7 +296,7 @@ var _ = Describe("PolicyService", func() {
 
 		It("should preserve original Rego when duplicate ID create fails", func() {
 			clientID := "duplicate-rego-preserved"
-			originalRego := "package original\nallow = true"
+			originalRego := "package original\n\nmain := {\n  \"rejected\": false\n}"
 			policy1 := v1alpha1.Policy{
 				DisplayName: strPtr("First Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
@@ -305,7 +309,7 @@ var _ = Describe("PolicyService", func() {
 			policy2 := v1alpha1.Policy{
 				DisplayName: strPtr("Second Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package overwrite\nallow = false"),
+				RegoCode:    strPtr("package overwrite\n\nmain := {\n  \"rejected\": true\n}"),
 			}
 			_, err = policyService.CreatePolicy(ctx, policy2, &clientID)
 			Expect(err).To(HaveOccurred())
@@ -323,7 +327,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Unique Display Name"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			id1 := "policy-dn-1"
 			_, err := policyService.CreatePolicy(ctx, policy, &id1)
@@ -343,7 +347,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Policy One"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 				Priority:    &priority,
 			}
 			id1 := "policy-prio-1"
@@ -353,7 +357,7 @@ var _ = Describe("PolicyService", func() {
 			policy2 := v1alpha1.Policy{
 				DisplayName: strPtr("Policy Two"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 				Priority:    &priority,
 			}
 			id2 := "policy-prio-2"
@@ -370,7 +374,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 
 			created, err := policyService.CreatePolicy(ctx, policy, &clientID)
@@ -390,7 +394,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName:   strPtr("Test Policy"),
 				PolicyType:    policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:      strPtr("package test"),
+				RegoCode:      strPtr(testRegoWithMain),
 				Enabled:       &enabled,
 				Priority:      &priority,
 				Description:   &description,
@@ -404,6 +408,23 @@ var _ = Describe("PolicyService", func() {
 			Expect(*created.Priority).To(Equal(int32(100)))
 			Expect(*created.Description).To(Equal("Custom description"))
 			Expect(*created.LabelSelector).To(Equal(map[string]string{"env": "prod"}))
+		})
+
+		It("should reject Rego code without a main rule", func() {
+			policy := v1alpha1.Policy{
+				DisplayName: strPtr("Test Policy"),
+				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
+				RegoCode:    strPtr("package test\ndefault allow = true"),
+			}
+
+			_, err := policyService.CreatePolicy(ctx, policy, nil)
+
+			Expect(err).To(HaveOccurred())
+			serviceErr, ok := err.(*service.ServiceError)
+			Expect(ok).To(BeTrue())
+			Expect(serviceErr.Type).To(Equal(service.ErrorTypeInvalidArgument))
+			Expect(serviceErr.Message).To(ContainSubstring("Invalid Rego code"))
+			Expect(serviceErr.Detail).To(ContainSubstring("main rule"))
 		})
 
 		It("should reject invalid Rego code", func() {
@@ -424,7 +445,7 @@ var _ = Describe("PolicyService", func() {
 
 		It("should store rego_code in DB and return it on Get", func() {
 			clientID := "rego-store-test"
-			regoCode := "package test\ndefault allow = false"
+			regoCode := testRegoRejectedMain
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Store Rego Test"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
@@ -445,7 +466,7 @@ var _ = Describe("PolicyService", func() {
 	Describe("GetPolicy", func() {
 		It("should get existing policy with RegoCode from DB", func() {
 			clientID := "get-test"
-			regoCode := "package test\ndefault allow = true"
+			regoCode := testRegoWithMain
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
@@ -500,7 +521,7 @@ var _ = Describe("PolicyService", func() {
 				policy := v1alpha1.Policy{
 					DisplayName: &displayName,
 					PolicyType:  policyTypePtr(p.policyType),
-					RegoCode:    strPtr("package test"),
+					RegoCode:    strPtr(testRegoWithMain),
 					Enabled:     &enabled,
 					Priority:    &priority,
 				}
@@ -667,7 +688,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Original Name"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package original"),
+				RegoCode:    strPtr("package original\n\nmain := {\n  \"rejected\": false\n}"),
 				Enabled:     &enabled,
 				Priority:    &priority,
 			}
@@ -704,12 +725,12 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test\ndefault allow = false"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			_, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
 
-			newRego := "package test\ndefault allow = true"
+			newRego := testRegoWithMain
 			patch := &v1alpha1.Policy{
 				RegoCode: &newRego,
 			}
@@ -727,7 +748,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			_, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
@@ -750,7 +771,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			_, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
@@ -769,7 +790,7 @@ var _ = Describe("PolicyService", func() {
 			// Verify old Rego still in DB
 			retrieved, err := policyService.GetPolicy(ctx, clientID)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(*retrieved.RegoCode).To(Equal("package test"))
+			Expect(*retrieved.RegoCode).To(Equal(testRegoWithMain))
 		})
 
 		It("should not recompile when RegoCode not in patch", func() {
@@ -777,7 +798,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			_, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
@@ -793,7 +814,7 @@ var _ = Describe("PolicyService", func() {
 			// Rego should be preserved
 			retrieved, err := policyService.GetPolicy(ctx, clientID)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(*retrieved.RegoCode).To(Equal("package test"))
+			Expect(*retrieved.RegoCode).To(Equal(testRegoWithMain))
 		})
 
 		It("should return NotFound error for non-existent policy", func() {
@@ -811,7 +832,7 @@ var _ = Describe("PolicyService", func() {
 		})
 
 		It("should return AlreadyExists when updating to another policy's display_name and policy_type", func() {
-			regoCode := "package test"
+			regoCode := testRegoWithMain
 			prioA := int32(200)
 			prioB := int32(300)
 			idA := "update-dn-a"
@@ -845,7 +866,7 @@ var _ = Describe("PolicyService", func() {
 		})
 
 		It("should return AlreadyExists when updating to another policy's priority and policy_type", func() {
-			regoCode := "package test"
+			regoCode := testRegoWithMain
 			prio200 := int32(200)
 			prio300 := int32(300)
 			idA := "update-prio-a"
@@ -884,7 +905,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 				Priority:    &priority,
 			}
 			_, err := policyService.CreatePolicy(ctx, policy, &clientID)
@@ -910,7 +931,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 				Priority:    &priority,
 			}
 			_, err := policyService.CreatePolicy(ctx, policy, &clientID)
@@ -936,7 +957,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test Policy"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 				Priority:    &priority,
 			}
 			_, err := policyService.CreatePolicy(ctx, policy, &clientID)
@@ -960,7 +981,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Path Test"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			_, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
@@ -983,7 +1004,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Path Same Test"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			created, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
@@ -1004,7 +1025,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("ID Test"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			_, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
@@ -1027,7 +1048,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Type Test"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			_, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
@@ -1049,7 +1070,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Type Same Test"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			created, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
@@ -1069,7 +1090,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("CreateTime Test"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			_, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
@@ -1092,7 +1113,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("UpdateTime Test"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			created, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
@@ -1121,7 +1142,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Mutable Only"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			_, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
@@ -1142,7 +1163,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Nil Fields Test"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			created, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
@@ -1168,7 +1189,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Test"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 			_, err := policyService.CreatePolicy(ctx, policy, &clientID)
 			Expect(err).ToNot(HaveOccurred())
@@ -1210,7 +1231,7 @@ var _ = Describe("PolicyService", func() {
 			policy := v1alpha1.Policy{
 				DisplayName: strPtr("Rollback Create Test"),
 				PolicyType:  policyTypePtr(v1alpha1.GLOBAL),
-				RegoCode:    strPtr("package test\ndefault allow = true"),
+				RegoCode:    strPtr(testRegoWithMain),
 			}
 
 			_, err := svc.CreatePolicy(reqCtx, policy, &clientID)
@@ -1225,8 +1246,8 @@ var _ = Describe("PolicyService", func() {
 
 		It("rolls back DB update when recompile fails with canceled request context", func() {
 			clientID := "rollback-update-test"
-			originalRego := "package test\ndefault allow = true"
-			updatedRego := "package test\ndefault allow = false"
+			originalRego := testRegoWithMain
+			updatedRego := testRegoRejectedMain
 
 			realEngine := opa.NewEngine()
 			svc := service.NewPolicyService(dataStore, realEngine)

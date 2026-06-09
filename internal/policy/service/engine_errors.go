@@ -13,6 +13,13 @@ func handleEngineError(err error, operation string) *ServiceError {
 		return nil
 	}
 
+	if errors.Is(err, opa.ErrMissingMainRule) {
+		return NewInvalidArgumentError(
+			"Invalid Rego code",
+			"The rego_code must define a main rule that returns a policy decision object",
+		)
+	}
+
 	if errors.Is(err, opa.ErrInvalidRego) {
 		return NewInvalidArgumentError(
 			"Invalid Rego code",
