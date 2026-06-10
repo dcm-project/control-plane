@@ -27,10 +27,10 @@ servicetypes/
 │   ├── spec.yaml           # Cluster OpenAPI specification
 │   ├── spec.gen.cfg        # oapi-codegen config for Cluster types
 │   └── types.gen.go        # Generated Cluster types
-└── three_tier_app_demo/
-    ├── spec.yaml           # Three-Tier App Demo OpenAPI specification
-    ├── spec.gen.cfg        # oapi-codegen config for Three-Tier App Demo types
-    └── types.gen.go        # Generated Three-Tier App Demo types
+├── three_tier_app_demo/
+│   ├── spec.yaml           # Three-Tier App Demo OpenAPI specification
+│   ├── spec.gen.cfg        # oapi-codegen config for Three-Tier App Demo types
+│   └── types.gen.go        # Generated Three-Tier App Demo types
 ```
 
 Each service type folder is self-contained with:
@@ -68,6 +68,11 @@ Each service type folder is self-contained with:
   - `DatabaseTier` (engine, version, optional image)
   - `AppTier` (image)
   - `WebTier` (version, optional image)
+
+Multi-resource stacks (for example database + container) are defined as
+**composite catalog items** — see
+[catalog-item-schema](/enhancements/catalog-item-schema/catalog-item-schema.md#composite-catalog-item).
+There is no `application` service type in the service-type registry.
 
 ## Usage
 
