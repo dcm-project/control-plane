@@ -58,3 +58,16 @@ Per-domain subsystem tests still run separately; catalog compose may set
 production API on the monolith).
 
 Legacy `cmd/*-manager` binaries were removed. Use `make build` / `make run`.
+
+### Container image
+
+Build locally:
+
+```bash
+make image-build
+```
+
+CI pushes to `quay.io/dcm-project/control-plane` on merges to `main` and
+`release/v*` branches (and on version tags). See
+[Releasing](https://github.com/dcm-project/shared-workflows#release-flow)
+in shared-workflows for tag behavior and version conventions.

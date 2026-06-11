@@ -48,6 +48,9 @@ compose-up:
 compose-down:
 	$(COMPOSE) -f $(COMPOSE_FILE) down -v
 
+image-build:
+	$(CONTAINER_ENGINE) build -f Containerfile -t $(CONTAINER_IMAGE_NAME):$(CONTAINER_IMAGE_TAG) .
+
 clean:
 	rm -rf bin/
 
@@ -71,5 +74,5 @@ test:
 tidy:
 	go mod tidy
 
-.PHONY: build run run-dev compose-up compose-down clean fmt vet lint test \
+.PHONY: build run run-dev compose-up compose-down image-build clean fmt vet lint test \
 	test-catalog test-placement test-policy test-sp tidy
