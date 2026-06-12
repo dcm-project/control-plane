@@ -1,0 +1,82 @@
+# -- Global settings
+global:
+  imageTag: main
+
+# -- PostgreSQL
+postgres:
+  image: docker.io/library/postgres:16-alpine
+  user: admin
+  password: adminpass
+  storage: 1Gi
+
+# -- NATS
+nats:
+  image: docker.io/library/nats:2-alpine
+  storage: 1Gi
+
+# -- Control-plane monolith (catalog, policy, placement, SP manager)
+controlPlane:
+  image: quay.io/dcm-project/control-plane
+  tag: ""  # defaults to global.imageTag
+  route:
+    enabled: true
+    host: ""  # leave empty for auto-generated OpenShift hostname
+  ingress:
+    enabled: false
+    className: ""
+    host: ""
+    tls: []
+    annotations: {}
+
+# -- DCM UI
+dcmUi:
+  enabled: true
+  image: quay.io/dcm-project/dcm-ui
+  tag: ""
+  route:
+    enabled: true
+    host: ""
+  ingress:
+    enabled: false
+    className: ""
+    host: ""
+    tls: []
+    annotations: {}
+
+# -- Optional service providers (disabled by default)
+kubevirtServiceProvider:
+  enabled: false
+  image: quay.io/dcm-project/kubevirt-service-provider
+  tag: ""
+  providerName: kubevirt-service-provider
+  namespace: default
+  kubeconfig: ""  # base64-encoded kubeconfig content for the Secret
+
+k8sContainerServiceProvider:
+  enabled: false
+  image: quay.io/dcm-project/k8s-container-service-provider
+  tag: ""
+  spName: k8s-container-provider
+  namespace: default
+  externalSvcType: NodePort
+  kubeconfig: ""
+
+acmClusterServiceProvider:
+  enabled: false
+  image: quay.io/dcm-project/acm-cluster-service-provider
+  tag: ""
+  spName: acm-cluster-sp
+  namespace: default
+  baseDomain: ""
+  pullSecret: ""
+  defaultInfraEnv: ""
+  agentNamespace: ""
+  kubeconfig: ""
+
+threeTierDemoServiceProvider:
+  enabled: false
+  image: quay.io/dcm-project/three-tier-app-demo-service-provider
+  tag: ""
+  spName: three-tier-provider
+  namespace: default
+  kubeconfig: ""

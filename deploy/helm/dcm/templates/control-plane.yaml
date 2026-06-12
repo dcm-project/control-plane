@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dcm.fullname" . }}-control-plane
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+    {{- include "dcm.selectorLabels" (dict "context" . "component" "control-plane") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "dcm.selectorLabels" (dict "context" . "component" "control-plane") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dcm.selectorLabels" (dict "context" . "component" "control-plane") | nindent 8 }}
+    spec:
+      initContainers:
+        {{- include "dcm.waitForPostgres" . | nindent 8 }}
+      containers:
+        - name: control-plane
+          image: "{{ .Values.controlPlane.image }}:{{ include "dcm.imageTag" (dict "tag" .Values.controlPlane.tag "global" .Values.global) }}"
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: {{ include "dcm.fullname" . }}-db
+          env:
+            - name: DB_TYPE
+              value: pgsql
+            - name: DB_HOST
+              value: {{ include "dcm.fullname" . }}-postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: control-plane
+            - name: BIND_ADDRESS
+              value: ":8080"
+            - name: LOG_LEVEL
+              value: info
+            - name: NATS_URL
+              value: "nats://{{ include "dcm.fullname" . }}-nats:4222"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dcm.fullname" . }}-control-plane
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "dcm.selectorLabels" (dict "context" . "component" "control-plane") | nindent 4 }}
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+{{- if .Values.controlPlane.route.enabled }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "dcm.fullname" . }}-control-plane
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.controlPlane.route.host }}
+  host: {{ .Values.controlPlane.route.host }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ include "dcm.fullname" . }}-control-plane
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}
+{{- if .Values.controlPlane.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "dcm.fullname" . }}-control-plane
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+  {{- with .Values.controlPlane.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.controlPlane.ingress.className }}
+  ingressClassName: {{ .Values.controlPlane.ingress.className }}
+  {{- end }}
+  rules:
+    - {{- if .Values.controlPlane.ingress.host }}
+      host: {{ .Values.controlPlane.ingress.host }}
+      {{- end }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "dcm.fullname" . }}-control-plane
+                port:
+                  number: 8080
+  {{- with .Values.controlPlane.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

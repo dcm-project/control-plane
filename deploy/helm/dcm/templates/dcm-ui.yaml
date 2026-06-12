@@ -1,0 +1,99 @@
+{{- if .Values.dcmUi.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dcm.fullname" . }}-dcm-ui
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+    {{- include "dcm.selectorLabels" (dict "context" . "component" "dcm-ui") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "dcm.selectorLabels" (dict "context" . "component" "dcm-ui") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dcm.selectorLabels" (dict "context" . "component" "dcm-ui") | nindent 8 }}
+    spec:
+      containers:
+        - name: dcm-ui
+          image: "{{ .Values.dcmUi.image }}:{{ include "dcm.imageTag" (dict "tag" .Values.dcmUi.tag "global" .Values.global) }}"
+          ports:
+            - containerPort: 7007
+              protocol: TCP
+          env:
+            - name: APP_BASE_URL
+              value: "http://localhost:7007"
+            - name: DCM_API_GATEWAY_URL
+              value: "http://{{ include "dcm.fullname" . }}-control-plane:8080"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dcm.fullname" . }}-dcm-ui
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "dcm.selectorLabels" (dict "context" . "component" "dcm-ui") | nindent 4 }}
+  ports:
+    - port: 7007
+      targetPort: 7007
+      protocol: TCP
+{{- if .Values.dcmUi.route.enabled }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "dcm.fullname" . }}-dcm-ui
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.dcmUi.route.host }}
+  host: {{ .Values.dcmUi.route.host }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ include "dcm.fullname" . }}-dcm-ui
+  port:
+    targetPort: 7007
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}
+{{- if .Values.dcmUi.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "dcm.fullname" . }}-dcm-ui
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+  {{- with .Values.dcmUi.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.dcmUi.ingress.className }}
+  ingressClassName: {{ .Values.dcmUi.ingress.className }}
+  {{- end }}
+  rules:
+    - {{- if .Values.dcmUi.ingress.host }}
+      host: {{ .Values.dcmUi.ingress.host }}
+      {{- end }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "dcm.fullname" . }}-dcm-ui
+                port:
+                  number: 7007
+  {{- with .Values.dcmUi.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}

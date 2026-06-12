@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "dcm.fullname" . }}-nats
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+    {{- include "dcm.selectorLabels" (dict "context" . "component" "nats") | nindent 4 }}
+spec:
+  serviceName: {{ include "dcm.fullname" . }}-nats
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "dcm.selectorLabels" (dict "context" . "component" "nats") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dcm.selectorLabels" (dict "context" . "component" "nats") | nindent 8 }}
+    spec:
+      containers:
+        - name: nats
+          image: {{ .Values.nats.image }}
+          args: ["--jetstream", "--store_dir=/data"]
+          ports:
+            - containerPort: 4222
+              protocol: TCP
+              name: client
+            - containerPort: 8222
+              protocol: TCP
+              name: monitoring
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.nats.storage }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dcm.fullname" . }}-nats
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "dcm.selectorLabels" (dict "context" . "component" "nats") | nindent 4 }}
+  ports:
+    - port: 4222
+      targetPort: 4222
+      protocol: TCP
+      name: client
+    - port: 8222
+      targetPort: 8222
+      protocol: TCP
+      name: monitoring
