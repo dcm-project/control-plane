@@ -44,7 +44,7 @@ spec:
               command:
                 - pg_isready
                 - -U
-                - $(POSTGRES_USER)
+                - {{ .Values.postgres.user | quote }}
                 - -d
                 - postgres
             initialDelaySeconds: 5
@@ -56,7 +56,7 @@ spec:
               command:
                 - pg_isready
                 - -U
-                - $(POSTGRES_USER)
+                - {{ .Values.postgres.user | quote }}
                 - -d
                 - postgres
             initialDelaySeconds: 15
