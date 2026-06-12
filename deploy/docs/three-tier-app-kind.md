@@ -77,8 +77,8 @@ Note the provider’s `name` (by default `three-tier-provider` unless you change
 
 ### 2. Provision the Pet Clinic application
 
-Register a placement policy once, then create a catalog item instance via the gateway (**`dcm`** or
-**`curl`**). The **First time only (policy)** note sits next to the commands in each subsection.
+Register a placement policy once, then create a catalog item instance via the
+control-plane API (**`dcm`** or **`curl`**). The **First time only (policy)** note sits next to the commands in each subsection.
 
 #### With DCM CLI
 
@@ -120,8 +120,8 @@ EOF
 **`three-tier-provider`**. **`my-petclinic.yaml`** is the catalog instance (Pet Clinic item and DB
 settings).
 
-**Gateway URL:** This repo does not ship a DCM config file. The CLI defaults to
-`http://localhost:8080`, which matches a local api-gateway stack; **no config file is required** for
+**Control-plane URL:** This repo does not ship a DCM config file. The CLI defaults to
+`http://localhost:8080`, which matches this compose stack; **no config file is required** for
 that case. Otherwise set `export DCM_API_GATEWAY_URL=…` for the session, or create
 `~/.dcm/config.yaml`:
 
