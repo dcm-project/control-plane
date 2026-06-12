@@ -82,7 +82,7 @@ Full-stack Compose and Helm packaging live under `deploy/`:
 See [deploy/RUN.md](deploy/RUN.md) for local stack usage and service provider profiles.
 See [deploy/helm/dcm/README.md](deploy/helm/dcm/README.md) for cluster installs.
 
-The control-plane API is exposed directly on `:8080` (no Traefik gateway).
+The control-plane API is exposed on `:8080`.
 
 ### Image versions
 
