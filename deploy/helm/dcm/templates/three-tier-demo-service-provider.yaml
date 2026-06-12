@@ -1,4 +1,16 @@
 {{- if .Values.threeTierDemoServiceProvider.enabled }}
+{{- if .Values.threeTierDemoServiceProvider.kubeconfig }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "dcm.fullname" . }}-three-tier-kubeconfig
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+type: Opaque
+data:
+  kubeconfig: {{ .Values.threeTierDemoServiceProvider.kubeconfig | b64enc | quote }}
+---
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -62,7 +74,7 @@ spec:
       volumes:
         - name: kubeconfig
           secret:
-            secretName: {{ include "dcm.fullname" . }}-k8s-container-kubeconfig
+            secretName: {{ include "dcm.fullname" . }}-three-tier-kubeconfig
       {{- end }}
 ---
 apiVersion: v1
