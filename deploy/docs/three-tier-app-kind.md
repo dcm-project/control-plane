@@ -12,8 +12,7 @@ sections below give **`dcm`** ([CLI repo](https://github.com/dcm-project/cli)) a
 same operations. They are equivalent, so use whichever you prefer.
 Build or install **`dcm`** per the [CLI README](https://github.com/dcm-project/cli/blob/main/README.md).
 Set the control-plane API URL in **`~/.dcm/config.yaml`** (`control-plane-url`) or via
-**`DCM_CONTROL_PLANE_URL`** if the API is not on localhost:8080 (default). Legacy aliases
-**`api-gateway-url`** and **`DCM_API_GATEWAY_URL`** still work.
+**`DCM_CONTROL_PLANE_URL`** if the API is not on localhost:8080 (default).
 
 ### Prerequisites
 
@@ -130,8 +129,6 @@ that case. Otherwise set `export DCM_CONTROL_PLANE_URL=…` for the session, or 
 ```yaml
 control-plane-url: http://localhost:8080
 ```
-
-Legacy aliases `DCM_API_GATEWAY_URL` and `api-gateway-url` still work.
 
 If Policy Manager has never been configured, add the rule below so the
 platform selects your three-tier provider (same `name` as in step **1**, usually `three-tier-provider`).

@@ -21,8 +21,7 @@ The control-plane API is at `http://localhost:8080`. DCM UI is at `http://localh
 
 The [DCM CLI](https://github.com/dcm-project/cli) uses the same control-plane URL by default
 (`http://localhost:8080`). Override it with the `control-plane-url` key in `~/.dcm/config.yaml`
-or the `DCM_CONTROL_PLANE_URL` environment variable. Legacy aliases `api-gateway-url` and
-`DCM_API_GATEWAY_URL` still work. See the [CLI README](https://github.com/dcm-project/cli/blob/main/README.md)
+or the `DCM_CONTROL_PLANE_URL` environment variable. See the [CLI README](https://github.com/dcm-project/cli/blob/main/README.md)
 for install and usage.
 
 ## Running with service providers
