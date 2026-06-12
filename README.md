@@ -14,7 +14,7 @@ internal/sp/                    # service provider manager
 api/                            # OpenAPI specs per domain
 pkg/                            # generated HTTP clients
 test/subsystem/                 # per-domain subsystem tests
-deploy/                         # compose and postgres init
+deploy/                         # platform compose, helm chart, postgres init
 ```
 
 See the [control plane monolith enhancement](https://github.com/dcm-project/enhancements/tree/main/enhancements/control-plane-monolith).
@@ -36,17 +36,17 @@ Run the monolith (pick one):
 |---------|---------------|----------|------------|
 | `make run` | host | SQLite at `/tmp/control-plane.db` | NATS disabled |
 | `make run-dev` | host | Postgres (`DB_*` defaults) | Postgres + NATS running locally |
-| `make compose-up` | containers | Postgres in compose | also starts NATS and control-plane |
+| `make compose-up` | containers | Postgres in compose | also starts NATS, control-plane, and dcm-ui |
 
 ```bash
 make run              # SQLite, no containers
-make compose-up       # full stack in containers
+make compose-up       # platform stack in containers
 make compose-down     # stop stack and remove volumes
 ```
 
 Compose uses `POSTGRES_USER` and `POSTGRES_PASSWORD` (defaults in compose
 are for local dev only). Override via environment or a `.env` file; see
-`.env.example`.
+`deploy/.env.example`.
 
 Policy evaluation and placement provisioning run in-process in the monolith
 (`EvaluationService`, `PlacementService` via local clients). There is no public
@@ -71,3 +71,36 @@ CI pushes to `quay.io/dcm-project/control-plane` on merges to `main` and
 `release/v*` branches (and on version tags). See
 [Releasing](https://github.com/dcm-project/shared-workflows#release-flow)
 in shared-workflows for tag behavior and version conventions.
+
+## Platform deploy
+
+Full-stack Compose and Helm packaging live under `deploy/`:
+
+- **Compose:** control-plane, postgres, nats, dcm-ui, and optional service providers
+- **Helm:** Kubernetes/OpenShift chart at `deploy/helm/dcm`
+
+See [deploy/RUN.md](deploy/RUN.md) for local stack usage and service provider profiles.
+See [deploy/helm/dcm/README.md](deploy/helm/dcm/README.md) for cluster installs.
+
+The control-plane API is exposed directly on `:8080` (no Traefik gateway).
+
+### Image versions
+
+Service repos push images to `quay.io/dcm-project/<service>` with the following tags:
+
+| Tag format | Example | When created |
+|---|---|---|
+| `main` | `main` | Every push to `main` |
+| `<short-sha>` | `a6882f7` | Every push to `main` or `release/v*` branch, and `v*` git tag pushes |
+| `v<semver>-rc.N` | `v0.0.1-rc.2` | Retag script (promotes a release branch SHA to an RC tag) |
+| `v<semver>` | `v0.0.1` | When a `v*` git tag is pushed (final release) |
+
+Browse available tags at `https://quay.io/repository/dcm-project/<service>?tab=tags`.
+
+Pin versions in `.env` (see `deploy/.env.example`):
+
+```bash
+CONTROL_PLANE_VERSION=v0.0.1
+```
+
+Omitting the variable defaults to `main`.
