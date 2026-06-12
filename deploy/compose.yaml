@@ -73,7 +73,7 @@ services:
       SERVICE_MANAGER_ENDPOINT: *dcm-registration-url
       PROVIDER_NAME: ${KUBEVIRT_PROVIDER_NAME:-kubevirt-service-provider}
       PROVIDER_ENDPOINT: "http://${KUBEVIRT_PROVIDER_NAME:-kubevirt-service-provider}:8081/api/v1alpha1/vms"
-      KUBERNETES_NAMESPACE: ${KUBEVIRT_NAMESPACE:-default}
+      KUBERNETES_NAMESPACE: ${KUBERNETES_NAMESPACE:-default}
       KUBERNETES_KUBECONFIG: /kubeconfig
     volumes:
       - ${KUBEVIRT_KUBECONFIG:-~/.kube/config}:/kubeconfig:ro,z
