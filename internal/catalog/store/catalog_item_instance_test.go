@@ -14,6 +14,7 @@ import (
 
 	"github.com/dcm-project/control-plane/internal/catalog/store"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
+	"github.com/dcm-project/control-plane/internal/catalog/testutil"
 )
 
 var _ = Describe("CatalogItemInstance Store", func() {
@@ -65,11 +66,8 @@ var _ = Describe("CatalogItemInstance Store", func() {
 				ID:          id,
 				ApiVersion:  "v1alpha1",
 				DisplayName: fmt.Sprintf("Test %s", id),
-				Spec: model.CatalogItemSpec{
-					ServiceType: serviceType,
-					Fields:      []model.FieldConfiguration{},
-				},
-				Path: fmt.Sprintf("catalog-items/%s", id),
+				Spec:        testutil.ModelCatalogSpec(serviceType, []model.FieldConfiguration{}),
+				Path:        fmt.Sprintf("catalog-items/%s", id),
 			}
 			_, err := catalogItemStore.Create(context.Background(), ci)
 			Expect(err).ToNot(HaveOccurred())
@@ -115,7 +113,7 @@ var _ = Describe("CatalogItemInstance Store", func() {
 			Expect(retrieved.DisplayName).To(Equal(created.DisplayName))
 			Expect(retrieved.Spec.CatalogItemId).To(Equal(created.Spec.CatalogItemId))
 			Expect(retrieved.SpecCatalogItemId).To(Equal(created.SpecCatalogItemId))
-			Expect(retrieved.ResourceID).To(Equal(created.ResourceID))
+			Expect(retrieved.Spec.ResourceIDs).To(Equal(created.Spec.ResourceIDs))
 		})
 
 		It("should return error when creating duplicate ID", func() {
@@ -217,7 +215,7 @@ var _ = Describe("CatalogItemInstance Store", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(retrieved.ID).To(Equal(created.ID))
 			Expect(retrieved.Spec.CatalogItemId).To(Equal("small-vm-get"))
-			Expect(retrieved.ResourceID).To(Equal(created.ResourceID))
+			Expect(retrieved.Spec.ResourceIDs).To(Equal(created.Spec.ResourceIDs))
 		})
 
 		It("should return error for non-existent catalog item instance", func() {
@@ -260,21 +258,21 @@ var _ = Describe("CatalogItemInstance Store", func() {
 		})
 	})
 
-	Describe("UpdateResourceID", func() {
-		It("should update resource_id when expected value matches", func() {
+	Describe("UpdateResourceIDs", func() {
+		It("should update resource_ids when expected value matches", func() {
 			createTestServiceType("vm-st-upd", "vm")
 			createTestCatalogItem("small-vm-upd", "vm")
 
 			cii := model.CatalogItemInstance{
 				ID:          "upd-res-cii",
 				ApiVersion:  "v1alpha1",
-				DisplayName: "Update ResourceID",
+				DisplayName: "Update ResourceIDs",
 				Spec: model.CatalogItemInstanceSpec{
 					CatalogItemId: "small-vm-upd",
 					UserValues:    []model.UserValue{},
+					ResourceIDs:   []string{"old-resource-id"},
 				},
-				ResourceID: "old-resource-id",
-				Path:       "catalog-item-instances/upd-res-cii",
+				Path: "catalog-item-instances/upd-res-cii",
 			}
 
 			_, err := catalogItemInstanceStore.Create(context.Background(), cii)
@@ -283,13 +281,13 @@ var _ = Describe("CatalogItemInstance Store", func() {
 			updated, err := catalogItemInstanceStore.UpdateResourceID(context.Background(), "upd-res-cii", "old-resource-id", "new-resource-id")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(updated).ToNot(BeNil())
-			Expect(updated.ResourceID).To(Equal("new-resource-id"))
+			Expect(updated.Spec.ResourceIDs[0]).To(Equal("new-resource-id"))
 
 			// Verify persisted
 			retrieved, err := catalogItemInstanceStore.Get(context.Background(), "upd-res-cii")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(retrieved.ResourceID).To(Equal("new-resource-id"))
-			Expect(retrieved.DisplayName).To(Equal("Update ResourceID"))
+			Expect(retrieved.Spec.ResourceIDs[0]).To(Equal("new-resource-id"))
+			Expect(retrieved.DisplayName).To(Equal("Update ResourceIDs"))
 		})
 
 		It("should return conflict when expected resource_id does not match", func() {
@@ -303,9 +301,9 @@ var _ = Describe("CatalogItemInstance Store", func() {
 				Spec: model.CatalogItemInstanceSpec{
 					CatalogItemId: "small-vm-cas",
 					UserValues:    []model.UserValue{},
+					ResourceIDs:   []string{"current-resource-id"},
 				},
-				ResourceID: "current-resource-id",
-				Path:       "catalog-item-instances/cas-conflict-cii",
+				Path: "catalog-item-instances/cas-conflict-cii",
 			}
 
 			_, err := catalogItemInstanceStore.Create(context.Background(), cii)
@@ -314,10 +312,10 @@ var _ = Describe("CatalogItemInstance Store", func() {
 			_, err = catalogItemInstanceStore.UpdateResourceID(context.Background(), "cas-conflict-cii", "stale-resource-id", "new-resource-id")
 			Expect(err).To(Equal(store.ErrCatalogItemInstanceConflict))
 
-			// Verify resource_id unchanged
+			// Verify resource_ids unchanged
 			retrieved, err := catalogItemInstanceStore.Get(context.Background(), "cas-conflict-cii")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(retrieved.ResourceID).To(Equal("current-resource-id"))
+			Expect(retrieved.Spec.ResourceIDs).To(Equal([]string{"current-resource-id"}))
 		})
 
 		It("should return not found for non-existent instance", func() {

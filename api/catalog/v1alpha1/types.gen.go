@@ -74,8 +74,9 @@ type CatalogItem struct {
 	// Path Resource path in the format: catalog-items/{catalogItemId}
 	Path *string `json:"path,omitempty"`
 
-	// Spec Specification for a catalog item, defining the service type reference
-	// and field configurations.
+	// Spec Specification for a catalog item. Every catalog item declares
+	// one or more named resources (`resources`, min 1). A single-resource
+	// offering uses `resources` with one entry.
 	Spec *CatalogItemSpec `json:"spec,omitempty"`
 
 	// Uid Unique identifier for the catalog item. This field is output-only and
@@ -104,10 +105,6 @@ type CatalogItemInstance struct {
 
 	// Path Resource path in the format: catalog-item-instances/{catalogItemInstanceId}
 	Path *string `json:"path,omitempty"`
-
-	// ResourceId Unique identifier for the resource in the Placement Manager.
-	// This field is output-only and set by the server during creation.
-	ResourceId *string `json:"resource_id,omitempty"`
 
 	// Spec Specification for a catalog item instance, defining the catalog item reference
 	// and field configurations.
@@ -141,6 +138,10 @@ type CatalogItemInstanceSpec struct {
 	// Immutable after creation.
 	CatalogItemId string `json:"catalog_item_id"`
 
+	// ResourceIds Unique identifier for the resource in the Placement Manager.
+	// This field is output-only and set by the server during creation.
+	ResourceIds *[]string `json:"resource_ids,omitempty"`
+
 	// UserValues Array of user values for this catalog item instance.
 	UserValues []UserValue `json:"user_values"`
 }
@@ -155,17 +156,34 @@ type CatalogItemList struct {
 	Results []CatalogItem `json:"results"`
 }
 
-// CatalogItemSpec Specification for a catalog item, defining the service type reference
-// and field configurations.
+// CatalogItemSpec Specification for a catalog item. Every catalog item declares
+// one or more named resources (`resources`, min 1). A single-resource
+// offering uses `resources` with one entry.
 type CatalogItemSpec struct {
-	// Fields Array of field configurations for this catalog item.
+	// Resources Named resources. Each entry declares a service type, optional
+	// dependency ordering, and field configurations.
+	Resources []CatalogResource `json:"resources"`
+}
+
+// CatalogResource A named resource within a catalog item.
+type CatalogResource struct {
+	// Fields Array of field configurations for this resource.
 	// Each configuration defines constraints and defaults for fields
 	// in the service type specification.
 	Fields *[]FieldConfiguration `json:"fields,omitempty"`
 
-	// ServiceType The Service type this catalog item references.
+	// Name Unique identifier for this resource within the catalog item
+	// (e.g., ordersDb, app).
+	Name string `json:"name"`
+
+	// RequiresResources Names of other catalog resources that must reach Ready state
+	// before this resource is provisioned.
+	RequiresResources *[]string `json:"requires_resources,omitempty"`
+
+	// ServiceType The Service type for this resource.
 	// Immutable after creation.
-	ServiceType *string `json:"service_type,omitempty"`
+	// (vm, container, database, cluster).
+	ServiceType string `json:"service_type"`
 }
 
 // Error Error response following RFC 7807 Problem Details for HTTP APIs
@@ -208,15 +226,15 @@ type FieldConfiguration struct {
 	DependsOn *FieldConfigurationDependsOn `json:"depends_on,omitempty"`
 
 	// DisplayName User-facing label for this field in UI/CLI.
-	// If omitted, derived from the path (e.g., "spec.vcpu.count" → "Vcpu Count").
+	// If omitted, derived from the path (e.g., "vcpu.count" → "Vcpu Count").
 	DisplayName *string `json:"display_name,omitempty"`
 
 	// Editable Whether end users can modify this field value when requesting services.
 	// If false, the field is fixed to the default value.
 	Editable *bool `json:"editable,omitempty"`
 
-	// Path JSON path to the field in the ServiceType spec using dot notation.
-	// Examples: "spec.vcpu.count", "spec.memory.size_gb", "metadata.labels.tier"
+	// Path Dot-notation path to a field in the service type specification.
+	// E.g: "vcpu.count", "memory.size_gb", "metadata.labels.tier"
 	Path string `json:"path"`
 
 	// ValidationSchema JSON Schema constraints for validating this field (draft 2020-12).
@@ -238,7 +256,7 @@ type FieldConfigurationDependsOn struct {
 	// Type is map[string][]any: keys are strings, values are arrays of any (e.g. strings or objects).
 	AllowedValues map[string][]interface{} `json:"allowed_values"`
 
-	// Path JSON path of the field this one depends on (e.g., region).
+	// Path Dot-notation path to the field this one depends on.
 	Path string `json:"path"`
 }
 
@@ -302,9 +320,12 @@ type ServiceTypeList struct {
 
 // UserValue defines model for UserValue.
 type UserValue struct {
-	// Path JSON path to the user value in the CatalogItem spec using dot notation.
-	// Examples: "spec.vcpu.count", "spec.memory.size_gb", "metadata.labels.tier"
+	// Path Dot-notation path to a field in the resource's service type
+	// specification. Examples: "vcpu.count", "memory.size_gb"
 	Path string `json:"path"`
+
+	// Resource Resource name this value targets.
+	Resource string `json:"resource"`
 
 	// Value Value for this user value.
 	// Type depends on the field's schema (can be string, number, boolean, object, array).
@@ -388,7 +409,7 @@ type ListCatalogItemsParams struct {
 	MaxPageSize *int32 `form:"max_page_size,omitempty" json:"max_page_size,omitempty"`
 
 	// ServiceType Filter catalog items by service type.
-	// Only returns items where spec.service_type matches this value.
+	// Returns items where any resource's service_type matches.
 	ServiceType *string `form:"service_type,omitempty" json:"service_type,omitempty"`
 }
 

@@ -9,26 +9,41 @@ import (
 )
 
 // catalogItemInstanceToStoreModel converts a CreateCatalogItemInstanceRequest to a store model
-func catalogItemInstanceToStoreModel(id, resourceID, path string, req *CreateCatalogItemInstanceRequest) model.CatalogItemInstance {
+func catalogItemInstanceToStoreModel(id, path string, req *CreateCatalogItemInstanceRequest, resourceIDs []string) model.CatalogItemInstance {
 	userValues := make([]model.UserValue, len(req.Spec.UserValues))
 	for i, uv := range req.Spec.UserValues {
-		userValues[i] = model.UserValue{
-			Path:  uv.Path,
-			Value: uv.Value,
-		}
+		userValues[i] = userValueAPIToModel(uv)
+	}
+
+	spec := model.CatalogItemInstanceSpec{
+		CatalogItemId: req.Spec.CatalogItemId,
+		UserValues:    userValues,
+		ResourceIDs:   append([]string(nil), resourceIDs...),
 	}
 
 	return model.CatalogItemInstance{
-		ID:          id,
-		ApiVersion:  req.ApiVersion,
-		DisplayName: req.DisplayName,
-		Spec: model.CatalogItemInstanceSpec{
-			CatalogItemId: req.Spec.CatalogItemId,
-			UserValues:    userValues,
-		},
-		ResourceID:        resourceID,
+		ID:                id,
+		ApiVersion:        req.ApiVersion,
+		DisplayName:       req.DisplayName,
+		Spec:              spec,
 		Path:              path,
 		SpecCatalogItemId: req.Spec.CatalogItemId,
+	}
+}
+
+func userValueAPIToModel(uv v1alpha1.UserValue) model.UserValue {
+	return model.UserValue{
+		Resource: uv.Resource,
+		Path:     uv.Path,
+		Value:    uv.Value,
+	}
+}
+
+func userValueModelToAPI(uv model.UserValue) v1alpha1.UserValue {
+	return v1alpha1.UserValue{
+		Resource: uv.Resource,
+		Path:     uv.Path,
+		Value:    uv.Value,
 	}
 }
 
@@ -36,27 +51,27 @@ func catalogItemInstanceToStoreModel(id, resourceID, path string, req *CreateCat
 func catalogItemInstanceToAPIType(m *model.CatalogItemInstance) v1alpha1.CatalogItemInstance {
 	userValues := make([]v1alpha1.UserValue, len(m.Spec.UserValues))
 	for i, uv := range m.Spec.UserValues {
-		userValues[i] = v1alpha1.UserValue{
-			Path:  uv.Path,
-			Value: uv.Value,
-		}
+		userValues[i] = userValueModelToAPI(uv)
 	}
 
-	apiType := v1alpha1.CatalogItemInstance{
+	spec := v1alpha1.CatalogItemInstanceSpec{
+		CatalogItemId: m.Spec.CatalogItemId,
+		UserValues:    userValues,
+	}
+	if len(m.Spec.ResourceIDs) > 0 {
+		ids := append([]string(nil), m.Spec.ResourceIDs...)
+		spec.ResourceIds = &ids
+	}
+
+	return v1alpha1.CatalogItemInstance{
 		ApiVersion:  m.ApiVersion,
 		DisplayName: m.DisplayName,
-		Spec: v1alpha1.CatalogItemInstanceSpec{
-			CatalogItemId: m.Spec.CatalogItemId,
-			UserValues:    userValues,
-		},
-		ResourceId: &m.ResourceID,
-		Path:       &m.Path,
-		Uid:        &m.ID,
-		CreateTime: &m.CreateTime,
-		UpdateTime: &m.UpdateTime,
+		Spec:        spec,
+		Path:        &m.Path,
+		Uid:         &m.ID,
+		CreateTime:  &m.CreateTime,
+		UpdateTime:  &m.UpdateTime,
 	}
-
-	return apiType
 }
 
 // mapCatalogItemInstanceStoreError converts store errors to service domain errors

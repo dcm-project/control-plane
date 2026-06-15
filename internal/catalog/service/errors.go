@@ -25,8 +25,8 @@ var (
 	// ErrCatalogItemHasInstances indicates a catalog item has existing instances
 	ErrCatalogItemHasInstances = errors.New("catalog item has existing instances")
 
-	// ErrImmutableFieldUpdate indicates an attempt to change api_version or spec.service_type
-	ErrImmutableFieldUpdate = errors.New("cannot update immutable fields: api_version and spec.service_type are immutable")
+	// ErrImmutableSpecStructureUpdate indicates an attempt to change immutable catalog item structure
+	ErrImmutableSpecStructureUpdate = errors.New("cannot update immutable catalog item fields: resource names, service types, and requires_resources are immutable")
 
 	// ErrCatalogItemInstanceNotFound indicates the requested catalog item instance does not exist
 	ErrCatalogItemInstanceNotFound = errors.New("catalog item instance not found")
@@ -55,8 +55,41 @@ var (
 	// ErrDependsOnPathNotFound indicates a depends_on path does not reference any field in the catalog item
 	ErrDependsOnPathNotFound = errors.New("depends_on path does not reference an existing field")
 
+	// ErrCatalogItemSpecConflict indicates an invalid catalog item spec
+	ErrCatalogItemSpecConflict = errors.New("invalid catalog item spec")
+
+	// ErrCatalogItemResourceNameTaken indicates duplicate resource names in a catalog item
+	ErrCatalogItemResourceNameTaken = errors.New("duplicate resource name in catalog item")
+
+	// ErrCatalogItemRequiresResourceNotFound indicates requires_resources references an unknown resource name
+	ErrCatalogItemRequiresResourceNotFound = errors.New("requires_resources references unknown resource name")
+
+	// ErrCatalogItemRequiresCycle indicates a cycle in requires_resources dependencies
+	ErrCatalogItemRequiresCycle = errors.New("cycle detected in requires_resources dependencies")
+
+	// ErrUserValueResourceRequired indicates a user_value is missing the resource name
+	ErrUserValueResourceRequired = errors.New("user value resource is required")
+
+	// ErrUserValueResourceNotFound indicates a user_value resource does not match any catalog resource
+	ErrUserValueResourceNotFound = errors.New("user value resource not found in catalog item")
+
 	// ErrUserValueDependsOnViolation indicates the user value is not allowed given the current value of the field it depends on
 	ErrUserValueDependsOnViolation = errors.New("user value violates depends_on constraint")
+
+	// ErrInvalidCELExpression indicates a string is not a valid restricted CEL reference
+	ErrInvalidCELExpression = errors.New("invalid CEL expression: must match ${resourceName.outputField}")
+
+	// ErrCELResourceNotFound indicates a CEL reference targets an unknown catalog resource
+	ErrCELResourceNotFound = errors.New("CEL reference resource not found in catalog item")
+
+	// ErrCELSelfReference indicates a resource references its own output via CEL
+	ErrCELSelfReference = errors.New("CEL reference cannot target the same resource")
+
+	// ErrCELServiceTypeOutputNotFound indicates the referenced output is not declared on the source service type
+	ErrCELServiceTypeOutputNotFound = errors.New("CEL reference output not found on service type")
+
+	// ErrUserValueCELNotAllowed indicates user_values cannot contain CEL expressions
+	ErrUserValueCELNotAllowed = errors.New("user values cannot contain CEL expressions")
 
 	// ErrPlacementManagerPolicyRejected indicates the Placement Manager rejected the request due to policy (406)
 	ErrPlacementManagerPolicyRejected = errors.New("placement manager request rejected by policy engine")

@@ -9,16 +9,8 @@ import (
 	"github.com/dcm-project/control-plane/internal/catalog/service"
 )
 
-var (
-	// ErrInvalidCatalogItemId indicates the spec.catalog_item_id is missing
-	ErrInvalidCatalogItemId = errors.New("spec.catalog_item_id cannot be empty")
-
-	// ErrInvalidCatalogItemInstanceAPIVersion indicates the api_version is invalid
-	ErrInvalidCatalogItemInstanceAPIVersion = fmt.Errorf("invalid api_version: must be set to %s", supportedAPIVersion)
-
-	// ErrInvalidCatalogItemInstanceDisplayName indicates the display_name is invalid
-	ErrInvalidCatalogItemInstanceDisplayName = errors.New("invalid display_name: must not be empty")
-)
+// ErrInvalidCatalogItemInstanceAPIVersion indicates the api_version is invalid
+var ErrInvalidCatalogItemInstanceAPIVersion = fmt.Errorf("invalid api_version: must be set to %s", supportedAPIVersion)
 
 // mapCreateCatalogItemInstanceErrorToHTTP converts service domain errors to CreateCatalogItemInstance HTTP responses
 func mapCreateCatalogItemInstanceErrorToHTTP(err error) server.CreateCatalogItemInstanceResponseObject {
@@ -33,10 +25,18 @@ func mapCreateCatalogItemInstanceErrorToHTTP(err error) server.CreateCatalogItem
 			},
 		}
 	case errors.Is(err, service.ErrCatalogItemNotFoundForInstance),
+		errors.Is(err, service.ErrCatalogItemSpecConflict),
 		errors.Is(err, service.ErrUserValuePathNotFound),
 		errors.Is(err, service.ErrUserValueNotEditable),
 		errors.Is(err, service.ErrUserValueValidationFailed),
-		errors.Is(err, service.ErrUserValueDependsOnViolation):
+		errors.Is(err, service.ErrUserValueDependsOnViolation),
+		errors.Is(err, service.ErrUserValueResourceRequired),
+		errors.Is(err, service.ErrUserValueResourceNotFound),
+		errors.Is(err, service.ErrInvalidCELExpression),
+		errors.Is(err, service.ErrCELResourceNotFound),
+		errors.Is(err, service.ErrCELSelfReference),
+		errors.Is(err, service.ErrCELServiceTypeOutputNotFound),
+		errors.Is(err, service.ErrUserValueCELNotAllowed):
 		return server.CreateCatalogItemInstance400JSONResponse(v1alpha1.Error{
 			Type:   v1alpha1.INVALIDARGUMENT,
 			Status: 400,

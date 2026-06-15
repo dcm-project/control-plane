@@ -1,4 +1,5 @@
 //go:build subsystem
+
 package subsystem_test
 
 import (
@@ -12,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	v1alpha1 "github.com/dcm-project/control-plane/api/catalog/v1alpha1"
+	"github.com/dcm-project/control-plane/internal/catalog/testutil"
 )
 
 // --- WireMock helpers ---
@@ -28,7 +30,7 @@ func resetWireMock() {
 func stubPMCreateResource() {
 	stub := map[string]any{
 		"request": map[string]any{
-			"method":   "POST",
+			"method":     "POST",
 			"urlPattern": "/api/v1alpha1/resources.*",
 		},
 		"response": map[string]any{
@@ -91,7 +93,7 @@ func stubPMRehydrateResourceFailure() {
 func stubPMDeleteResource() {
 	stub := map[string]any{
 		"request": map[string]any{
-			"method":     "DELETE",
+			"method":         "DELETE",
 			"urlPathPattern": "/api/v1alpha1/resources/.*",
 		},
 		"response": map[string]any{
@@ -192,7 +194,7 @@ func stubPMRehydrateResourceProviderError() {
 func stubPMCreateResourceFailure() {
 	stub := map[string]any{
 		"request": map[string]any{
-			"method":   "POST",
+			"method":     "POST",
 			"urlPattern": "/api/v1alpha1/resources.*",
 		},
 		"response": map[string]any{
@@ -213,7 +215,7 @@ func stubPMCreateResourceFailure() {
 func stubPMDeleteResourceFailure() {
 	stub := map[string]any{
 		"request": map[string]any{
-			"method":     "DELETE",
+			"method":         "DELETE",
 			"urlPathPattern": "/api/v1alpha1/resources/.*",
 		},
 		"response": map[string]any{
@@ -312,10 +314,7 @@ func createTestCatalogItem(id, displayName, serviceType string, fields []v1alpha
 	body := v1alpha1.CatalogItem{
 		ApiVersion:  stringPtr("v1alpha1"),
 		DisplayName: &displayName,
-		Spec: &v1alpha1.CatalogItemSpec{
-			ServiceType: &serviceType,
-			Fields:      &fields,
-		},
+		Spec:        testutil.PtrCatalogSpec(serviceType, fields),
 	}
 	resp, err := apiClient.CreateCatalogItemWithResponse(context.Background(), params, body)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())

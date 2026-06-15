@@ -94,10 +94,12 @@ func (s *service) petClinicCatalogItem() model.CatalogItem {
 		DisplayName: "Pet Clinic",
 		Path:        "catalog-items/pet-clinic",
 		Spec: model.CatalogItemSpec{
-			ServiceType: "three-tier-app-demo",
-			Fields:      s.petClinicFields(),
+			Resources: []model.CatalogResource{{
+				Name:        "app",
+				ServiceType: "three-tier-app-demo",
+				Fields:      s.petClinicFields(),
+			}},
 		},
-		SpecServiceType: "three-tier-app-demo",
 	}
 }
 

@@ -10,41 +10,29 @@ import (
 
 // catalogItemToStoreModel converts a CreateCatalogItemRequest to a store model
 func catalogItemToStoreModel(id, path string, req *CreateCatalogItemRequest) model.CatalogItem {
-	fields := FieldConfigurationsToModel(*req.Spec.Fields)
+	spec := catalogItemSpecAPIToModel(req.Spec)
 
-	storeModel := model.CatalogItem{
+	return model.CatalogItem{
 		ID:          id,
 		ApiVersion:  req.ApiVersion,
 		DisplayName: req.DisplayName,
-		Spec: model.CatalogItemSpec{
-			ServiceType: *req.Spec.ServiceType,
-			Fields:      fields,
-		},
-		Path:            path,
-		SpecServiceType: *req.Spec.ServiceType, // Indexed field for filtering
+		Spec:        spec,
+		Path:        path,
 	}
-
-	return storeModel
 }
 
 // catalogItemToAPIType converts a store model to an API type
 func catalogItemToAPIType(m *model.CatalogItem) v1alpha1.CatalogItem {
-	fields := FieldConfigurationsFromModel(m.Spec.Fields)
-
-	apiType := v1alpha1.CatalogItem{
+	spec := catalogItemSpecModelToAPI(m.Spec)
+	return v1alpha1.CatalogItem{
 		ApiVersion:  &m.ApiVersion,
 		DisplayName: &m.DisplayName,
-		Spec: &v1alpha1.CatalogItemSpec{
-			ServiceType: &m.Spec.ServiceType,
-			Fields:      &fields,
-		},
-		Path:       &m.Path,
-		Uid:        &m.ID,
-		CreateTime: &m.CreateTime,
-		UpdateTime: &m.UpdateTime,
+		Spec:        &spec,
+		Path:        &m.Path,
+		Uid:         &m.ID,
+		CreateTime:  &m.CreateTime,
+		UpdateTime:  &m.UpdateTime,
 	}
-
-	return apiType
 }
 
 // mapCatalogItemStoreError converts store errors to service domain errors

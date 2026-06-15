@@ -177,28 +177,31 @@ func (s *catalogItemInstanceStore) Update(ctx context.Context, catalogItemInstan
 	return catalogItemInstance, nil
 }
 
-// UpdateResourceID atomically updates resource_id only when it still matches expectedResourceID.
-// Returns ErrCatalogItemInstanceConflict if the row exists but resource_id has changed (concurrent modification).
+// TODO: Update spec.resource_ids for multi resources
+// UpdateResourceID updates spec.resource_ids[0] only when it still matches expectedResourceID.
+// Returns ErrCatalogItemInstanceConflict if the row exists but the first resource ID has changed.
 func (s *catalogItemInstanceStore) UpdateResourceID(ctx context.Context, id string, expectedResourceID string, newResourceID string) (*model.CatalogItemInstance, error) {
-	result := s.db.WithContext(ctx).Model(&model.CatalogItemInstance{}).
-		Where("id = ? AND resource_id = ?", id, expectedResourceID).
-		Update("resource_id", newResourceID)
+	inst, err := s.Get(ctx, id)
+	if err != nil {
+		if errors.Is(err, ErrCatalogItemInstanceNotFound) {
+			return nil, ErrCatalogItemInstanceNotFound
+		}
+		return nil, fmt.Errorf("failed to get catalog item instance: %w", err)
+	}
+	if len(inst.Spec.ResourceIDs) == 0 || inst.Spec.ResourceIDs[0] != expectedResourceID {
+		return nil, ErrCatalogItemInstanceConflict
+	}
 
+	inst.Spec.ResourceIDs[0] = newResourceID
+	result := s.db.WithContext(ctx).Model(&inst).Where("id = ?", id).Select("spec").Updates(&inst)
 	if result.Error != nil {
 		return nil, fmt.Errorf("failed to update resource ID: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		_, err := s.Get(ctx, id)
-		if errors.Is(err, ErrCatalogItemInstanceNotFound) {
-			return nil, ErrCatalogItemInstanceNotFound
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to check instance existence: %w", err)
-		}
-		return nil, ErrCatalogItemInstanceConflict
+		return nil, ErrCatalogItemInstanceNotFound
 	}
 
-	return s.Get(ctx, id)
+	return inst, nil
 }
 
 // Delete deletes a catalog item by ID

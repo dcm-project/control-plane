@@ -16,14 +16,11 @@ var (
 	// ErrInvalidDisplayName indicates the display_name is invalid (empty or exceeds 63 characters)
 	ErrInvalidDisplayName = errors.New("invalid display_name: must not be non-empty")
 
-	// ErrInvalidServiceType indicates the spec.service_type in the request body cannot be empty
-	ErrInvalidServiceType = errors.New("spec.service_type cannot be empty")
-
 	// ErrEmptySpec indicates the spec is empty (must have at least one field)
 	ErrEmptySpec = errors.New("spec cannot be empty: must have at least one field")
 
-	// ErrEmptyFields indicates the spec.fields array is empty (must have at least 1 field)
-	ErrEmptyFields = errors.New("spec.fields cannot be empty: must have at least one field")
+	// ErrEmptyResources indicates the spec.resources array is empty (must have at least 1 resource)
+	ErrEmptyResources = errors.New("spec.resources cannot be empty: must have at least one resource")
 )
 
 // mapCreateCatalogItemErrorToHTTP converts service domain errors to CreateCatalogItem HTTP responses
@@ -40,8 +37,12 @@ func mapCreateCatalogItemErrorToHTTP(err error) server.CreateCatalogItemResponse
 			},
 		}
 	case errors.Is(err, service.ErrServiceTypeNotFound),
+		errors.Is(err, service.ErrCatalogItemSpecConflict),
 		errors.Is(err, service.ErrDependsOnCycleDetected),
-		errors.Is(err, service.ErrDependsOnPathNotFound):
+		errors.Is(err, service.ErrDependsOnPathNotFound),
+		errors.Is(err, service.ErrCatalogItemResourceNameTaken),
+		errors.Is(err, service.ErrCatalogItemRequiresResourceNotFound),
+		errors.Is(err, service.ErrCatalogItemRequiresCycle):
 		// Validation errors -> 400 Bad Request
 		return server.CreateCatalogItem400JSONResponse(v1alpha1.Error{
 			Type:   v1alpha1.INVALIDARGUMENT,
@@ -91,9 +92,13 @@ func mapGetCatalogItemErrorToHTTP(err error) server.GetCatalogItemResponseObject
 // mapUpdateCatalogItemErrorToHTTP converts service domain errors to UpdateCatalogItem HTTP responses
 func mapUpdateCatalogItemErrorToHTTP(err error) server.UpdateCatalogItemResponseObject {
 	switch {
-	case errors.Is(err, service.ErrImmutableFieldUpdate),
+	case errors.Is(err, service.ErrImmutableSpecStructureUpdate),
+		errors.Is(err, service.ErrCatalogItemSpecConflict),
 		errors.Is(err, service.ErrDependsOnCycleDetected),
-		errors.Is(err, service.ErrDependsOnPathNotFound):
+		errors.Is(err, service.ErrDependsOnPathNotFound),
+		errors.Is(err, service.ErrCatalogItemResourceNameTaken),
+		errors.Is(err, service.ErrCatalogItemRequiresResourceNotFound),
+		errors.Is(err, service.ErrCatalogItemRequiresCycle):
 		// Validation errors -> 400 Bad Request
 		return server.UpdateCatalogItem400JSONResponse(v1alpha1.Error{
 			Type:   v1alpha1.INVALIDARGUMENT,

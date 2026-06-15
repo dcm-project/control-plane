@@ -89,7 +89,7 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 		mockSvc         service.Service
 		testTime        time.Time
 		testID          string
-		testResourceID  string
+		testResourceIDs = []string{"test-resource-id"}
 		testPath        string
 		testApiVersion  = "v1alpha1"
 		testCatalogItem = "small-vm"
@@ -99,7 +99,7 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 		ctx = context.Background()
 		testTime = time.Now()
 		testID = "test-instance-id"
-		testResourceID = "test-resource-id"
+		testResourceIDs = []string{"test-resource-id"}
 		testPath = "catalog-item-instances/" + testID
 		mockCIIService = &mockCatalogItemInstanceService{}
 		mockSvc = &mockCatalogItemInstanceServiceWrapper{catalogItemInstanceService: mockCIIService}
@@ -115,13 +115,13 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 					Expect(req.Spec.CatalogItemId).To(Equal(testCatalogItem))
 					return &v1alpha1API.CatalogItemInstance{
 						Uid:         &testID,
-						ResourceId:  &testResourceID,
 						Path:        &testPath,
 						ApiVersion:  testApiVersion,
 						DisplayName: "My Instance",
 						Spec: v1alpha1API.CatalogItemInstanceSpec{
 							CatalogItemId: testCatalogItem,
 							UserValues:    []v1alpha1API.UserValue{{Path: "spec.vcpu.count", Value: 4}},
+							ResourceIds:   &testResourceIDs,
 						},
 						CreateTime: &testTime,
 						UpdateTime: &testTime,
@@ -156,13 +156,13 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 					path := "catalog-item-instances/" + userID
 					return &v1alpha1API.CatalogItemInstance{
 						Uid:         &userID,
-						ResourceId:  &testResourceID,
 						Path:        &path,
 						ApiVersion:  testApiVersion,
 						DisplayName: "Custom ID",
 						Spec: v1alpha1API.CatalogItemInstanceSpec{
 							CatalogItemId: testCatalogItem,
 							UserValues:    []v1alpha1API.UserValue{},
+							ResourceIds:   &testResourceIDs,
 						},
 						CreateTime: &testTime,
 						UpdateTime: &testTime,
@@ -314,13 +314,13 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 						CatalogItemInstances: []v1alpha1API.CatalogItemInstance{
 							{
 								Uid:         &testID,
-								ResourceId:  &testResourceID,
 								Path:        &testPath,
 								ApiVersion:  testApiVersion,
 								DisplayName: "Instance 1",
 								Spec: v1alpha1API.CatalogItemInstanceSpec{
 									CatalogItemId: testCatalogItem,
 									UserValues:    []v1alpha1API.UserValue{},
+									ResourceIds:   &testResourceIDs,
 								},
 							},
 						},
@@ -392,13 +392,13 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 					Expect(id).To(Equal(testID))
 					return &v1alpha1API.CatalogItemInstance{
 						Uid:         &testID,
-						ResourceId:  &testResourceID,
 						Path:        &testPath,
 						ApiVersion:  testApiVersion,
 						DisplayName: "Test Instance",
 						Spec: v1alpha1API.CatalogItemInstanceSpec{
 							CatalogItemId: testCatalogItem,
 							UserValues:    []v1alpha1API.UserValue{},
+							ResourceIds:   &testResourceIDs,
 						},
 						CreateTime: &testTime,
 						UpdateTime: &testTime,
@@ -462,18 +462,18 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 	Describe("RehydrateCatalogItemInstance", func() {
 		Context("with valid request", func() {
 			It("should rehydrate instance and return 200", func() {
-				newResourceID := "new-resource-id"
+				newResourceIDs := []string{"new-resource-id"}
 				mockCIIService.rehydrateFunc = func(_ context.Context, id string) (*v1alpha1API.CatalogItemInstance, error) {
 					Expect(id).To(Equal(testID))
 					return &v1alpha1API.CatalogItemInstance{
 						Uid:         &testID,
-						ResourceId:  &newResourceID,
 						Path:        &testPath,
 						ApiVersion:  testApiVersion,
 						DisplayName: "Rehydrated Instance",
 						Spec: v1alpha1API.CatalogItemInstanceSpec{
 							CatalogItemId: testCatalogItem,
 							UserValues:    []v1alpha1API.UserValue{},
+							ResourceIds:   &newResourceIDs,
 						},
 						CreateTime: &testTime,
 						UpdateTime: &testTime,
@@ -490,7 +490,7 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 
 				rehydrated := response.(server.RehydrateCatalogItemInstance200JSONResponse)
 				Expect(*rehydrated.Uid).To(Equal(testID))
-				Expect(*rehydrated.ResourceId).To(Equal(newResourceID))
+				Expect(*rehydrated.Spec.ResourceIds).To(Equal(newResourceIDs))
 			})
 		})
 

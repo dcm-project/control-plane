@@ -15,7 +15,7 @@ type CreateCatalogItemRequest struct {
 	ID          *string                  // Optional user-specified ID
 	ApiVersion  string                   // e.g., "v1alpha1"
 	DisplayName string                   // Required, max 63 chars
-	Spec        v1alpha1.CatalogItemSpec // Required, contains service_type and fields
+	Spec        v1alpha1.CatalogItemSpec // Required, contains catalog resources
 }
 
 // UpdateCatalogItemRequest contains the parameters for updating a catalog item
@@ -95,9 +95,8 @@ func (s *catalogItemService) Create(ctx context.Context, req *CreateCatalogItemR
 	// Convert to store model
 	storeModel := catalogItemToStoreModel(id, path, req)
 
-	// Validate: no cyclic depends_on references among fields
-	if err := validateFieldDependsOnCycles(storeModel.Spec.Fields); err != nil {
-		s.logger.WarnContext(ctx, "Catalog item field depends_on validation failed", "id", id, "error", err)
+	if err := validateCatalogItemSpec(ctx, s.store, storeModel.Spec); err != nil {
+		s.logger.WarnContext(ctx, "Catalog item spec validation failed", "id", id, "error", err)
 		return nil, err
 	}
 
@@ -142,9 +141,9 @@ func (s *catalogItemService) Update(ctx context.Context, id string, req *UpdateC
 		return nil, err
 	}
 
-	// Validate: no cyclic depends_on references among fields
-	if err := validateFieldDependsOnCycles(updated.Spec.Fields); err != nil {
-		s.logger.WarnContext(ctx, "Catalog item field depends_on validation failed on update", "id", id, "error", err)
+	// Validate spec after merge
+	if err := validateCatalogItemSpec(ctx, s.store, updated.Spec); err != nil {
+		s.logger.WarnContext(ctx, "Catalog item spec validation failed on update", "id", id, "error", err)
 		return nil, err
 	}
 
@@ -176,81 +175,13 @@ func mergeCatalogItem(existing *model.CatalogItem, req *UpdateCatalogItemRequest
 
 	// Validate and apply spec if provided
 	if req.Spec != nil {
-		// Check immutability: spec.service_type cannot be changed
-		if req.Spec.ServiceType != nil && *req.Spec.ServiceType != existing.Spec.ServiceType {
-			return nil, ErrImmutableFieldUpdate
+		newSpec := catalogItemSpecAPIToModel(*req.Spec)
+		if err := validateCatalogImmutable(existing.Spec, newSpec); err != nil {
+			return nil, err
 		}
-
-		var fields []model.FieldConfiguration
-		if req.Spec.Fields != nil {
-			// Convert API spec to model spec
-			fields = FieldConfigurationsToModel(*req.Spec.Fields)
-		}
-		merged.Spec = model.CatalogItemSpec{
-			ServiceType: existing.Spec.ServiceType,
-			Fields:      fields,
-		}
+		merged.Spec = newSpec
 	}
 	return &merged, nil
-}
-
-// validateFieldDependsOnCycles checks that every depends_on path references an existing
-// field and that there are no cyclic depends_on references. It builds a directed graph
-// (field path → depends_on path) and performs DFS-based cycle detection.
-func validateFieldDependsOnCycles(fields []model.FieldConfiguration) error {
-	knownPaths := make(map[string]bool)
-	for _, f := range fields {
-		knownPaths[f.Path] = true
-	}
-
-	// Build adjacency: field path → source path it depends on
-	edges := make(map[string]string)
-	for _, f := range fields {
-		if f.DependsOn != nil {
-			depPath := f.DependsOn.Path
-			if !knownPaths[depPath] {
-				return fmt.Errorf("%w: field %s depends_on path %q not found in fields", ErrDependsOnPathNotFound, f.Path, depPath)
-			}
-			edges[f.Path] = depPath
-		}
-	}
-
-	if len(edges) == 0 {
-		return nil
-	}
-
-	// DFS cycle detection
-	const (
-		unvisited = 0
-		visiting  = 1
-		visited   = 2
-	)
-	state := make(map[string]int)
-
-	var visit func(path string) error
-	visit = func(path string) error {
-		if state[path] == visited {
-			return nil
-		}
-		if state[path] == visiting {
-			return fmt.Errorf("%w: cycle involving %s", ErrDependsOnCycleDetected, path)
-		}
-		state[path] = visiting
-		if dep, ok := edges[path]; ok {
-			if err := visit(dep); err != nil {
-				return err
-			}
-		}
-		state[path] = visited
-		return nil
-	}
-
-	for path := range edges {
-		if err := visit(path); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // Delete deletes a catalog item by ID

@@ -16,6 +16,7 @@ import (
 	"github.com/dcm-project/control-plane/internal/catalog/service"
 	"github.com/dcm-project/control-plane/internal/catalog/store"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
+	"github.com/dcm-project/control-plane/internal/catalog/testutil"
 )
 
 var _ = Describe("Seed", func() {
@@ -119,12 +120,12 @@ var _ = Describe("Seed", func() {
 				Expect(ci.ID).To(Equal("pet-clinic"))
 				Expect(ci.DisplayName).To(Equal("Pet Clinic"))
 				Expect(ci.Path).To(Equal("catalog-items/pet-clinic"))
-				Expect(ci.Spec.ServiceType).To(Equal("three-tier-app-demo"))
-				Expect(ci.Spec.Fields).To(HaveLen(5))
+				Expect(ci.Spec.Resources[0].ServiceType).To(Equal("three-tier-app-demo"))
+				Expect(ci.Spec.Resources[0].Fields).To(HaveLen(5))
 
 				// Verify key field configs
-				fieldPaths := make([]string, len(ci.Spec.Fields))
-				for i, f := range ci.Spec.Fields {
+				fieldPaths := make([]string, len(ci.Spec.Resources[0].Fields))
+				for i, f := range ci.Spec.Resources[0].Fields {
 					fieldPaths[i] = f.Path
 				}
 				Expect(fieldPaths).To(ContainElement("metadata.labels.region"))
@@ -134,7 +135,7 @@ var _ = Describe("Seed", func() {
 				Expect(fieldPaths).To(ContainElement("web.image"))
 
 				// Verify region field uses configured values
-				regionField := findFieldByPath(ci.Spec.Fields, "metadata.labels.region")
+				regionField := findFieldByPath(ci.Spec.Resources[0].Fields, "metadata.labels.region")
 				Expect(regionField).ToNot(BeNil())
 				Expect(regionField.Editable).To(BeTrue())
 				Expect(regionField.Default).To(BeNil())
@@ -145,7 +146,7 @@ var _ = Describe("Seed", func() {
 				Expect(regionEnum).To(ConsistOf("region-a", "region-b"))
 
 				// Verify database.engine is editable and has validation schema enum
-				dbEngineField := findFieldByPath(ci.Spec.Fields, "database.engine")
+				dbEngineField := findFieldByPath(ci.Spec.Resources[0].Fields, "database.engine")
 				Expect(dbEngineField).ToNot(BeNil())
 				Expect(dbEngineField.Editable).To(BeTrue())
 				Expect(dbEngineField.Default).To(Equal(three_tier_app_demo.DefaultDatabaseEngine))
@@ -156,7 +157,7 @@ var _ = Describe("Seed", func() {
 				Expect(enumVals).To(ConsistOf("postgres", "mysql"))
 
 				// Verify database.version has dependsOn on database.engine and is properly constrained
-				dbVersionField := findFieldByPath(ci.Spec.Fields, "database.version")
+				dbVersionField := findFieldByPath(ci.Spec.Resources[0].Fields, "database.version")
 				Expect(dbVersionField).ToNot(BeNil())
 				Expect(dbVersionField.Editable).To(BeTrue())
 				Expect(dbVersionField.Default).To(Equal(three_tier_app_demo.DefaultDatabaseVersion))
@@ -170,12 +171,12 @@ var _ = Describe("Seed", func() {
 				Expect(dbVersionField.DependsOn.AllowedValues["mysql"]).To(ConsistOf("8.4", "8.3", "8"))
 
 				// Verify app.image and web.image fixed defaults
-				appImageField := findFieldByPath(ci.Spec.Fields, "app.image")
+				appImageField := findFieldByPath(ci.Spec.Resources[0].Fields, "app.image")
 				Expect(appImageField).ToNot(BeNil())
 				Expect(appImageField.Default).To(Equal(three_tier_app_demo.AppImage))
 				Expect(appImageField.Editable).To(BeFalse())
 
-				webImageField := findFieldByPath(ci.Spec.Fields, "web.image")
+				webImageField := findFieldByPath(ci.Spec.Resources[0].Fields, "web.image")
 				Expect(webImageField).ToNot(BeNil())
 				Expect(webImageField.Default).To(Equal(three_tier_app_demo.WebImage))
 				Expect(webImageField.Editable).To(BeFalse())
@@ -205,11 +206,8 @@ var _ = Describe("Seed", func() {
 					ID:          "existing-item",
 					ApiVersion:  "v1alpha1",
 					DisplayName: "Existing",
-					Spec: model.CatalogItemSpec{
-						ServiceType: "vm",
-						Fields:      []model.FieldConfiguration{},
-					},
-					Path: "catalog-items/existing-item",
+					Spec:        testutil.ModelCatalogSpec("vm", []model.FieldConfiguration{}),
+					Path:        "catalog-items/existing-item",
 				}
 				_, err := dataStore.CatalogItem().Create(ctx, ci)
 				Expect(err).ToNot(HaveOccurred())

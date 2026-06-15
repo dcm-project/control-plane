@@ -1,4 +1,5 @@
 //go:build subsystem
+
 package subsystem_test
 
 import (
@@ -9,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	v1alpha1 "github.com/dcm-project/control-plane/api/catalog/v1alpha1"
+	"github.com/dcm-project/control-plane/internal/catalog/testutil"
 	"github.com/google/uuid"
 )
 
@@ -26,10 +28,8 @@ var _ = Describe("CatalogItem API", func() {
 			Expect(*item.Uid).To(Equal(id))
 			Expect(item.Path).NotTo(BeNil())
 			Expect(*item.Path).To(Equal("catalog-items/" + id))
-			Expect(item.DisplayName).NotTo(BeNil())
 			Expect(*item.DisplayName).To(Equal("Test Item"))
-			Expect(item.Spec).NotTo(BeNil())
-			Expect(*item.Spec.ServiceType).To(Equal("vm"))
+			Expect(item.Spec.Resources[0].ServiceType).To(Equal("vm"))
 		})
 
 		It("uses user-specified ID when provided", func() {
@@ -45,14 +45,10 @@ var _ = Describe("CatalogItem API", func() {
 			createTestCatalogItem(id, "First", "vm", nil)
 
 			params := &v1alpha1.CreateCatalogItemParams{Id: &id}
-			fields := []v1alpha1.FieldConfiguration{defaultField()}
 			body := v1alpha1.CatalogItem{
 				ApiVersion:  stringPtr("v1alpha1"),
 				DisplayName: stringPtr("Second"),
-				Spec: &v1alpha1.CatalogItemSpec{
-					ServiceType: stringPtr("vm"),
-					Fields:      &fields,
-				},
+				Spec:        testutil.PtrCatalogSpec("vm", []v1alpha1.FieldConfiguration{defaultField()}),
 			}
 			resp, err := apiClient.CreateCatalogItemWithResponse(context.Background(), params, body)
 			Expect(err).NotTo(HaveOccurred())
@@ -63,14 +59,10 @@ var _ = Describe("CatalogItem API", func() {
 		It("returns 400 for non-existent service type", func() {
 			id := "ci-badst-" + uuid.NewString()[:8]
 			params := &v1alpha1.CreateCatalogItemParams{Id: &id}
-			fields := []v1alpha1.FieldConfiguration{defaultField()}
 			body := v1alpha1.CatalogItem{
 				ApiVersion:  stringPtr("v1alpha1"),
 				DisplayName: stringPtr("Bad ST"),
-				Spec: &v1alpha1.CatalogItemSpec{
-					ServiceType: stringPtr("nonexistent-service-type"),
-					Fields:      &fields,
-				},
+				Spec:        testutil.PtrCatalogSpec("nonexistent-service-type", nil),
 			}
 			resp, err := apiClient.CreateCatalogItemWithResponse(context.Background(), params, body)
 			Expect(err).NotTo(HaveOccurred())
@@ -129,7 +121,7 @@ var _ = Describe("CatalogItem API", func() {
 			Expect(resp.JSON200).NotTo(BeNil())
 
 			for _, item := range resp.JSON200.Results {
-				Expect(*item.Spec.ServiceType).To(Equal("database"))
+				Expect(item.Spec.Resources[0].ServiceType).To(Equal("database"))
 			}
 			uids := make([]string, len(resp.JSON200.Results))
 			for i, item := range resp.JSON200.Results {
@@ -144,8 +136,9 @@ var _ = Describe("CatalogItem API", func() {
 			id := "ci-update-" + uuid.NewString()[:8]
 			createTestCatalogItem(id, "Original Name", "vm", nil)
 
+			displayName := "Updated Name"
 			updateBody := v1alpha1.CatalogItem{
-				DisplayName: stringPtr("Updated Name"),
+				DisplayName: &displayName,
 			}
 			resp, err := apiClient.UpdateCatalogItemWithApplicationMergePatchPlusJSONBodyWithResponse(
 				context.Background(), id, updateBody,
@@ -162,8 +155,9 @@ var _ = Describe("CatalogItem API", func() {
 		})
 
 		It("returns 404 for non-existent item", func() {
+			displayName := "Updated Name"
 			updateBody := v1alpha1.CatalogItem{
-				DisplayName: stringPtr("Updated Name"),
+				DisplayName: &displayName,
 			}
 			resp, err := apiClient.UpdateCatalogItemWithApplicationMergePatchPlusJSONBodyWithResponse(
 				context.Background(), "does-not-exist", updateBody,
@@ -176,10 +170,9 @@ var _ = Describe("CatalogItem API", func() {
 			id := "ci-immutable-" + uuid.NewString()[:8]
 			createTestCatalogItem(id, "Immutable ST", "vm", nil)
 
+			spec := testutil.CatalogSpec("database", nil)
 			updateBody := v1alpha1.CatalogItem{
-				Spec: &v1alpha1.CatalogItemSpec{
-					ServiceType: stringPtr("database"),
-				},
+				Spec: &spec,
 			}
 			resp, err := apiClient.UpdateCatalogItemWithApplicationMergePatchPlusJSONBodyWithResponse(
 				context.Background(), id, updateBody,

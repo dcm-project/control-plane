@@ -10,7 +10,6 @@ type CatalogItemInstance struct {
 	ApiVersion  string                  `gorm:"column:api_version;not null"`
 	DisplayName string                  `gorm:"column:display_name;not null"`
 	Spec        CatalogItemInstanceSpec `gorm:"column:spec;type:jsonb;not null;serializer:json"`
-	ResourceID  string                  `gorm:"column:resource_id"`
 	Path        string                  `gorm:"column:path;not null"`
 	CreateTime  time.Time               `gorm:"column:create_time;autoCreateTime"`
 	UpdateTime  time.Time               `gorm:"column:update_time;autoUpdateTime"`
@@ -27,10 +26,13 @@ type CatalogItemInstanceList []CatalogItemInstance
 type CatalogItemInstanceSpec struct {
 	CatalogItemId string      `json:"catalog_item_id"`
 	UserValues    []UserValue `json:"user_values"`
+	// ResourceIDs stores placement resource IDs for multi-resource instances (all nodes).
+	ResourceIDs []string `json:"resource_ids,omitempty"`
 }
 
 // UserValue represents a user-provided value for a field
 type UserValue struct {
-	Path  string `json:"path"`
-	Value any    `json:"value"`
+	Resource string `json:"resource,omitempty"`
+	Path     string `json:"path"`
+	Value    any    `json:"value"`
 }

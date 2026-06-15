@@ -14,19 +14,32 @@ type CatalogItem struct {
 	Path        string          `gorm:"column:path;not null"`
 	CreateTime  time.Time       `gorm:"column:create_time;autoCreateTime"`
 	UpdateTime  time.Time       `gorm:"column:update_time;autoUpdateTime"`
-
-	// Indexed field for filtering
-	SpecServiceType string       `gorm:"column:spec_service_type;not null;index"`
-	ServiceTypeRef  *ServiceType `gorm:"foreignKey:SpecServiceType;references:ServiceType;constraint:OnDelete:RESTRICT"`
 }
 
 // CatalogItemList is a slice of CatalogItem for list results
 type CatalogItemList []CatalogItem
 
-// CatalogItemSpec represents the spec field of a catalog item
+// CatalogItemSpec represents the spec field of a catalog item.
 type CatalogItemSpec struct {
-	ServiceType string               `json:"service_type"`
-	Fields      []FieldConfiguration `json:"fields"`
+	Resources []CatalogResource `json:"resources"`
+}
+
+// HasResourceServiceType reports whether any resource uses the given service type.
+func (s CatalogItemSpec) HasResourceServiceType(serviceType string) bool {
+	for _, r := range s.Resources {
+		if r.ServiceType == serviceType {
+			return true
+		}
+	}
+	return false
+}
+
+// CatalogResource is a named resource within a catalog item.
+type CatalogResource struct {
+	Name              string               `json:"name"`
+	ServiceType       string               `json:"service_type"`
+	RequiresResources []string             `json:"requires_resources,omitempty"`
+	Fields            []FieldConfiguration `json:"fields,omitempty"`
 }
 
 // DependsOn defines conditional default based on another field's value

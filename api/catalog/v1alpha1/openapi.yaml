@@ -192,7 +192,7 @@ paths:
             type: string
           description: |
             Filter catalog items by service type.
-            Only returns items where spec.service_type matches this value.
+            Returns items where any resource's service_type matches.
           example: vm
 
       responses:
@@ -301,7 +301,8 @@ paths:
       description: |
         Updates specific fields of a catalog item using JSON Merge Patch (RFC 7396).
 
-        Note that api_version and spec.service_type are immutable after creation.
+        Note that api_version and resource structure (resource names,
+        service types, requires_resources) are immutable after creation.
       parameters:
         - $ref: '#/components/parameters/CatalogItemIdPath'
 
@@ -775,22 +776,61 @@ components:
     CatalogItemSpec:
       type: object
       description: |
-        Specification for a catalog item, defining the service type reference
-        and field configurations.
+        Specification for a catalog item. Every catalog item declares
+        one or more named resources (`resources`, min 1). A single-resource
+        offering uses `resources` with one entry.
+      required:
+        - resources
       properties:
+        resources:
+          type: array
+          minItems: 1
+          description: |
+            Named resources. Each entry declares a service type, optional
+            dependency ordering, and field configurations.
+          items:
+            $ref: '#/components/schemas/CatalogResource'
+
+    CatalogResource:
+      type: object
+      description: |
+        A named resource within a catalog item.
+      required:
+        - name
+        - service_type
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: |
+            Unique identifier for this resource within the catalog item
+            (e.g., ordersDb, app).
+          example: ordersDb
+
         service_type:
           type: string
           minLength: 1
           description: |
-            The Service type this catalog item references.
+            The Service type for this resource.
             Immutable after creation.
+            (vm, container, database, cluster).
           example: vm
+
+        requires_resources:
+          type: array
+          description: |
+            Names of other catalog resources that must reach Ready state
+            before this resource is provisioned.
+          items:
+            type: string
+            minLength: 1
+          example:
+            - ordersDb
 
         fields:
           type: array
-          minItems: 1
           description: |
-            Array of field configurations for this catalog item.
+            Array of field configurations for this resource.
             Each configuration defines constraints and defaults for fields
             in the service type specification.
           items:
@@ -805,16 +845,16 @@ components:
           type: string
           minLength: 1
           description: |
-            JSON path to the field in the ServiceType spec using dot notation.
-            Examples: "spec.vcpu.count", "spec.memory.size_gb", "metadata.labels.tier"
-          example: spec.vcpu.count
+            Dot-notation path to a field in the service type specification.
+            E.g: "vcpu.count", "memory.size_gb", "metadata.labels.tier"
+          example: vcpu.count
 
         display_name:
           type: string
           maxLength: 63
           description: |
             User-facing label for this field in UI/CLI.
-            If omitted, derived from the path (e.g., "spec.vcpu.count" → "Vcpu Count").
+            If omitted, derived from the path (e.g., "vcpu.count" → "Vcpu Count").
           example: CPU Count
 
         editable:
@@ -867,7 +907,9 @@ components:
       properties:
         path:
           type: string
-          description: JSON path of the field this one depends on (e.g., region).
+          description: |
+            Dot-notation path to the field this one depends on.
+          example: vcpu.count
         allowed_values:
           type: object
           additionalProperties:
@@ -925,14 +967,6 @@ components:
         spec:
           $ref: '#/components/schemas/CatalogItemInstanceSpec'
 
-        resource_id:
-          type: string
-          readOnly: true
-          description: |
-            Unique identifier for the resource in the Placement Manager.
-            This field is output-only and set by the server during creation.
-          example: 650e8400-e29b-41d4-a716-446655440002
-
         path:
           type: string
           readOnly: true
@@ -979,18 +1013,38 @@ components:
           items:
             $ref: '#/components/schemas/UserValue'
 
+        resource_ids:
+          type: array
+          readOnly: true
+          description: |
+            Unique identifier for the resource in the Placement Manager.
+            This field is output-only and set by the server during creation.
+          items:
+            type: string
+            minLength: 1
+            readOnly: true
+            example: 650e8400-e29b-41d4-a716-446655440002
+
     UserValue:
       type: object
       required:
+        - resource
         - path
         - value
       properties:
+        resource:
+          type: string
+          minLength: 1
+          description: |
+            Resource name this value targets.
+          example: ordersDb
+
         path:
           type: string
           description: |
-            JSON path to the user value in the CatalogItem spec using dot notation.
-            Examples: "spec.vcpu.count", "spec.memory.size_gb", "metadata.labels.tier"
-          example: spec.vcpu.count
+            Dot-notation path to a field in the resource's service type
+            specification. Examples: "vcpu.count", "memory.size_gb"
+          example: vcpu.count
 
         value:
           description: |

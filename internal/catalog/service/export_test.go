@@ -17,7 +17,7 @@ func NewSpecBuilderForTest(s store.Store) *SpecBuilder {
 	return &SpecBuilder{inner: newSpecBuilder(s)}
 }
 
-// BuildResourceSpec delegates to the unexported specBuilder.
-func (b *SpecBuilder) BuildResourceSpec(ctx context.Context, catalogItemId string, userValues []v1alpha1.UserValue) (map[string]any, error) {
-	return b.inner.BuildResourceSpec(ctx, catalogItemId, userValues)
+// BuildResourceGraph delegates to the unexported specBuilder.
+func (b *SpecBuilder) BuildResourceGraph(ctx context.Context, catalogItemId string, userValues []v1alpha1.UserValue) ([]ResolvedResource, error) {
+	return b.inner.BuildResourceGraph(ctx, catalogItemId, userValues)
 }

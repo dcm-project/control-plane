@@ -1,4 +1,5 @@
 //go:build subsystem
+
 package subsystem_test
 
 import (
@@ -9,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	v1alpha1 "github.com/dcm-project/control-plane/api/catalog/v1alpha1"
+	"github.com/dcm-project/control-plane/internal/catalog/testutil"
 	"github.com/google/uuid"
 )
 
@@ -54,7 +56,7 @@ var _ = Describe("CatalogItemInstance API", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: catalogItemID,
 					UserValues: []v1alpha1.UserValue{
-						{Path: "vcpu.count", Value: float64(4)},
+						{Resource: testutil.DefaultResourceName, Path: "vcpu.count", Value: float64(4)},
 					},
 				},
 			}
@@ -65,9 +67,10 @@ var _ = Describe("CatalogItemInstance API", func() {
 			Expect(resp.JSON201).NotTo(BeNil())
 			Expect(*resp.JSON201.Uid).To(Equal(instID))
 			Expect(*resp.JSON201.Path).To(Equal("catalog-item-instances/" + instID))
-			Expect(resp.JSON201.ResourceId).NotTo(BeNil())
-			Expect(*resp.JSON201.ResourceId).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
-			Expect(*resp.JSON201.ResourceId).NotTo(Equal(instID))
+			Expect(resp.JSON201.Spec.ResourceIds).NotTo(BeNil())
+			Expect(*resp.JSON201.Spec.ResourceIds).To(HaveLen(1))
+			Expect((*resp.JSON201.Spec.ResourceIds)[0]).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
+			Expect((*resp.JSON201.Spec.ResourceIds)[0]).NotTo(Equal(instID))
 
 			verifyPMCreateResourceCalled(1)
 		})
@@ -88,8 +91,9 @@ var _ = Describe("CatalogItemInstance API", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode()).To(Equal(http.StatusCreated))
 			Expect(*resp.JSON201.Uid).To(Equal(instID))
-			Expect(resp.JSON201.ResourceId).NotTo(BeNil())
-			Expect(*resp.JSON201.ResourceId).NotTo(Equal(instID))
+			Expect(resp.JSON201.Spec.ResourceIds).NotTo(BeNil())
+			Expect(*resp.JSON201.Spec.ResourceIds).To(HaveLen(1))
+			Expect((*resp.JSON201.Spec.ResourceIds)[0]).NotTo(Equal(instID))
 		})
 
 		It("returns 400 for non-existent catalog_item_id", func() {
@@ -119,7 +123,7 @@ var _ = Describe("CatalogItemInstance API", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: catalogItemID,
 					UserValues: []v1alpha1.UserValue{
-						{Path: "nonexistent.path", Value: "bad"},
+						{Resource: testutil.DefaultResourceName, Path: "nonexistent.path", Value: "bad"},
 					},
 				},
 			}
@@ -139,7 +143,7 @@ var _ = Describe("CatalogItemInstance API", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: catalogItemID,
 					UserValues: []v1alpha1.UserValue{
-						{Path: "memory.size_gb", Value: float64(8)},
+						{Resource: testutil.DefaultResourceName, Path: "memory.size_gb", Value: float64(8)},
 					},
 				},
 			}
@@ -159,7 +163,7 @@ var _ = Describe("CatalogItemInstance API", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: catalogItemID,
 					UserValues: []v1alpha1.UserValue{
-						{Path: "vcpu.count", Value: float64(99)}, // exceeds maximum of 16
+						{Resource: testutil.DefaultResourceName, Path: "vcpu.count", Value: float64(99)}, // exceeds maximum of 16
 					},
 				},
 			}
@@ -179,8 +183,8 @@ var _ = Describe("CatalogItemInstance API", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: "pet-clinic",
 					UserValues: []v1alpha1.UserValue{
-						{Path: "database.engine", Value: "postgres"},
-						{Path: "database.version", Value: "8.4"}, // 8.4 is only allowed for mysql, not postgres
+						{Resource: "app", Path: "database.engine", Value: "postgres"},
+						{Resource: "app", Path: "database.version", Value: "8.4"}, // 8.4 is only allowed for mysql, not postgres
 					},
 				},
 			}
@@ -214,8 +218,8 @@ var _ = Describe("CatalogItemInstance API", func() {
 			Expect(resp.JSON200).NotTo(BeNil())
 			Expect(*resp.JSON200.Uid).To(Equal(instID))
 			Expect(resp.JSON200.DisplayName).To(Equal("Get Instance"))
-			Expect(resp.JSON200.ResourceId).NotTo(BeNil())
-			Expect(*resp.JSON200.ResourceId).To(Equal(*createResp.JSON201.ResourceId))
+			Expect(resp.JSON200.Spec.ResourceIds).NotTo(BeNil())
+			Expect(*resp.JSON200.Spec.ResourceIds).To(Equal(*createResp.JSON201.Spec.ResourceIds))
 		})
 
 		It("returns 404 for non-existent instance", func() {
@@ -389,7 +393,7 @@ var _ = Describe("CatalogItemInstance API", func() {
 			stubPMRehydrateResource()
 		})
 
-		It("returns 200 with updated resource_id", func() {
+		It("returns 200 with updated resource_ids", func() {
 			instID := "inst-rehy-" + uuid.NewString()[:8]
 			params := &v1alpha1.CreateCatalogItemInstanceParams{Id: &instID}
 			body := v1alpha1.CatalogItemInstance{
@@ -403,24 +407,25 @@ var _ = Describe("CatalogItemInstance API", func() {
 			createResp, err := apiClient.CreateCatalogItemInstanceWithResponse(context.Background(), params, body)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(createResp.StatusCode()).To(Equal(http.StatusCreated))
-			oldResourceID := *createResp.JSON201.ResourceId
+			oldResourceIDs := *createResp.JSON201.Spec.ResourceIds
 
 			resp, err := apiClient.RehydrateCatalogItemInstanceWithResponse(context.Background(), instID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode()).To(Equal(http.StatusOK))
 			Expect(resp.JSON200).NotTo(BeNil())
 			Expect(*resp.JSON200.Uid).To(Equal(instID))
-			Expect(resp.JSON200.ResourceId).NotTo(BeNil())
-			Expect(*resp.JSON200.ResourceId).NotTo(Equal(oldResourceID))
-			Expect(*resp.JSON200.ResourceId).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
+			Expect(resp.JSON200.Spec.ResourceIds).NotTo(BeNil())
+			Expect(*resp.JSON200.Spec.ResourceIds).To(HaveLen(1))
+			Expect(*resp.JSON200.Spec.ResourceIds).NotTo(Equal(oldResourceIDs))
+			Expect((*resp.JSON200.Spec.ResourceIds)[0]).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
 
 			verifyPMRehydrateResourceCalled(1)
 
-			// Verify resource_id is persisted
+			// Verify resource_ids are persisted
 			getResp, err := apiClient.GetCatalogItemInstanceWithResponse(context.Background(), instID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(getResp.StatusCode()).To(Equal(http.StatusOK))
-			Expect(*getResp.JSON200.ResourceId).To(Equal(*resp.JSON200.ResourceId))
+			Expect(*getResp.JSON200.Spec.ResourceIds).To(Equal(*resp.JSON200.Spec.ResourceIds))
 		})
 
 		It("returns 404 for non-existent instance", func() {
@@ -429,7 +434,7 @@ var _ = Describe("CatalogItemInstance API", func() {
 			Expect(resp.StatusCode()).To(Equal(http.StatusNotFound))
 		})
 
-		It("returns 406 when PM rehydrate returns policy rejected, resource_id unchanged", func() {
+		It("returns 406 when PM rehydrate returns policy rejected, resource_ids unchanged", func() {
 			instID := "inst-rehy-policy-" + uuid.NewString()[:8]
 			params := &v1alpha1.CreateCatalogItemInstanceParams{Id: &instID}
 			body := v1alpha1.CatalogItemInstance{
@@ -443,7 +448,7 @@ var _ = Describe("CatalogItemInstance API", func() {
 			createResp, err := apiClient.CreateCatalogItemInstanceWithResponse(context.Background(), params, body)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(createResp.StatusCode()).To(Equal(http.StatusCreated))
-			oldResourceID := *createResp.JSON201.ResourceId
+			oldResourceIDs := *createResp.JSON201.Spec.ResourceIds
 
 			// Reset WireMock and stub rehydrate as policy rejected
 			resetWireMock()
@@ -455,14 +460,14 @@ var _ = Describe("CatalogItemInstance API", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode()).To(Equal(http.StatusNotAcceptable))
 
-			// Verify resource_id is unchanged
+			// Verify resource_ids are unchanged
 			getResp, err := apiClient.GetCatalogItemInstanceWithResponse(context.Background(), instID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(getResp.StatusCode()).To(Equal(http.StatusOK))
-			Expect(*getResp.JSON200.ResourceId).To(Equal(oldResourceID))
+			Expect(*getResp.JSON200.Spec.ResourceIds).To(Equal(oldResourceIDs))
 		})
 
-		It("returns 422 when PM rehydrate returns provider error, resource_id unchanged", func() {
+		It("returns 422 when PM rehydrate returns provider error, resource_ids unchanged", func() {
 			instID := "inst-rehy-provider-" + uuid.NewString()[:8]
 			params := &v1alpha1.CreateCatalogItemInstanceParams{Id: &instID}
 			body := v1alpha1.CatalogItemInstance{
@@ -476,7 +481,7 @@ var _ = Describe("CatalogItemInstance API", func() {
 			createResp, err := apiClient.CreateCatalogItemInstanceWithResponse(context.Background(), params, body)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(createResp.StatusCode()).To(Equal(http.StatusCreated))
-			oldResourceID := *createResp.JSON201.ResourceId
+			oldResourceIDs := *createResp.JSON201.Spec.ResourceIds
 
 			// Reset WireMock and stub rehydrate as provider error
 			resetWireMock()
@@ -488,14 +493,14 @@ var _ = Describe("CatalogItemInstance API", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode()).To(Equal(http.StatusUnprocessableEntity))
 
-			// Verify resource_id is unchanged
+			// Verify resource_ids are unchanged
 			getResp, err := apiClient.GetCatalogItemInstanceWithResponse(context.Background(), instID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(getResp.StatusCode()).To(Equal(http.StatusOK))
-			Expect(*getResp.JSON200.ResourceId).To(Equal(oldResourceID))
+			Expect(*getResp.JSON200.Spec.ResourceIds).To(Equal(oldResourceIDs))
 		})
 
-		It("returns 500 when PM rehydrate fails, resource_id unchanged", func() {
+		It("returns 500 when PM rehydrate fails, resource_ids unchanged", func() {
 			instID := "inst-rehy-fail-" + uuid.NewString()[:8]
 			params := &v1alpha1.CreateCatalogItemInstanceParams{Id: &instID}
 			body := v1alpha1.CatalogItemInstance{
@@ -509,7 +514,7 @@ var _ = Describe("CatalogItemInstance API", func() {
 			createResp, err := apiClient.CreateCatalogItemInstanceWithResponse(context.Background(), params, body)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(createResp.StatusCode()).To(Equal(http.StatusCreated))
-			oldResourceID := *createResp.JSON201.ResourceId
+			oldResourceIDs := *createResp.JSON201.Spec.ResourceIds
 
 			// Reset WireMock and stub rehydrate as failure
 			resetWireMock()
@@ -521,11 +526,11 @@ var _ = Describe("CatalogItemInstance API", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode()).To(Equal(http.StatusInternalServerError))
 
-			// Verify resource_id is unchanged
+			// Verify resource_ids are unchanged
 			getResp, err := apiClient.GetCatalogItemInstanceWithResponse(context.Background(), instID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(getResp.StatusCode()).To(Equal(http.StatusOK))
-			Expect(*getResp.JSON200.ResourceId).To(Equal(oldResourceID))
+			Expect(*getResp.JSON200.Spec.ResourceIds).To(Equal(oldResourceIDs))
 		})
 	})
 

@@ -17,6 +17,7 @@ import (
 	"github.com/dcm-project/control-plane/internal/catalog/service"
 	"github.com/dcm-project/control-plane/internal/catalog/store"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
+	"github.com/dcm-project/control-plane/internal/catalog/testutil"
 )
 
 func ensureServiceType(ctx context.Context, str store.Store, id, serviceType string) {
@@ -34,14 +35,37 @@ func ensureServiceType(ctx context.Context, str store.Store, id, serviceType str
 	}
 }
 
+func devAppCatalogItemSpec() v1alpha1.CatalogItemSpec {
+	requiresOrdersDb := []string{"ordersDb"}
+	return v1alpha1.CatalogItemSpec{
+		Resources: []v1alpha1.CatalogResource{
+			{
+				Name:        "ordersDb",
+				ServiceType: "database",
+				Fields: &[]v1alpha1.FieldConfiguration{
+					{Path: "engine", Default: "postgres"},
+					{Path: "version", Default: "16"},
+				},
+			},
+			{
+				Name:              "app",
+				ServiceType:       "container",
+				RequiresResources: &requiresOrdersDb,
+				Fields: &[]v1alpha1.FieldConfiguration{
+					{Path: "image", Default: "registry.example.com/app:1.0"},
+				},
+			},
+		},
+	}
+}
+
 var _ = Describe("CatalogItem Service", func() {
 	var (
-		ctx                  context.Context
-		db                   *gorm.DB
-		str                  store.Store
-		svc                  service.Service
-		serviceTypeVM        = "vm"
-		serviceTypeContainer = "container"
+		ctx           context.Context
+		db            *gorm.DB
+		str           store.Store
+		svc           service.Service
+		serviceTypeVM = "vm"
 	)
 
 	BeforeEach(func() {
@@ -78,12 +102,9 @@ var _ = Describe("CatalogItem Service", func() {
 					ID:          &userID,
 					ApiVersion:  "v1alpha1",
 					DisplayName: displayName,
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeVM,
-						Fields: &[]v1alpha1.FieldConfiguration{
-							{Path: "spec.vcpu.count", Default: 2},
-						},
-					},
+					Spec: testutil.CatalogSpec("vm", []v1alpha1.FieldConfiguration{
+						{Path: "spec.vcpu.count", Default: 2},
+					}),
 				}
 
 				result, err := svc.CatalogItem().Create(ctx, req)
@@ -91,8 +112,8 @@ var _ = Describe("CatalogItem Service", func() {
 				Expect(result).ToNot(BeNil())
 				Expect(*result.Uid).To(Equal(userID))
 				Expect(*result.DisplayName).To(Equal(displayName))
-				Expect(*result.Spec.ServiceType).To(Equal(serviceTypeVM))
-				Expect(*result.Spec.Fields).To(HaveLen(1))
+				Expect(result.Spec.Resources[0].ServiceType).To(Equal(serviceTypeVM))
+				Expect(*result.Spec.Resources[0].Fields).To(HaveLen(1))
 			})
 		})
 
@@ -101,12 +122,9 @@ var _ = Describe("CatalogItem Service", func() {
 				req := &service.CreateCatalogItemRequest{
 					ApiVersion:  "v1alpha1",
 					DisplayName: "Auto ID Item",
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeContainer,
-						Fields: &[]v1alpha1.FieldConfiguration{
-							{Path: "spec.image", Default: "nginx"},
-						},
-					},
+					Spec: testutil.CatalogSpec("container", []v1alpha1.FieldConfiguration{
+						{Path: "spec.image", Default: "nginx"},
+					}),
 				}
 
 				result, err := svc.CatalogItem().Create(ctx, req)
@@ -123,12 +141,9 @@ var _ = Describe("CatalogItem Service", func() {
 					ID:          &id,
 					ApiVersion:  "v1alpha1",
 					DisplayName: "First",
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeVM,
-						Fields: &[]v1alpha1.FieldConfiguration{
-							{Path: "spec.vcpu", Default: 2},
-						},
-					},
+					Spec: testutil.CatalogSpec("vm", []v1alpha1.FieldConfiguration{
+						{Path: "spec.vcpu", Default: 2},
+					}),
 				}
 				_, err := svc.CatalogItem().Create(ctx, req1)
 				Expect(err).ToNot(HaveOccurred())
@@ -137,12 +152,9 @@ var _ = Describe("CatalogItem Service", func() {
 					ID:          &id,
 					ApiVersion:  "v1alpha1",
 					DisplayName: "Second",
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeContainer,
-						Fields: &[]v1alpha1.FieldConfiguration{
-							{Path: "spec.image", Default: "nginx"},
-						},
-					},
+					Spec: testutil.CatalogSpec("container", []v1alpha1.FieldConfiguration{
+						{Path: "spec.image", Default: "nginx"},
+					}),
 				}
 				result, err := svc.CatalogItem().Create(ctx, req2)
 				Expect(err).To(Equal(service.ErrCatalogItemIDTaken))
@@ -152,16 +164,12 @@ var _ = Describe("CatalogItem Service", func() {
 
 		Context("when store returns service type not found error", func() {
 			It("should return ErrServiceTypeNotFound", func() {
-				serviceTypeNonexistent := "nonexistent"
 				req := &service.CreateCatalogItemRequest{
 					ApiVersion:  "v1alpha1",
 					DisplayName: "Nonexistent Service Type",
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeNonexistent,
-						Fields: &[]v1alpha1.FieldConfiguration{
-							{Path: "spec.vcpu", Default: 2},
-						},
-					},
+					Spec: testutil.CatalogSpec("nonexistent", []v1alpha1.FieldConfiguration{
+						{Path: "spec.vcpu", Default: 2},
+					}),
 				}
 				result, err := svc.CatalogItem().Create(ctx, req)
 				Expect(err).To(Equal(service.ErrServiceTypeNotFound))
@@ -176,19 +184,13 @@ var _ = Describe("CatalogItem Service", func() {
 				_, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
 					ApiVersion:  "v1alpha1",
 					DisplayName: "Item 1",
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeVM,
-						Fields:      &[]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-					},
+					Spec:        testutil.CatalogSpecVM([]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}}),
 				})
 				Expect(err).ToNot(HaveOccurred())
 				_, err = svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
 					ApiVersion:  "v1alpha1",
 					DisplayName: "Item 2",
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeContainer,
-						Fields:      &[]v1alpha1.FieldConfiguration{{Path: "spec.image", Default: "nginx"}},
-					},
+					Spec:        testutil.CatalogSpecContainer([]v1alpha1.FieldConfiguration{{Path: "spec.image", Default: "nginx"}}),
 				})
 				Expect(err).ToNot(HaveOccurred())
 
@@ -203,19 +205,13 @@ var _ = Describe("CatalogItem Service", func() {
 				_, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
 					ApiVersion:  "v1alpha1",
 					DisplayName: "VM Item",
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeVM,
-						Fields:      &[]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-					},
+					Spec:        testutil.CatalogSpecVM([]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}}),
 				})
 				Expect(err).ToNot(HaveOccurred())
 				_, err = svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
 					ApiVersion:  "v1alpha1",
 					DisplayName: "Container Item",
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeContainer,
-						Fields:      &[]v1alpha1.FieldConfiguration{{Path: "spec.image", Default: "nginx"}},
-					},
+					Spec:        testutil.CatalogSpecContainer([]v1alpha1.FieldConfiguration{{Path: "spec.image", Default: "nginx"}}),
 				})
 				Expect(err).ToNot(HaveOccurred())
 
@@ -223,7 +219,7 @@ var _ = Describe("CatalogItem Service", func() {
 				result, err := svc.CatalogItem().List(ctx, service.CatalogItemListOptions{ServiceType: &svcType})
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result.CatalogItems).To(HaveLen(1))
-				Expect(*result.CatalogItems[0].Spec.ServiceType).To(Equal(serviceTypeVM))
+				Expect(result.CatalogItems[0].Spec.Resources[0].ServiceType).To(Equal(serviceTypeVM))
 			})
 		})
 
@@ -233,10 +229,7 @@ var _ = Describe("CatalogItem Service", func() {
 					_, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
 						ApiVersion:  "v1alpha1",
 						DisplayName: fmt.Sprintf("Item %d", i),
-						Spec: v1alpha1.CatalogItemSpec{
-							ServiceType: &serviceTypeVM,
-							Fields:      &[]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-						},
+						Spec:        testutil.CatalogSpec("vm", []v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}}),
 					})
 					Expect(err).ToNot(HaveOccurred())
 				}
@@ -276,10 +269,7 @@ var _ = Describe("CatalogItem Service", func() {
 				created, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
 					ApiVersion:  "v1alpha1",
 					DisplayName: "Test Item",
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeVM,
-						Fields:      &[]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-					},
+					Spec:        testutil.CatalogSpecVM([]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}}),
 				})
 				Expect(err).ToNot(HaveOccurred())
 				Expect(created.Uid).ToNot(BeNil())
@@ -309,10 +299,7 @@ var _ = Describe("CatalogItem Service", func() {
 					ID:          &id,
 					ApiVersion:  "v1alpha1",
 					DisplayName: "Old Name",
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeVM,
-						Fields:      &[]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-					},
+					Spec:        testutil.CatalogSpecVM([]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}}),
 				})
 				Expect(err).ToNot(HaveOccurred())
 
@@ -335,20 +322,14 @@ var _ = Describe("CatalogItem Service", func() {
 					ID:          &id,
 					ApiVersion:  "v1alpha1",
 					DisplayName: "Name",
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeVM,
-						Fields:      &[]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-					},
+					Spec:        testutil.CatalogSpecVM([]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}}),
 				})
 				Expect(err).ToNot(HaveOccurred())
 
-				newSpec := &v1alpha1.CatalogItemSpec{
-					ServiceType: &serviceTypeVM,
-					Fields: &[]v1alpha1.FieldConfiguration{
-						{Path: "spec.vcpu", Default: 4},
-						{Path: "spec.memory", Default: "8GB"},
-					},
-				}
+				newSpec := testutil.PtrCatalogSpec("vm", []v1alpha1.FieldConfiguration{
+					{Path: "spec.vcpu", Default: 4},
+					{Path: "spec.memory", Default: "8GB"},
+				})
 				req := &service.UpdateCatalogItemRequest{
 					Spec: newSpec,
 				}
@@ -356,36 +337,30 @@ var _ = Describe("CatalogItem Service", func() {
 				result, err := svc.CatalogItem().Update(ctx, "item1", req)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).ToNot(BeNil())
-				Expect(*result.Spec.Fields).To(HaveLen(2))
+				Expect(*result.Spec.Resources[0].Fields).To(HaveLen(2))
 			})
 		})
 
 		Context("attempting to update spec.service_type (immutable)", func() {
-			It("should return ErrImmutableFieldUpdate", func() {
+			It("should return ErrImmutableSpecStructureUpdate", func() {
 				id := "item1"
 				_, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
 					ID:          &id,
 					ApiVersion:  "v1alpha1",
 					DisplayName: "Name",
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeVM,
-						Fields:      &[]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-					},
+					Spec:        testutil.CatalogSpecVM([]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}}),
 				})
 				Expect(err).ToNot(HaveOccurred())
 
-				newSpec := &v1alpha1.CatalogItemSpec{
-					ServiceType: &serviceTypeContainer,
-					Fields: &[]v1alpha1.FieldConfiguration{
-						{Path: "spec.image", Default: "nginx"},
-					},
-				}
+				newSpec := testutil.PtrCatalogSpec("container", []v1alpha1.FieldConfiguration{
+					{Path: "spec.image", Default: "nginx"},
+				})
 				req := &service.UpdateCatalogItemRequest{
 					Spec: newSpec,
 				}
 
 				result, err := svc.CatalogItem().Update(ctx, "item1", req)
-				Expect(err).To(Equal(service.ErrImmutableFieldUpdate))
+				Expect(err).To(Equal(service.ErrImmutableSpecStructureUpdate))
 				Expect(result).To(BeNil())
 			})
 		})
@@ -410,181 +385,7 @@ var _ = Describe("CatalogItem Service", func() {
 			req := &service.CreateCatalogItemRequest{
 				ApiVersion:  "v1alpha1",
 				DisplayName: "Cyclic DependsOn",
-				Spec: v1alpha1.CatalogItemSpec{
-					ServiceType: &serviceTypeVM,
-					Fields: &[]v1alpha1.FieldConfiguration{
-						{
-							Path:     "spec.vcpu.count",
-							Default:  float64(2),
-							Editable: &editable,
-							DependsOn: &v1alpha1.FieldConfigurationDependsOn{
-								Path: "spec.memory.size_gb",
-								AllowedValues: map[string][]any{
-									"4": {float64(2), float64(4)},
-								},
-							},
-						},
-						{
-							Path:     "spec.memory.size_gb",
-							Default:  float64(4),
-							Editable: &editable,
-							DependsOn: &v1alpha1.FieldConfigurationDependsOn{
-								Path: "spec.vcpu.count",
-								AllowedValues: map[string][]any{
-									"2": {float64(4), float64(8)},
-								},
-							},
-						},
-					},
-				},
-			}
-
-			result, err := svc.CatalogItem().Create(ctx, req)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("cycle"))
-			Expect(result).To(BeNil())
-		})
-
-		It("should reject a three-field cycle (A -> B -> C -> A)", func() {
-			editable := true
-			req := &service.CreateCatalogItemRequest{
-				ApiVersion:  "v1alpha1",
-				DisplayName: "Three-Field Cycle",
-				Spec: v1alpha1.CatalogItemSpec{
-					ServiceType: &serviceTypeVM,
-					Fields: &[]v1alpha1.FieldConfiguration{
-						{
-							Path:     "spec.vcpu.count",
-							Default:  float64(2),
-							Editable: &editable,
-							DependsOn: &v1alpha1.FieldConfigurationDependsOn{
-								Path: "spec.memory.size_gb",
-								AllowedValues: map[string][]any{
-									"4": {float64(2), float64(4)},
-								},
-							},
-						},
-						{
-							Path:     "spec.memory.size_gb",
-							Default:  float64(4),
-							Editable: &editable,
-							DependsOn: &v1alpha1.FieldConfigurationDependsOn{
-								Path: "spec.disk.size_gb",
-								AllowedValues: map[string][]any{
-									"100": {float64(4), float64(8)},
-								},
-							},
-						},
-						{
-							Path:     "spec.disk.size_gb",
-							Default:  float64(100),
-							Editable: &editable,
-							DependsOn: &v1alpha1.FieldConfigurationDependsOn{
-								Path: "spec.vcpu.count",
-								AllowedValues: map[string][]any{
-									"2": {float64(100), float64(200)},
-								},
-							},
-						},
-					},
-				},
-			}
-
-			result, err := svc.CatalogItem().Create(ctx, req)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("cycle"))
-			Expect(result).To(BeNil())
-		})
-
-		It("should accept fields without cyclic depends_on references", func() {
-			editable := true
-			req := &service.CreateCatalogItemRequest{
-				ApiVersion:  "v1alpha1",
-				DisplayName: "Valid DependsOn",
-				Spec: v1alpha1.CatalogItemSpec{
-					ServiceType: &serviceTypeVM,
-					Fields: &[]v1alpha1.FieldConfiguration{
-						{
-							Path:     "spec.vcpu.count",
-							Default:  float64(2),
-							Editable: &editable,
-						},
-						{
-							Path:     "spec.memory.size_gb",
-							Default:  float64(4),
-							Editable: &editable,
-							DependsOn: &v1alpha1.FieldConfigurationDependsOn{
-								Path: "spec.vcpu.count",
-								AllowedValues: map[string][]any{
-									"2": {float64(4), float64(8)},
-									"4": {float64(8), float64(16)},
-								},
-							},
-						},
-					},
-				},
-			}
-
-			result, err := svc.CatalogItem().Create(ctx, req)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(result).ToNot(BeNil())
-		})
-	})
-
-	Describe("Create with invalid depends_on path", func() {
-		It("should reject when depends_on path does not reference an existing field", func() {
-			editable := true
-			req := &service.CreateCatalogItemRequest{
-				ApiVersion:  "v1alpha1",
-				DisplayName: "Invalid DependsOn Path",
-				Spec: v1alpha1.CatalogItemSpec{
-					ServiceType: &serviceTypeVM,
-					Fields: &[]v1alpha1.FieldConfiguration{
-						{
-							Path:     "spec.memory.size_gb",
-							Default:  float64(4),
-							Editable: &editable,
-							DependsOn: &v1alpha1.FieldConfigurationDependsOn{
-								Path: "spec.region",
-								AllowedValues: map[string][]any{
-									"us-central1": {float64(4), float64(8)},
-								},
-							},
-						},
-					},
-				},
-			}
-
-			result, err := svc.CatalogItem().Create(ctx, req)
-			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, service.ErrDependsOnPathNotFound)).To(BeTrue())
-			Expect(err.Error()).To(ContainSubstring("spec.region"))
-			Expect(err.Error()).To(ContainSubstring("not found"))
-			Expect(result).To(BeNil())
-		})
-	})
-
-	Describe("Update with cyclic depends_on", func() {
-		It("should reject update that introduces cyclic depends_on", func() {
-			id := "item-cycle-update"
-			editable := true
-			_, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
-				ID:          &id,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "No Cycle",
-				Spec: v1alpha1.CatalogItemSpec{
-					ServiceType: &serviceTypeVM,
-					Fields: &[]v1alpha1.FieldConfiguration{
-						{Path: "spec.vcpu.count", Default: float64(2), Editable: &editable},
-						{Path: "spec.memory.size_gb", Default: float64(4), Editable: &editable},
-					},
-				},
-			})
-			Expect(err).ToNot(HaveOccurred())
-
-			updateSpec := &v1alpha1.CatalogItemSpec{
-				ServiceType: &serviceTypeVM,
-				Fields: &[]v1alpha1.FieldConfiguration{
+				Spec: testutil.CatalogSpec("vm", []v1alpha1.FieldConfiguration{
 					{
 						Path:     "spec.vcpu.count",
 						Default:  float64(2),
@@ -607,8 +408,164 @@ var _ = Describe("CatalogItem Service", func() {
 							},
 						},
 					},
-				},
+				}),
 			}
+
+			result, err := svc.CatalogItem().Create(ctx, req)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cycle"))
+			Expect(result).To(BeNil())
+		})
+
+		It("should reject a three-field cycle (A -> B -> C -> A)", func() {
+			editable := true
+			req := &service.CreateCatalogItemRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Three-Field Cycle",
+				Spec: testutil.CatalogSpec("vm", []v1alpha1.FieldConfiguration{
+					{
+						Path:     "spec.vcpu.count",
+						Default:  float64(2),
+						Editable: &editable,
+						DependsOn: &v1alpha1.FieldConfigurationDependsOn{
+							Path: "spec.memory.size_gb",
+							AllowedValues: map[string][]any{
+								"4": {float64(2), float64(4)},
+							},
+						},
+					},
+					{
+						Path:     "spec.memory.size_gb",
+						Default:  float64(4),
+						Editable: &editable,
+						DependsOn: &v1alpha1.FieldConfigurationDependsOn{
+							Path: "spec.disk.size_gb",
+							AllowedValues: map[string][]any{
+								"100": {float64(4), float64(8)},
+							},
+						},
+					},
+					{
+						Path:     "spec.disk.size_gb",
+						Default:  float64(100),
+						Editable: &editable,
+						DependsOn: &v1alpha1.FieldConfigurationDependsOn{
+							Path: "spec.vcpu.count",
+							AllowedValues: map[string][]any{
+								"2": {float64(100), float64(200)},
+							},
+						},
+					},
+				}),
+			}
+
+			result, err := svc.CatalogItem().Create(ctx, req)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cycle"))
+			Expect(result).To(BeNil())
+		})
+
+		It("should accept fields without cyclic depends_on references", func() {
+			editable := true
+			req := &service.CreateCatalogItemRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Valid DependsOn",
+				Spec: testutil.CatalogSpec("vm", []v1alpha1.FieldConfiguration{
+					{
+						Path:     "spec.vcpu.count",
+						Default:  float64(2),
+						Editable: &editable,
+					},
+					{
+						Path:     "spec.memory.size_gb",
+						Default:  float64(4),
+						Editable: &editable,
+						DependsOn: &v1alpha1.FieldConfigurationDependsOn{
+							Path: "spec.vcpu.count",
+							AllowedValues: map[string][]any{
+								"2": {float64(4), float64(8)},
+								"4": {float64(8), float64(16)},
+							},
+						},
+					},
+				}),
+			}
+
+			result, err := svc.CatalogItem().Create(ctx, req)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).ToNot(BeNil())
+		})
+	})
+
+	Describe("Create with invalid depends_on path", func() {
+		It("should reject when depends_on path does not reference an existing field", func() {
+			editable := true
+			req := &service.CreateCatalogItemRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Invalid DependsOn Path",
+				Spec: testutil.CatalogSpec("vm", []v1alpha1.FieldConfiguration{
+					{
+						Path:     "spec.memory.size_gb",
+						Default:  float64(4),
+						Editable: &editable,
+						DependsOn: &v1alpha1.FieldConfigurationDependsOn{
+							Path: "spec.region",
+							AllowedValues: map[string][]any{
+								"us-central1": {float64(4), float64(8)},
+							},
+						},
+					},
+				}),
+			}
+
+			result, err := svc.CatalogItem().Create(ctx, req)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrDependsOnPathNotFound)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring("spec.region"))
+			Expect(err.Error()).To(ContainSubstring("not found"))
+			Expect(result).To(BeNil())
+		})
+	})
+
+	Describe("Update with cyclic depends_on", func() {
+		It("should reject update that introduces cyclic depends_on", func() {
+			id := "item-cycle-update"
+			editable := true
+			_, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
+				ID:          &id,
+				ApiVersion:  "v1alpha1",
+				DisplayName: "No Cycle",
+				Spec: testutil.CatalogSpec("vm", []v1alpha1.FieldConfiguration{
+					{Path: "spec.vcpu.count", Default: float64(2), Editable: &editable},
+					{Path: "spec.memory.size_gb", Default: float64(4), Editable: &editable},
+				}),
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			updateSpec := testutil.PtrCatalogSpec("vm", []v1alpha1.FieldConfiguration{
+				{
+					Path:     "spec.vcpu.count",
+					Default:  float64(2),
+					Editable: &editable,
+					DependsOn: &v1alpha1.FieldConfigurationDependsOn{
+						Path: "spec.memory.size_gb",
+						AllowedValues: map[string][]any{
+							"4": {float64(2), float64(4)},
+						},
+					},
+				},
+				{
+					Path:     "spec.memory.size_gb",
+					Default:  float64(4),
+					Editable: &editable,
+					DependsOn: &v1alpha1.FieldConfigurationDependsOn{
+						Path: "spec.vcpu.count",
+						AllowedValues: map[string][]any{
+							"2": {float64(4), float64(8)},
+						},
+					},
+				},
+			})
 
 			result, err := svc.CatalogItem().Update(ctx, id, &service.UpdateCatalogItemRequest{
 				Spec: updateSpec,
@@ -616,6 +573,292 @@ var _ = Describe("CatalogItem Service", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("cycle"))
 			Expect(result).To(BeNil())
+		})
+	})
+
+	Describe("Create multi-resource catalog item", func() {
+		BeforeEach(func() {
+			ensureServiceType(ctx, str, "db-st", "database")
+		})
+
+		It("should create a multi-resource catalog item with resources", func() {
+			id := "dev-app"
+			req := &service.CreateCatalogItemRequest{
+				ID:          &id,
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Dev Application",
+				Spec:        devAppCatalogItemSpec(),
+			}
+
+			result, err := svc.CatalogItem().Create(ctx, req)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).ToNot(BeNil())
+			Expect(*result.Uid).To(Equal(id))
+			Expect(result.Spec).ToNot(BeNil())
+			Expect(result.Spec.Resources).ToNot(BeNil())
+			Expect(result.Spec.Resources).To(HaveLen(2))
+			Expect((result.Spec.Resources)[0].Name).To(Equal("ordersDb"))
+			Expect((result.Spec.Resources)[1].RequiresResources).ToNot(BeNil())
+			Expect(*(result.Spec.Resources)[1].RequiresResources).To(Equal([]string{"ordersDb"}))
+		})
+
+		It("should round-trip multi-resource spec on get", func() {
+			id := "dev-app-get"
+			_, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
+				ID:          &id,
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Dev Application",
+				Spec:        devAppCatalogItemSpec(),
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			result, err := svc.CatalogItem().Get(ctx, id)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Spec.Resources).ToNot(BeNil())
+			Expect(result.Spec.Resources).To(HaveLen(2))
+		})
+
+		It("should reject empty resources", func() {
+			result, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Empty resources",
+				Spec:        v1alpha1.CatalogItemSpec{Resources: []v1alpha1.CatalogResource{}},
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrCatalogItemSpecConflict)).To(BeTrue())
+			Expect(result).To(BeNil())
+		})
+
+		It("should reject duplicate resource names", func() {
+			spec := v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{Name: "ordersDb", ServiceType: "database"},
+					{Name: "ordersDb", ServiceType: "container"},
+				},
+			}
+
+			result, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Duplicate names",
+				Spec:        spec,
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrCatalogItemResourceNameTaken)).To(BeTrue())
+			Expect(result).To(BeNil())
+		})
+
+		It("should reject unknown requires_resources reference", func() {
+			requiresMissing := []string{"missing"}
+			spec := v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{
+						Name:              "app",
+						ServiceType:       "container",
+						RequiresResources: &requiresMissing,
+					},
+				},
+			}
+
+			result, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Bad requires",
+				Spec:        spec,
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrCatalogItemRequiresResourceNotFound)).To(BeTrue())
+			Expect(result).To(BeNil())
+		})
+
+		It("should reject cyclic requires_resources", func() {
+			requiresApp := []string{"app"}
+			requiresDb := []string{"ordersDb"}
+			spec := v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{Name: "ordersDb", ServiceType: "database", RequiresResources: &requiresApp},
+					{Name: "app", ServiceType: "container", RequiresResources: &requiresDb},
+				},
+			}
+
+			result, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Cycle",
+				Spec:        spec,
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrCatalogItemRequiresCycle)).To(BeTrue())
+			Expect(result).To(BeNil())
+		})
+
+		It("should reject resource with unknown service type", func() {
+			spec := v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{Name: "ordersDb", ServiceType: "nonexistent"},
+				},
+			}
+
+			result, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Bad service type",
+				Spec:        spec,
+			})
+			Expect(err).To(Equal(service.ErrServiceTypeNotFound))
+			Expect(result).To(BeNil())
+		})
+
+		It("should reject cyclic depends_on within a resource fields", func() {
+			editable := true
+			spec := v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{
+						Name:        "ordersDb",
+						ServiceType: "database",
+						Fields: &[]v1alpha1.FieldConfiguration{
+							{
+								Path:     "version",
+								Default:  "16",
+								Editable: &editable,
+								DependsOn: &v1alpha1.FieldConfigurationDependsOn{
+									Path: "engine",
+									AllowedValues: map[string][]any{
+										"postgres": {"14", "16"},
+									},
+								},
+							},
+							{
+								Path:     "engine",
+								Default:  "postgres",
+								Editable: &editable,
+								DependsOn: &v1alpha1.FieldConfigurationDependsOn{
+									Path: "version",
+									AllowedValues: map[string][]any{
+										"16": {"postgres"},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			result, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Field cycle",
+				Spec:        spec,
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cycle"))
+			Expect(result).To(BeNil())
+		})
+	})
+
+	Describe("Update multi-resource catalog item", func() {
+		BeforeEach(func() {
+			ensureServiceType(ctx, str, "db-st", "database")
+			id := "dev-app-update"
+			_, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
+				ID:          &id,
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Dev Application",
+				Spec:        devAppCatalogItemSpec(),
+			})
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should update field defaults within a resource", func() {
+			spec := devAppCatalogItemSpec()
+			(spec.Resources)[0].Fields = &[]v1alpha1.FieldConfiguration{
+				{Path: "engine", Default: "mysql"},
+				{Path: "version", Default: "8.0"},
+			}
+
+			result, err := svc.CatalogItem().Update(ctx, "dev-app-update", &service.UpdateCatalogItemRequest{
+				Spec: &spec,
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).ToNot(BeNil())
+			Expect(result.Spec.Resources).To(HaveLen(2))
+			Expect(*(result.Spec.Resources)[0].Fields).To(HaveLen(2))
+			Expect((*(result.Spec.Resources)[0].Fields)[0].Default).To(Equal("mysql"))
+		})
+
+		It("should reject changing resource name", func() {
+			spec := devAppCatalogItemSpec()
+			(spec.Resources)[0].Name = "renamedDb"
+
+			result, err := svc.CatalogItem().Update(ctx, "dev-app-update", &service.UpdateCatalogItemRequest{
+				Spec: &spec,
+			})
+			Expect(err).To(Equal(service.ErrImmutableSpecStructureUpdate))
+			Expect(result).To(BeNil())
+		})
+
+		It("should reject changing resource service type", func() {
+			spec := devAppCatalogItemSpec()
+			(spec.Resources)[0].ServiceType = "vm"
+
+			result, err := svc.CatalogItem().Update(ctx, "dev-app-update", &service.UpdateCatalogItemRequest{
+				Spec: &spec,
+			})
+			Expect(err).To(Equal(service.ErrImmutableSpecStructureUpdate))
+			Expect(result).To(BeNil())
+		})
+
+		It("should reject changing requires_resources", func() {
+			spec := devAppCatalogItemSpec()
+			empty := []string{}
+			(spec.Resources)[1].RequiresResources = &empty
+
+			result, err := svc.CatalogItem().Update(ctx, "dev-app-update", &service.UpdateCatalogItemRequest{
+				Spec: &spec,
+			})
+			Expect(err).To(Equal(service.ErrImmutableSpecStructureUpdate))
+			Expect(result).To(BeNil())
+		})
+	})
+
+	Describe("List catalog items by resource service type", func() {
+		BeforeEach(func() {
+			ensureServiceType(ctx, str, "db-st", "database")
+			ensureServiceType(ctx, str, "ctr-st", "container")
+		})
+
+		It("returns items where any resource matches the filter", func() {
+			_, err := svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Single-resource VM",
+				Spec:        testutil.CatalogSpecVM([]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}}),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			_, err = svc.CatalogItem().Create(ctx, &service.CreateCatalogItemRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Dev Application",
+				Spec:        devAppCatalogItemSpec(),
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			vmFilter := "vm"
+			result, err := svc.CatalogItem().List(ctx, service.CatalogItemListOptions{
+				ServiceType: &vmFilter,
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.CatalogItems).To(HaveLen(1))
+			Expect(*result.CatalogItems[0].DisplayName).To(Equal("Single-resource VM"))
+
+			dbFilter := "database"
+			result, err = svc.CatalogItem().List(ctx, service.CatalogItemListOptions{
+				ServiceType: &dbFilter,
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.CatalogItems).To(HaveLen(1))
+			Expect(*result.CatalogItems[0].DisplayName).To(Equal("Dev Application"))
+
+			containerFilter := "container"
+			result, err = svc.CatalogItem().List(ctx, service.CatalogItemListOptions{
+				ServiceType: &containerFilter,
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.CatalogItems).To(HaveLen(1))
+			Expect(*result.CatalogItems[0].DisplayName).To(Equal("Dev Application"))
 		})
 	})
 
@@ -627,10 +870,7 @@ var _ = Describe("CatalogItem Service", func() {
 					ID:          &id,
 					ApiVersion:  "v1alpha1",
 					DisplayName: "To Delete",
-					Spec: v1alpha1.CatalogItemSpec{
-						ServiceType: &serviceTypeVM,
-						Fields:      &[]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-					},
+					Spec:        testutil.CatalogSpecVM([]v1alpha1.FieldConfiguration{{Path: "spec.vcpu", Default: 2}}),
 				})
 				Expect(err).ToNot(HaveOccurred())
 

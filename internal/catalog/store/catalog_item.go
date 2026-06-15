@@ -76,7 +76,7 @@ func (s *catalogItemStore) List(ctx context.Context, opts *CatalogItemListOption
 
 	query = query.Order("id ASC").Limit(pageSize + 1).Offset(offset)
 	if opts != nil && opts.ServiceType != nil && *opts.ServiceType != "" {
-		query = query.Where("spec_service_type = ?", *opts.ServiceType)
+		query = applyCatalogItemServiceTypeFilter(query, *opts.ServiceType)
 	}
 
 	if err := query.Find(&catalogItems).Error; err != nil {
@@ -100,7 +100,6 @@ func (s *catalogItemStore) List(ctx context.Context, opts *CatalogItemListOption
 
 // Create creates a new catalog item
 func (s *catalogItemStore) Create(ctx context.Context, catalogItem model.CatalogItem) (*model.CatalogItem, error) {
-	catalogItem.SpecServiceType = catalogItem.Spec.ServiceType
 	if err := s.db.WithContext(ctx).Clauses(clause.Returning{}).Create(&catalogItem).Error; err != nil {
 		return nil, s.mapConstraintError(ctx, err, catalogItem)
 	}
@@ -114,18 +113,6 @@ func (s *catalogItemStore) mapConstraintError(ctx context.Context, err error, at
 	}
 
 	errStr := strings.ToLower(err.Error())
-
-	// Check for foreign key violation first (before checking for generic constraint failed)
-	if strings.Contains(errStr, "foreign key") {
-		// Verify which constraint failed by checking if service type exists
-		var st model.ServiceType
-		if err := s.db.WithContext(ctx).Where("service_type = ?", attempted.SpecServiceType).First(&st).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrServiceTypeNotFound
-			}
-		}
-		return err
-	}
 
 	// Handle unique constraint violations
 	if errors.Is(err, gorm.ErrDuplicatedKey) ||
@@ -158,12 +145,9 @@ func (s *catalogItemStore) Get(ctx context.Context, id string) (*model.CatalogIt
 
 // Update updates a catalog item (only mutable fields)
 func (s *catalogItemStore) Update(ctx context.Context, catalogItem *model.CatalogItem) error {
-	// Extract service type from spec for denormalized field
-	catalogItem.SpecServiceType = catalogItem.Spec.ServiceType
-
 	result := s.db.WithContext(ctx).Model(&model.CatalogItem{}).
 		Where("id = ?", catalogItem.ID).
-		Select("display_name", "spec", "spec_service_type").
+		Select("display_name", "spec").
 		Updates(catalogItem)
 
 	if result.Error != nil {

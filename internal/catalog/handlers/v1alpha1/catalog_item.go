@@ -3,7 +3,7 @@ package v1alpha1
 import (
 	"context"
 
-	v1alpha1 "github.com/dcm-project/control-plane/api/catalog/v1alpha1"
+	"github.com/dcm-project/control-plane/api/catalog/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/catalog/api/server"
 	"github.com/dcm-project/control-plane/internal/catalog/service"
 )
@@ -86,17 +86,14 @@ func validateAndBuildCreateCatalogItemRequest(request server.CreateCatalogItemRe
 	if request.Body.ApiVersion == nil || *request.Body.ApiVersion != supportedAPIVersion {
 		return nil, ErrInvalidAPIVersion
 	}
-	if request.Body.DisplayName == nil {
+	if request.Body.DisplayName == nil || *request.Body.DisplayName == "" {
 		return nil, ErrInvalidDisplayName
 	}
 	if request.Body.Spec == nil {
 		return nil, ErrEmptySpec
 	}
-	if request.Body.Spec.ServiceType == nil {
-		return nil, ErrInvalidServiceType
-	}
-	if request.Body.Spec.Fields == nil {
-		return nil, ErrEmptyFields
+	if len(request.Body.Spec.Resources) == 0 {
+		return nil, ErrEmptyResources
 	}
 	return &service.CreateCatalogItemRequest{
 		ID:          request.Params.Id,
@@ -124,7 +121,6 @@ func (h *Handler) UpdateCatalogItem(ctx context.Context, request server.UpdateCa
 	h.logger.InfoContext(ctx, "Updating catalog item", "id", request.CatalogItemId)
 
 	// Body is already a CatalogItem (partial update via JSON merge patch)
-	// Build update request from provided fields
 	updateReq := &service.UpdateCatalogItemRequest{
 		DisplayName: request.Body.DisplayName,
 		Spec:        request.Body.Spec,

@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -16,7 +17,19 @@ import (
 	"github.com/dcm-project/control-plane/internal/catalog/service"
 	"github.com/dcm-project/control-plane/internal/catalog/store"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
+	"github.com/dcm-project/control-plane/internal/catalog/testutil"
 )
+
+func buildGraphSpec(builder *service.SpecBuilder, ctx context.Context, catalogItemId string, userValues []v1alpha1.UserValue) (map[string]any, error) {
+	graph, err := builder.BuildResourceGraph(ctx, catalogItemId, userValues)
+	if err != nil {
+		return nil, err
+	}
+	if len(graph) == 0 {
+		return nil, fmt.Errorf("empty graph")
+	}
+	return graph[0].Spec, nil
+}
 
 var _ = Describe("SpecBuilder (via CatalogItemInstance Create)", func() {
 	var (
@@ -68,7 +81,7 @@ var _ = Describe("SpecBuilder (via CatalogItemInstance Create)", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: "ci-chain",
 					UserValues: []v1alpha1.UserValue{
-						{Path: "spec.vcpu.count", Value: float64(16)},
+						{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(16)},
 					},
 				},
 			}
@@ -91,7 +104,7 @@ var _ = Describe("SpecBuilder (via CatalogItemInstance Create)", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: "ci-bad-path",
 					UserValues: []v1alpha1.UserValue{
-						{Path: "spec.network.bandwidth", Value: float64(100)},
+						{Resource: testutil.DefaultResourceName, Path: "spec.network.bandwidth", Value: float64(100)},
 					},
 				},
 			}
@@ -112,7 +125,7 @@ var _ = Describe("SpecBuilder (via CatalogItemInstance Create)", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: "ci-not-editable",
 					UserValues: []v1alpha1.UserValue{
-						{Path: "spec.disk.size_gb", Value: float64(100)},
+						{Resource: testutil.DefaultResourceName, Path: "spec.disk.size_gb", Value: float64(100)},
 					},
 				},
 			}
@@ -142,7 +155,7 @@ var _ = Describe("SpecBuilder (via CatalogItemInstance Create)", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: "ci-schema-fail",
 					UserValues: []v1alpha1.UserValue{
-						{Path: "spec.vcpu.count", Value: float64(32)},
+						{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(32)},
 					},
 				},
 			}
@@ -172,7 +185,7 @@ var _ = Describe("SpecBuilder (via CatalogItemInstance Create)", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: "ci-schema-pass",
 					UserValues: []v1alpha1.UserValue{
-						{Path: "spec.vcpu.count", Value: float64(8)},
+						{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(8)},
 					},
 				},
 			}
@@ -205,7 +218,7 @@ var _ = Describe("SpecBuilder (via CatalogItemInstance Create)", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: "ci-depends-fail",
 					UserValues: []v1alpha1.UserValue{
-						{Path: "spec.memory.size_gb", Value: float64(32)},
+						{Resource: testutil.DefaultResourceName, Path: "spec.memory.size_gb", Value: float64(32)},
 					},
 				},
 			}
@@ -238,7 +251,7 @@ var _ = Describe("SpecBuilder (via CatalogItemInstance Create)", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: "ci-depends-pass",
 					UserValues: []v1alpha1.UserValue{
-						{Path: "spec.memory.size_gb", Value: float64(8)},
+						{Resource: testutil.DefaultResourceName, Path: "spec.memory.size_gb", Value: float64(8)},
 					},
 				},
 			}
@@ -271,8 +284,8 @@ var _ = Describe("SpecBuilder (via CatalogItemInstance Create)", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: "ci-depends-updated",
 					UserValues: []v1alpha1.UserValue{
-						{Path: "spec.vcpu.count", Value: float64(4)},
-						{Path: "spec.memory.size_gb", Value: float64(16)},
+						{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(4)},
+						{Resource: testutil.DefaultResourceName, Path: "spec.memory.size_gb", Value: float64(16)},
 					},
 				},
 			}
@@ -305,8 +318,8 @@ var _ = Describe("SpecBuilder (via CatalogItemInstance Create)", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: "ci-depends-order",
 					UserValues: []v1alpha1.UserValue{
-						{Path: "spec.memory.size_gb", Value: float64(16)},
-						{Path: "spec.vcpu.count", Value: float64(4)},
+						{Resource: testutil.DefaultResourceName, Path: "spec.memory.size_gb", Value: float64(16)},
+						{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(4)},
 					},
 				},
 			}
@@ -338,8 +351,8 @@ var _ = Describe("SpecBuilder (via CatalogItemInstance Create)", func() {
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: "ci-depends-no-key",
 					UserValues: []v1alpha1.UserValue{
-						{Path: "spec.vcpu.count", Value: float64(8)},
-						{Path: "spec.memory.size_gb", Value: float64(4)},
+						{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(8)},
+						{Resource: testutil.DefaultResourceName, Path: "spec.memory.size_gb", Value: float64(4)},
 					},
 				},
 			}
@@ -351,7 +364,7 @@ var _ = Describe("SpecBuilder (via CatalogItemInstance Create)", func() {
 	})
 })
 
-var _ = Describe("BuildResourceSpec (direct)", func() {
+var _ = Describe("BuildResourceGraph (single resource)", func() {
 	var (
 		ctx     context.Context
 		db      *gorm.DB
@@ -388,7 +401,7 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 
 	Describe("spec construction", func() {
 		It("should return error when catalog item does not exist", func() {
-			_, err := builder.BuildResourceSpec(ctx, "nonexistent", nil)
+			_, err := buildGraphSpec(builder, ctx, "nonexistent", nil)
 			Expect(err).To(MatchError(service.ErrCatalogItemNotFoundForInstance))
 		})
 
@@ -398,7 +411,7 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 				{Path: "spec.memory.size_gb", Default: float64(8), Editable: false},
 			})
 
-			result, err := builder.BuildResourceSpec(ctx, "ci-direct-defaults", nil)
+			result, err := buildGraphSpec(builder, ctx, "ci-direct-defaults", nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			vcpu := result["vcpu"].(map[string]any)
@@ -414,7 +427,7 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 		It("should set service_type in the returned spec", func() {
 			ensureCatalogItemWithFields(ctx, str, "ci-direct-st", "vm-d", []model.FieldConfiguration{})
 
-			result, err := builder.BuildResourceSpec(ctx, "ci-direct-st", nil)
+			result, err := buildGraphSpec(builder, ctx, "ci-direct-st", nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result["service_type"]).To(Equal("vm-d"))
 		})
@@ -426,10 +439,10 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 			})
 
 			userValues := []v1alpha1.UserValue{
-				{Path: "spec.vcpu.count", Value: float64(16)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(16)},
 			}
 
-			result, err := builder.BuildResourceSpec(ctx, "ci-direct-override", userValues)
+			result, err := buildGraphSpec(builder, ctx, "ci-direct-override", userValues)
 			Expect(err).ToNot(HaveOccurred())
 
 			vcpu := result["vcpu"].(map[string]any)
@@ -446,7 +459,7 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 				{Path: "spec.vcpu.count", Default: float64(4), Editable: true},
 			})
 
-			result, err := builder.BuildResourceSpec(ctx, "ci-direct-preserve", nil)
+			result, err := buildGraphSpec(builder, ctx, "ci-direct-preserve", nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			// disk and memory should remain at ServiceType base values
@@ -464,10 +477,10 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 			})
 
 			userValues := []v1alpha1.UserValue{
-				{Path: "spec.network.bandwidth", Value: float64(100)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.network.bandwidth", Value: float64(100)},
 			}
 
-			_, err := builder.BuildResourceSpec(ctx, "ci-direct-badpath", userValues)
+			_, err := buildGraphSpec(builder, ctx, "ci-direct-badpath", userValues)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("user value path not found"))
 		})
@@ -478,10 +491,10 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 			})
 
 			userValues := []v1alpha1.UserValue{
-				{Path: "spec.disk.size_gb", Value: float64(100)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.disk.size_gb", Value: float64(100)},
 			}
 
-			_, err := builder.BuildResourceSpec(ctx, "ci-direct-noedit", userValues)
+			_, err := buildGraphSpec(builder, ctx, "ci-direct-noedit", userValues)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not editable"))
 		})
@@ -500,7 +513,7 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 				},
 			})
 
-			_, err := builder.BuildResourceSpec(ctx, "ci-direct-default-schemafail", nil)
+			_, err := buildGraphSpec(builder, ctx, "ci-direct-default-schemafail", nil)
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrFieldDefaultValidationFailed)).To(BeTrue())
 			Expect(err.Error()).To(ContainSubstring("spec.vcpu.count"))
@@ -521,10 +534,10 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 			})
 
 			userValues := []v1alpha1.UserValue{
-				{Path: "spec.vcpu.count", Value: float64(32)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(32)},
 			}
 
-			_, err := builder.BuildResourceSpec(ctx, "ci-direct-schemafail", userValues)
+			_, err := buildGraphSpec(builder, ctx, "ci-direct-schemafail", userValues)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("validation failed"))
 		})
@@ -544,10 +557,10 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 			})
 
 			userValues := []v1alpha1.UserValue{
-				{Path: "spec.vcpu.count", Value: float64(8)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(8)},
 			}
 
-			result, err := builder.BuildResourceSpec(ctx, "ci-direct-schemapass", userValues)
+			result, err := buildGraphSpec(builder, ctx, "ci-direct-schemapass", userValues)
 			Expect(err).ToNot(HaveOccurred())
 
 			vcpu := result["vcpu"].(map[string]any)
@@ -571,10 +584,10 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 			})
 
 			userValues := []v1alpha1.UserValue{
-				{Path: "spec.memory.size_gb", Value: float64(32)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.memory.size_gb", Value: float64(32)},
 			}
 
-			_, err := builder.BuildResourceSpec(ctx, "ci-direct-depfail", userValues)
+			_, err := buildGraphSpec(builder, ctx, "ci-direct-depfail", userValues)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("depends_on"))
 		})
@@ -596,10 +609,10 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 			})
 
 			userValues := []v1alpha1.UserValue{
-				{Path: "spec.memory.size_gb", Value: float64(8)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.memory.size_gb", Value: float64(8)},
 			}
 
-			result, err := builder.BuildResourceSpec(ctx, "ci-direct-deppass", userValues)
+			result, err := buildGraphSpec(builder, ctx, "ci-direct-deppass", userValues)
 			Expect(err).ToNot(HaveOccurred())
 
 			memory := result["memory"].(map[string]any)
@@ -623,11 +636,11 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 			})
 
 			userValues := []v1alpha1.UserValue{
-				{Path: "spec.vcpu.count", Value: float64(4)},
-				{Path: "spec.memory.size_gb", Value: float64(16)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(4)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.memory.size_gb", Value: float64(16)},
 			}
 
-			result, err := builder.BuildResourceSpec(ctx, "ci-direct-depsrc", userValues)
+			result, err := buildGraphSpec(builder, ctx, "ci-direct-depsrc", userValues)
 			Expect(err).ToNot(HaveOccurred())
 
 			vcpu := result["vcpu"].(map[string]any)
@@ -653,11 +666,11 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 			})
 
 			userValues := []v1alpha1.UserValue{
-				{Path: "spec.vcpu.count", Value: float64(8)},
-				{Path: "spec.memory.size_gb", Value: float64(4)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(8)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.memory.size_gb", Value: float64(4)},
 			}
 
-			_, err := builder.BuildResourceSpec(ctx, "ci-direct-depnokey", userValues)
+			_, err := buildGraphSpec(builder, ctx, "ci-direct-depnokey", userValues)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("no allowed values defined"))
 		})
@@ -670,12 +683,12 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 			})
 
 			userValues := []v1alpha1.UserValue{
-				{Path: "spec.vcpu.count", Value: float64(8)},
-				{Path: "spec.memory.size_gb", Value: float64(16)},
-				{Path: "spec.disk.size_gb", Value: float64(200)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(8)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.memory.size_gb", Value: float64(16)},
+				{Resource: testutil.DefaultResourceName, Path: "spec.disk.size_gb", Value: float64(200)},
 			}
 
-			result, err := builder.BuildResourceSpec(ctx, "ci-direct-multi", userValues)
+			result, err := buildGraphSpec(builder, ctx, "ci-direct-multi", userValues)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(result["service_type"]).To(Equal("vm-d"))
@@ -683,5 +696,85 @@ var _ = Describe("BuildResourceSpec (direct)", func() {
 			Expect(result["memory"].(map[string]any)["size_gb"]).To(BeNumerically("==", 16))
 			Expect(result["disk"].(map[string]any)["size_gb"]).To(BeNumerically("==", 200))
 		})
+	})
+})
+
+var _ = Describe("BuildResourceGraph (multi-resource)", func() {
+	var (
+		ctx     context.Context
+		db      *gorm.DB
+		str     store.Store
+		builder *service.SpecBuilder
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		var err error
+		db, err = gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+			Logger: logger.Discard,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		err = db.Exec("PRAGMA foreign_keys = ON").Error
+		Expect(err).ToNot(HaveOccurred())
+		err = db.AutoMigrate(&model.ServiceType{}, &model.CatalogItem{}, &model.CatalogItemInstance{})
+		Expect(err).ToNot(HaveOccurred())
+		str = store.NewStore(db, slog.Default())
+		builder = service.NewSpecBuilderForTest(str)
+
+		ensureServiceTypeWithSpec(ctx, str, "db-st", "database", map[string]any{
+			"engine":  "postgres",
+			"version": "14",
+		})
+		ensureServiceTypeWithSpec(ctx, str, "ctr-st", "container", map[string]any{
+			"image": map[string]any{"reference": "nginx"},
+		})
+	})
+
+	AfterEach(func() {
+		if str != nil {
+			Expect(str.Close()).To(Succeed())
+		}
+	})
+
+	It("should resolve multi-resource catalog item with per-resource user values", func() {
+		ci := model.CatalogItem{
+			ID:          "dev-app",
+			ApiVersion:  "v1alpha1",
+			DisplayName: "Dev App",
+			Spec: model.CatalogItemSpec{
+				Resources: []model.CatalogResource{
+					{
+						Name:        "ordersDb",
+						ServiceType: "database",
+						Fields: []model.FieldConfiguration{
+							{Path: "engine", Default: "postgres", Editable: true},
+							{Path: "version", Default: "16", Editable: true},
+						},
+					},
+					{
+						Name:              "app",
+						ServiceType:       "container",
+						RequiresResources: []string{"ordersDb"},
+						Fields: []model.FieldConfiguration{
+							{Path: "image.reference", Default: "registry.example.com/app:1.0"},
+						},
+					},
+				},
+			},
+			Path: "catalog-items/dev-app",
+		}
+		_, err := str.CatalogItem().Create(ctx, ci)
+		Expect(err).ToNot(HaveOccurred())
+
+		resource := "ordersDb"
+		graph, err := builder.BuildResourceGraph(ctx, "dev-app", []v1alpha1.UserValue{
+			{Resource: resource, Path: "version", Value: "17"},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(graph).To(HaveLen(2))
+		Expect(graph[0].Name).To(Equal("ordersDb"))
+		Expect(graph[0].Spec["version"]).To(Equal("17"))
+		Expect(graph[1].Name).To(Equal("app"))
+		Expect(graph[1].RequiresResources).To(Equal([]string{"ordersDb"}))
 	})
 })

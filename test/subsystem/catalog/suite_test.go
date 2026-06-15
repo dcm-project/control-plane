@@ -1,4 +1,5 @@
 //go:build subsystem
+
 package subsystem_test
 
 import (
@@ -15,9 +16,9 @@ import (
 )
 
 var (
-	apiClient      *client.ClientWithResponses
-	wireMockURL    string
-	httpClient     = &http.Client{Timeout: 10 * time.Second}
+	apiClient   *client.ClientWithResponses
+	wireMockURL string
+	httpClient  = &http.Client{Timeout: 10 * time.Second}
 )
 
 func TestSubsystem(t *testing.T) {

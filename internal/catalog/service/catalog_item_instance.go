@@ -100,35 +100,61 @@ func (s *catalogItemInstanceService) List(ctx context.Context, opts CatalogItemI
 func (s *catalogItemInstanceService) Create(ctx context.Context, req *CreateCatalogItemInstanceRequest) (*v1alpha1.CatalogItemInstance, error) {
 	// Generate IDs
 	id := getOrGenerateID(req.ID)
-	resourceID := uuid.New().String()
-	// Generate path
 	path := fmt.Sprintf("catalog-item-instances/%s", id)
 
-	// Build resource spec (resolves reference chain and validates user_values)
-	resourceSpec, err := s.specBuilder.BuildResourceSpec(ctx, req.Spec.CatalogItemId, req.Spec.UserValues)
+	catalogItem, err := s.store.CatalogItem().Get(ctx, req.Spec.CatalogItemId)
 	if err != nil {
-		s.logger.WarnContext(ctx, "Failed to build resource spec",
+		if errors.Is(err, store.ErrCatalogItemNotFound) {
+			return nil, ErrCatalogItemNotFoundForInstance
+		}
+		return nil, err
+	}
+
+	if err := validateUserValuesForCatalogItem(catalogItem.Spec, req.Spec.UserValues); err != nil {
+		return nil, err
+	}
+
+	return s.createInstance(ctx, id, path, req)
+}
+
+func (s *catalogItemInstanceService) createInstance(ctx context.Context, id, path string, req *CreateCatalogItemInstanceRequest) (*v1alpha1.CatalogItemInstance, error) {
+	resolved, err := s.specBuilder.BuildResourceGraph(ctx, req.Spec.CatalogItemId, req.Spec.UserValues)
+	if err != nil {
+		s.logger.WarnContext(ctx, "Failed to build resource graph",
 			"id", id,
 			"catalog_item_id", req.Spec.CatalogItemId,
 			"error", err,
 		)
 		return nil, err
 	}
+	if len(resolved) == 0 {
+		return nil, fmt.Errorf("%w: catalog item has no resources", ErrCatalogItemSpecConflict)
+	}
 
-	// DB first — fail fast on constraint violations (ID conflict, FK violation)
-	storeModel := catalogItemInstanceToStoreModel(id, resourceID, path, req)
+	resourceIDs := make([]string, len(resolved))
+	for i, res := range resolved {
+		resourceIDs[i] = res.ResourceId
+	}
+
+	storeModel := catalogItemInstanceToStoreModel(id, path, req, resourceIDs)
 	createdModel, err := s.store.CatalogItemInstance().Create(ctx, storeModel)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to create catalog item instance in store", "id", id, "error", err)
 		return nil, mapCatalogItemInstanceStoreError(err)
 	}
 
-	// Call Placement Manager — only after DB validation passes
-	s.logger.DebugContext(ctx, "Calling placement manager to create resource", "id", id)
+	// TODO: Placement for multi-resources
+	// Call Placement Manager with the first resolved resource
+	// until multi-resource placement is wired.
+	res := resolved[0]
+	s.logger.DebugContext(ctx, "Calling placement manager to create resource",
+		"id", id,
+		"resource_name", res.Name,
+	)
 	_, err = s.pmClient.CreateResource(ctx, placement.CreateResourceRequest{
 		CatalogItemInstanceID: id,
-		Spec:                  resourceSpec,
-	}, resourceID)
+		Spec:                  res.Spec,
+	}, res.ResourceId)
 	if err != nil {
 		mapped := mapPlacementError(err, ErrPlacementManagerCreateFailed)
 		if rbErr := s.rollbackCatalogItemInstanceCreate(id); rbErr != nil {
@@ -146,8 +172,11 @@ func (s *catalogItemInstanceService) Create(ctx context.Context, req *CreateCata
 		return nil, mapped
 	}
 
-	s.logger.InfoContext(ctx, "Catalog item instance created", "id", id, "catalog_item_id", req.Spec.CatalogItemId)
-	// Convert result back to API type
+	s.logger.InfoContext(ctx, "Catalog item instance created",
+		"id", id,
+		"catalog_item_id", req.Spec.CatalogItemId,
+		"resource_count", len(resolved),
+	)
 	apiType := catalogItemInstanceToAPIType(createdModel)
 	return &apiType, nil
 }
@@ -176,8 +205,13 @@ func (s *catalogItemInstanceService) Rehydrate(ctx context.Context, id string) (
 		return nil, mapCatalogItemInstanceStoreError(err)
 	}
 
-	oldResourceID := instance.ResourceID
-	// Generate new resource ID
+	_, err = s.store.CatalogItem().Get(ctx, instance.Spec.CatalogItemId)
+	if err != nil {
+		return nil, mapCatalogItemStoreError(err)
+	}
+
+	// TODO: Rehydrate for multi-resources
+	oldResourceID := instance.Spec.ResourceIDs[0]
 	newResourceID := uuid.New().String()
 
 	// DB first — CAS rejects concurrent callers here
@@ -225,22 +259,24 @@ func (s *catalogItemInstanceService) Rehydrate(ctx context.Context, id string) (
 
 // Delete deletes a catalog item instance by ID
 func (s *catalogItemInstanceService) Delete(ctx context.Context, id string) error {
-	// Fetch instance for 404 handling and to get the resource ID
 	instance, err := s.store.CatalogItemInstance().Get(ctx, id)
 	if err != nil {
 		return mapCatalogItemInstanceStoreError(err)
 	}
 
-	// Delete PM resource using the stored resource ID
-	if instance.ResourceID != "" {
-		s.logger.DebugContext(ctx, "Calling placement manager to delete resource", "id", id, "resource_id", instance.ResourceID)
-		if err := s.pmClient.DeleteResource(ctx, instance.ResourceID); err != nil {
-			s.logger.ErrorContext(ctx, "Placement manager delete failed", "id", id, "error", err)
-			return fmt.Errorf("%w: %s", ErrPlacementManagerDeleteFailed, err.Error())
-		}
+	_, err = s.store.CatalogItem().Get(ctx, instance.Spec.CatalogItemId)
+	if err != nil {
+		return mapCatalogItemStoreError(err)
+	}
+	// TODO: Placement deletion for multi-resources
+	// Call Placement Manager with the first resource
+	// until multi-resource placement deletion is wired.
+	s.logger.DebugContext(ctx, "Calling placement manager to delete resource", "id", id, "resource_id", instance.Spec.ResourceIDs[0])
+	if err := s.pmClient.DeleteResource(ctx, instance.Spec.ResourceIDs[0]); err != nil {
+		s.logger.ErrorContext(ctx, "Placement manager delete failed", "id", id, "error", err)
+		return fmt.Errorf("%w: %s", ErrPlacementManagerDeleteFailed, err.Error())
 	}
 
-	// Delete local record
 	err = s.store.CatalogItemInstance().Delete(ctx, id)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to delete catalog item instance from store", "id", id, "error", err)
@@ -251,6 +287,8 @@ func (s *catalogItemInstanceService) Delete(ctx context.Context, id string) erro
 	return nil
 }
 
+// rollbackCatalogItemInstanceCreate deletes a catalog item instance after a failed
+// placement create. Used with the DB-first create path so PM failures do not leave orphans.
 func (s *catalogItemInstanceService) rollbackCatalogItemInstanceCreate(id string) error {
 	rbCtx, cancel := context.WithTimeout(context.Background(), catalogItemInstanceRollbackTimeout)
 	defer cancel()

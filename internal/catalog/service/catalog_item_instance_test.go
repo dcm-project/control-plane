@@ -18,6 +18,7 @@ import (
 	"github.com/dcm-project/control-plane/internal/catalog/service"
 	"github.com/dcm-project/control-plane/internal/catalog/store"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
+	"github.com/dcm-project/control-plane/internal/catalog/testutil"
 )
 
 // mockPMClient is a mock Placement Manager client for testing
@@ -54,17 +55,31 @@ func (m *mockPMClient) RehydrateResource(ctx context.Context, resourceID string,
 	return &placement.Resource{ID: newResourceID}, nil
 }
 
+func seedCatalogItemInstance(ctx context.Context, str store.Store, id string, resourceIDs []string) {
+	_, err := str.CatalogItemInstance().Create(ctx, model.CatalogItemInstance{
+		ID:          id,
+		ApiVersion:  "v1alpha1",
+		DisplayName: "Seeded instance",
+		Spec: model.CatalogItemInstanceSpec{
+			CatalogItemId: "small-vm",
+			UserValues:    []model.UserValue{},
+			ResourceIDs:   append([]string(nil), resourceIDs...),
+		},
+		Path:              fmt.Sprintf("catalog-item-instances/%s", id),
+		SpecCatalogItemId: "small-vm",
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
 func ensureCatalogItem(ctx context.Context, str store.Store, id, serviceType string) {
 	ci := model.CatalogItem{
 		ID:          id,
 		ApiVersion:  "v1alpha1",
 		DisplayName: fmt.Sprintf("Test %s", id),
-		Spec: model.CatalogItemSpec{
-			ServiceType: serviceType,
-			Fields:      []model.FieldConfiguration{},
-		},
-		Path:            fmt.Sprintf("catalog-items/%s", id),
-		SpecServiceType: serviceType,
+		Spec:        testutil.ModelCatalogSpec(serviceType, []model.FieldConfiguration{}),
+		Path:        fmt.Sprintf("catalog-items/%s", id),
 	}
 	_, err := str.CatalogItem().Create(ctx, ci)
 	if err != nil {
@@ -77,12 +92,8 @@ func ensureCatalogItemWithFields(ctx context.Context, str store.Store, id, servi
 		ID:          id,
 		ApiVersion:  "v1alpha1",
 		DisplayName: fmt.Sprintf("Test %s", id),
-		Spec: model.CatalogItemSpec{
-			ServiceType: serviceType,
-			Fields:      fields,
-		},
-		Path:            fmt.Sprintf("catalog-items/%s", id),
-		SpecServiceType: serviceType,
+		Spec:        testutil.ModelCatalogSpec(serviceType, fields),
+		Path:        fmt.Sprintf("catalog-items/%s", id),
 	}
 	_, err := str.CatalogItem().Create(ctx, ci)
 	if err != nil {
@@ -99,6 +110,22 @@ func ensureServiceTypeWithSpec(ctx context.Context, str store.Store, id, service
 		Path:        fmt.Sprintf("service-types/%s", id),
 	}
 	_, err := str.ServiceType().Create(ctx, st)
+	if err != nil {
+		return
+	}
+}
+
+func ensureMultiResourceCatalogItem(ctx context.Context, str store.Store, id string, resources []model.CatalogResource) {
+	ci := model.CatalogItem{
+		ID:          id,
+		ApiVersion:  "v1alpha1",
+		DisplayName: fmt.Sprintf("Test %s", id),
+		Spec: model.CatalogItemSpec{
+			Resources: resources,
+		},
+		Path: fmt.Sprintf("catalog-items/%s", id),
+	}
+	_, err := str.CatalogItem().Create(ctx, ci)
 	if err != nil {
 		return
 	}
@@ -168,8 +195,10 @@ var _ = Describe("CatalogItemInstance Service", func() {
 				Expect(result.DisplayName).To(Equal("My VM Instance"))
 				Expect(result.Spec.CatalogItemId).To(Equal("small-vm"))
 				Expect(*result.Path).To(Equal("catalog-item-instances/my-instance"))
-				Expect(result.ResourceId).ToNot(BeNil())
-				Expect(*result.ResourceId).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
+				Expect(result.Spec.ResourceIds).ToNot(BeNil())
+				Expect(*result.Spec.ResourceIds).To(HaveLen(1))
+				Expect((*result.Spec.ResourceIds)[0]).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
+				Expect(mockPM.createCalls).To(Equal(1))
 			})
 		})
 
@@ -188,9 +217,11 @@ var _ = Describe("CatalogItemInstance Service", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result.Uid).ToNot(BeNil())
 				Expect(*result.Uid).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
-				Expect(result.ResourceId).ToNot(BeNil())
-				Expect(*result.ResourceId).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
-				Expect(*result.ResourceId).ToNot(Equal(*result.Uid))
+				Expect(result.Spec.ResourceIds).ToNot(BeNil())
+				Expect(*result.Spec.ResourceIds).To(HaveLen(1))
+				Expect((*result.Spec.ResourceIds)[0]).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
+				Expect(mockPM.createCalls).To(Equal(1))
+				Expect((*result.Spec.ResourceIds)[0]).ToNot(Equal(*result.Uid))
 			})
 		})
 
@@ -223,7 +254,6 @@ var _ = Describe("CatalogItemInstance Service", func() {
 				Expect(result).To(BeNil())
 				// Make sure create was called only once (for the first request)
 				Expect(mockPM.createCalls).To(Equal(1))
-				// Make sure delete was not called (since the second request fast-failed)
 				Expect(mockPM.deleteCalls).To(Equal(0))
 			})
 		})
@@ -259,7 +289,7 @@ var _ = Describe("CatalogItemInstance Service", func() {
 					Spec: v1alpha1.CatalogItemInstanceSpec{
 						CatalogItemId: "vm-with-fields",
 						UserValues: []v1alpha1.UserValue{
-							{Path: "spec.vcpu.count", Value: float64(8)},
+							{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(8)},
 						},
 					},
 				}
@@ -280,7 +310,7 @@ var _ = Describe("CatalogItemInstance Service", func() {
 					Spec: v1alpha1.CatalogItemInstanceSpec{
 						CatalogItemId: "vm-no-disk",
 						UserValues: []v1alpha1.UserValue{
-							{Path: "spec.disk.size", Value: float64(100)},
+							{Resource: testutil.DefaultResourceName, Path: "spec.disk.size", Value: float64(100)},
 						},
 					},
 				}
@@ -304,7 +334,7 @@ var _ = Describe("CatalogItemInstance Service", func() {
 					Spec: v1alpha1.CatalogItemInstanceSpec{
 						CatalogItemId: "vm-immutable",
 						UserValues: []v1alpha1.UserValue{
-							{Path: "spec.memory.size_gb", Value: float64(16)},
+							{Resource: testutil.DefaultResourceName, Path: "spec.memory.size_gb", Value: float64(16)},
 						},
 					},
 				}
@@ -337,7 +367,7 @@ var _ = Describe("CatalogItemInstance Service", func() {
 					Spec: v1alpha1.CatalogItemInstanceSpec{
 						CatalogItemId: "vm-validated",
 						UserValues: []v1alpha1.UserValue{
-							{Path: "spec.vcpu.count", Value: float64(32)},
+							{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(32)},
 						},
 					},
 				}
@@ -370,7 +400,7 @@ var _ = Describe("CatalogItemInstance Service", func() {
 					Spec: v1alpha1.CatalogItemInstanceSpec{
 						CatalogItemId: "vm-valid-schema",
 						UserValues: []v1alpha1.UserValue{
-							{Path: "spec.vcpu.count", Value: float64(8)},
+							{Resource: testutil.DefaultResourceName, Path: "spec.vcpu.count", Value: float64(8)},
 						},
 					},
 				}
@@ -398,6 +428,159 @@ var _ = Describe("CatalogItemInstance Service", func() {
 				result, err := svc.CatalogItemInstance().Create(ctx, req)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).ToNot(BeNil())
+			})
+		})
+
+		Context("multi-resource catalog item", func() {
+			BeforeEach(func() {
+				ensureServiceTypeWithSpec(ctx, str, "db-st", "database", map[string]any{
+					"engine":  "postgres",
+					"version": "14",
+				})
+				ensureMultiResourceCatalogItem(ctx, str, "dev-app", []model.CatalogResource{
+					{
+						Name:        "ordersDb",
+						ServiceType: "database",
+						Fields: []model.FieldConfiguration{
+							{Path: "engine", Default: "postgres", Editable: true},
+							{Path: "version", Default: "16", Editable: true},
+						},
+					},
+					{
+						Name:              "app",
+						ServiceType:       "container",
+						RequiresResources: []string{"ordersDb"},
+						Fields: []model.FieldConfiguration{
+							{Path: "image", Default: "registry.example.com/app:1.0"},
+						},
+					},
+				})
+			})
+
+			It("should assign resource_ids for each resolved resource and call PM once", func() {
+				req := &service.CreateCatalogItemInstanceRequest{
+					ApiVersion:  "v1alpha1",
+					DisplayName: "Dev App Instance",
+					Spec: v1alpha1.CatalogItemInstanceSpec{
+						CatalogItemId: "dev-app",
+						UserValues:    []v1alpha1.UserValue{},
+					},
+				}
+
+				result, err := svc.CatalogItemInstance().Create(ctx, req)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).ToNot(BeNil())
+				Expect(result.Spec.CatalogItemId).To(Equal("dev-app"))
+				Expect(mockPM.createCalls).To(Equal(1))
+				Expect(result.Spec.ResourceIds).ToNot(BeNil())
+				Expect(*result.Spec.ResourceIds).To(HaveLen(2))
+				for _, rid := range *result.Spec.ResourceIds {
+					Expect(rid).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
+				}
+			})
+
+			It("should accept user_values with resource and path", func() {
+				resource := "ordersDb"
+				req := &service.CreateCatalogItemInstanceRequest{
+					ApiVersion:  "v1alpha1",
+					DisplayName: "Dev App Override",
+					Spec: v1alpha1.CatalogItemInstanceSpec{
+						CatalogItemId: "dev-app",
+						UserValues: []v1alpha1.UserValue{
+							{Resource: resource, Path: "version", Value: "17"},
+						},
+					},
+				}
+
+				result, err := svc.CatalogItemInstance().Create(ctx, req)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).ToNot(BeNil())
+				Expect(mockPM.createCalls).To(Equal(1))
+			})
+
+			It("should reject user_value without resource", func() {
+				req := &service.CreateCatalogItemInstanceRequest{
+					ApiVersion:  "v1alpha1",
+					DisplayName: "Missing resource",
+					Spec: v1alpha1.CatalogItemInstanceSpec{
+						CatalogItemId: "dev-app",
+						UserValues: []v1alpha1.UserValue{
+							{Path: "version", Value: "17"},
+						},
+					},
+				}
+
+				result, err := svc.CatalogItemInstance().Create(ctx, req)
+				Expect(err).To(Equal(service.ErrUserValueResourceRequired))
+				Expect(result).To(BeNil())
+				Expect(mockPM.createCalls).To(Equal(0))
+			})
+
+			It("should reject user_value for unknown resource", func() {
+				resource := "unknown"
+				req := &service.CreateCatalogItemInstanceRequest{
+					ApiVersion:  "v1alpha1",
+					DisplayName: "Bad resource",
+					Spec: v1alpha1.CatalogItemInstanceSpec{
+						CatalogItemId: "dev-app",
+						UserValues: []v1alpha1.UserValue{
+							{Resource: resource, Path: "version", Value: "17"},
+						},
+					},
+				}
+
+				result, err := svc.CatalogItemInstance().Create(ctx, req)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("user value resource not found"))
+				Expect(result).To(BeNil())
+				Expect(mockPM.createCalls).To(Equal(0))
+			})
+
+			It("should delete the first placement resource", func() {
+				instanceID := "multi-resource-delete"
+				_, err := svc.CatalogItemInstance().Create(ctx, &service.CreateCatalogItemInstanceRequest{
+					ID:          &instanceID,
+					ApiVersion:  "v1alpha1",
+					DisplayName: "Multi-resource Delete",
+					Spec: v1alpha1.CatalogItemInstanceSpec{
+						CatalogItemId: "dev-app",
+						UserValues:    []v1alpha1.UserValue{},
+					},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				mockPM.deleteCalls = 0
+
+				err = svc.CatalogItemInstance().Delete(ctx, instanceID)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(mockPM.deleteCalls).To(Equal(1))
+
+				_, err = svc.CatalogItemInstance().Get(ctx, instanceID)
+				Expect(err).To(Equal(service.ErrCatalogItemInstanceNotFound))
+			})
+
+			It("should rehydrate only the first placement resource", func() {
+				instanceID := "multi-resource-rehydrate"
+				created, err := svc.CatalogItemInstance().Create(ctx, &service.CreateCatalogItemInstanceRequest{
+					ID:          &instanceID,
+					ApiVersion:  "v1alpha1",
+					DisplayName: "Multi-resource Rehydrate",
+					Spec: v1alpha1.CatalogItemInstanceSpec{
+						CatalogItemId: "dev-app",
+						UserValues:    []v1alpha1.UserValue{},
+					},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(created.Spec.ResourceIds).ToNot(BeNil())
+				Expect(*created.Spec.ResourceIds).To(HaveLen(2))
+				originalResourceIDs := append([]string(nil), *created.Spec.ResourceIds...)
+
+				result, err := svc.CatalogItemInstance().Rehydrate(ctx, instanceID)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.Spec.ResourceIds).ToNot(BeNil())
+				Expect(*result.Spec.ResourceIds).To(HaveLen(2))
+				Expect((*result.Spec.ResourceIds)[0]).NotTo(Equal(originalResourceIDs[0]))
+				Expect((*result.Spec.ResourceIds)[1]).To(Equal(originalResourceIDs[1]))
+				Expect(mockPM.rehydrateCalls).To(Equal(1))
 			})
 		})
 	})
@@ -521,8 +704,8 @@ var _ = Describe("CatalogItemInstance Service", func() {
 				Expect(result).ToNot(BeNil())
 				Expect(*result.Uid).To(Equal(*created.Uid))
 				Expect(result.DisplayName).To(Equal("Test Instance"))
-				Expect(result.ResourceId).ToNot(BeNil())
-				Expect(*result.ResourceId).To(Equal(*created.ResourceId))
+				Expect(result.Spec.ResourceIds).ToNot(BeNil())
+				Expect(*result.Spec.ResourceIds).To(Equal(*created.Spec.ResourceIds))
 			})
 		})
 
@@ -606,20 +789,12 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 	})
 
 	Describe("Create with PM", func() {
-		It("should call PM with separate resource ID and store it", func() {
-			var capturedReq placement.CreateResourceRequest
-			var capturedID string
-			mockPM.createFunc = func(_ context.Context, req placement.CreateResourceRequest, id string) (*placement.Resource, error) {
-				capturedReq = req
-				capturedID = id
-				return &placement.Resource{ID: id}, nil
-			}
-
-			instanceID := "my-pm-instance"
+		It("should persist instance and call PM for each resolved resource", func() {
+			instanceID := "graph-pending-instance"
 			req := &service.CreateCatalogItemInstanceRequest{
 				ID:          &instanceID,
 				ApiVersion:  "v1alpha1",
-				DisplayName: "PM Test Instance",
+				DisplayName: "Graph Pending",
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: "small-vm",
 					UserValues:    []v1alpha1.UserValue{},
@@ -629,150 +804,14 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			result, err := svc.CatalogItemInstance().Create(ctx, req)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).ToNot(BeNil())
-			Expect(capturedReq.CatalogItemInstanceID).To(Equal(instanceID))
-			// Resource ID passed to PM should be a UUID, different from instance ID
-			Expect(capturedID).ToNot(Equal(instanceID))
-			Expect(capturedID).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
-			Expect(capturedReq.Spec).ToNot(BeNil())
-			// Resource ID should be stored and returned in the API response
-			Expect(result.ResourceId).ToNot(BeNil())
-			Expect(*result.ResourceId).To(Equal(capturedID))
+			Expect(mockPM.createCalls).To(Equal(1))
+			Expect(result.Spec.ResourceIds).ToNot(BeNil())
+			Expect(*result.Spec.ResourceIds).To(HaveLen(1))
+			Expect((*result.Spec.ResourceIds)[0]).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
 
-			// Verify the resource ID is stored and returned in the API response
 			got, err := svc.CatalogItemInstance().Get(ctx, instanceID)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(got).ToNot(BeNil())
-			Expect(*got.ResourceId).To(Equal(capturedID))
-		})
-
-		It("should delete DB record when PM create fails with canceled request context", func() {
-			reqCtx, cancelReq := context.WithCancel(ctx)
-			mockPM.createFunc = func(context.Context, placement.CreateResourceRequest, string) (*placement.Resource, error) {
-				cancelReq()
-				return nil, context.Canceled
-			}
-
-			instanceID := "pm-ctx-cancel-rollback"
-			req := &service.CreateCatalogItemInstanceRequest{
-				ID:          &instanceID,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "PM Context Cancel",
-				Spec: v1alpha1.CatalogItemInstanceSpec{
-					CatalogItemId: "small-vm",
-					UserValues:    []v1alpha1.UserValue{},
-				},
-			}
-
-			result, err := svc.CatalogItemInstance().Create(reqCtx, req)
-			Expect(err).To(HaveOccurred())
-			Expect(result).To(BeNil())
-
-			_, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
-			Expect(getErr).To(Equal(service.ErrCatalogItemInstanceNotFound))
-		})
-
-		It("should delete DB record when PM create fails", func() {
-			mockPM.createFunc = func(_ context.Context, _ placement.CreateResourceRequest, _ string) (*placement.Resource, error) {
-				return nil, errors.New("PM unavailable")
-			}
-
-			instanceID := "pm-fail-instance"
-			req := &service.CreateCatalogItemInstanceRequest{
-				ID:          &instanceID,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "PM Fail Test",
-				Spec: v1alpha1.CatalogItemInstanceSpec{
-					CatalogItemId: "small-vm",
-					UserValues:    []v1alpha1.UserValue{},
-				},
-			}
-
-			result, err := svc.CatalogItemInstance().Create(ctx, req)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("placement manager create resource failed"))
-			Expect(result).To(BeNil())
-
-			// Verify DB record was cleaned up (rollback)
-			_, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
-			Expect(getErr).To(Equal(service.ErrCatalogItemInstanceNotFound))
-		})
-
-		It("should return ErrPlacementManagerPolicyRejected when PM create returns 406", func() {
-			mockPM.createFunc = func(_ context.Context, _ placement.CreateResourceRequest, _ string) (*placement.Resource, error) {
-				return nil, &placement.PlacementError{StatusCode: 406, Body: "policy rejected"}
-			}
-
-			instanceID := "pm-policy-fail"
-			req := &service.CreateCatalogItemInstanceRequest{
-				ID:          &instanceID,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "PM Policy Fail",
-				Spec: v1alpha1.CatalogItemInstanceSpec{
-					CatalogItemId: "small-vm",
-					UserValues:    []v1alpha1.UserValue{},
-				},
-			}
-
-			result, err := svc.CatalogItemInstance().Create(ctx, req)
-			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, service.ErrPlacementManagerPolicyRejected)).To(BeTrue())
-			Expect(result).To(BeNil())
-
-			// Verify DB record was cleaned up (rollback)
-			_, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
-			Expect(getErr).To(Equal(service.ErrCatalogItemInstanceNotFound))
-		})
-
-		It("should return ErrPlacementManagerProviderError when PM create returns 422", func() {
-			mockPM.createFunc = func(_ context.Context, _ placement.CreateResourceRequest, _ string) (*placement.Resource, error) {
-				return nil, &placement.PlacementError{StatusCode: 422, Body: "provider error"}
-			}
-
-			instanceID := "pm-provider-fail"
-			req := &service.CreateCatalogItemInstanceRequest{
-				ID:          &instanceID,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "PM Provider Fail",
-				Spec: v1alpha1.CatalogItemInstanceSpec{
-					CatalogItemId: "small-vm",
-					UserValues:    []v1alpha1.UserValue{},
-				},
-			}
-
-			result, err := svc.CatalogItemInstance().Create(ctx, req)
-			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, service.ErrPlacementManagerProviderError)).To(BeTrue())
-			Expect(result).To(BeNil())
-
-			// Verify DB record was cleaned up (rollback)
-			_, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
-			Expect(getErr).To(Equal(service.ErrCatalogItemInstanceNotFound))
-		})
-
-		It("should return ErrPlacementManagerPolicyDependency when PM create returns 424", func() {
-			mockPM.createFunc = func(_ context.Context, _ placement.CreateResourceRequest, _ string) (*placement.Resource, error) {
-				return nil, &placement.PlacementError{StatusCode: 424, Body: "policy dependency"}
-			}
-
-			instanceID := "pm-dependency-fail"
-			req := &service.CreateCatalogItemInstanceRequest{
-				ID:          &instanceID,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "PM Dependency Fail",
-				Spec: v1alpha1.CatalogItemInstanceSpec{
-					CatalogItemId: "small-vm",
-					UserValues:    []v1alpha1.UserValue{},
-				},
-			}
-
-			result, err := svc.CatalogItemInstance().Create(ctx, req)
-			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, service.ErrPlacementManagerPolicyDependency)).To(BeTrue())
-			Expect(result).To(BeNil())
-
-			// Verify DB record was cleaned up (rollback)
-			_, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
-			Expect(getErr).To(Equal(service.ErrCatalogItemInstanceNotFound))
+			Expect(*got.Spec.ResourceIds).To(Equal(*result.Spec.ResourceIds))
 		})
 	})
 
@@ -787,17 +826,8 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			}
 
 			instanceID := "rehydrate-instance"
-			created, err := svc.CatalogItemInstance().Create(ctx, &service.CreateCatalogItemInstanceRequest{
-				ID:          &instanceID,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "Rehydrate Test",
-				Spec: v1alpha1.CatalogItemInstanceSpec{
-					CatalogItemId: "small-vm",
-					UserValues:    []v1alpha1.UserValue{},
-				},
-			})
-			Expect(err).ToNot(HaveOccurred())
-			oldResourceID := *created.ResourceId
+			oldResourceID := "resource-before-rehydrate"
+			seedCatalogItemInstance(ctx, str, instanceID, []string{oldResourceID})
 
 			result, err := svc.CatalogItemInstance().Rehydrate(ctx, instanceID)
 			Expect(err).ToNot(HaveOccurred())
@@ -809,16 +839,14 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			Expect(capturedNewResourceID).ToNot(Equal(oldResourceID))
 			Expect(capturedNewResourceID).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
 			// Result has the new resource ID
-			Expect(*result.ResourceId).To(Equal(capturedNewResourceID))
-			// Instance ID unchanged
-			Expect(*result.Uid).To(Equal(instanceID))
+			Expect(*result.Spec.ResourceIds).To(Equal([]string{capturedNewResourceID}))
 
 			Expect(mockPM.rehydrateCalls).To(Equal(1))
 
 			// Verify persisted
 			got, err := svc.CatalogItemInstance().Get(ctx, instanceID)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(*got.ResourceId).To(Equal(capturedNewResourceID))
+			Expect(*got.Spec.ResourceIds).To(Equal(*result.Spec.ResourceIds))
 		})
 
 		It("should return ErrCatalogItemInstanceNotFound for non-existent instance", func() {
@@ -830,28 +858,20 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 
 		It("should rollback resource_id and not call PM when a second rehydrate races", func() {
 			instanceID := "rehydrate-conflict"
-			created, err := svc.CatalogItemInstance().Create(ctx, &service.CreateCatalogItemInstanceRequest{
-				ID:          &instanceID,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "Conflict Test",
-				Spec: v1alpha1.CatalogItemInstanceSpec{
-					CatalogItemId: "small-vm",
-					UserValues:    []v1alpha1.UserValue{},
-				},
-			})
-			Expect(err).ToNot(HaveOccurred())
+			oldResourceID := "resource-conflict-old"
+			seedCatalogItemInstance(ctx, str, instanceID, []string{oldResourceID})
 
 			// First rehydrate succeeds
 			result, err := svc.CatalogItemInstance().Rehydrate(ctx, instanceID)
 			Expect(err).ToNot(HaveOccurred())
-			newResourceID := *result.ResourceId
-			Expect(newResourceID).ToNot(Equal(*created.ResourceId))
+			newResourceIDs := *result.Spec.ResourceIds
+			Expect(newResourceIDs[0]).ToNot(Equal(oldResourceID))
 
 			// Simulate a concurrent caller that read the old resource_id before
 			// the first rehydrate committed — manually revert DB to old resource_id
 			// to set up the CAS conflict scenario
 			directStore := str.CatalogItemInstance()
-			_, err = directStore.UpdateResourceID(ctx, instanceID, newResourceID, *created.ResourceId)
+			_, err = directStore.UpdateResourceID(ctx, instanceID, newResourceIDs[0], oldResourceID)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Now rehydrate again — this should succeed since resource_id matches
@@ -859,22 +879,13 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			result2, err := svc.CatalogItemInstance().Rehydrate(ctx, instanceID)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(mockPM.rehydrateCalls).To(Equal(1))
-			Expect(*result2.ResourceId).ToNot(Equal(*created.ResourceId))
+			Expect(*result2.Spec.ResourceIds).ToNot(Equal([]string{oldResourceID}))
 		})
 
 		It("should rollback resource_id when PM rehydrate fails", func() {
 			instanceID := "rehydrate-pm-fail"
-			created, err := svc.CatalogItemInstance().Create(ctx, &service.CreateCatalogItemInstanceRequest{
-				ID:          &instanceID,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "PM Rehydrate Fail",
-				Spec: v1alpha1.CatalogItemInstanceSpec{
-					CatalogItemId: "small-vm",
-					UserValues:    []v1alpha1.UserValue{},
-				},
-			})
-			Expect(err).ToNot(HaveOccurred())
-			oldResourceID := *created.ResourceId
+			oldResourceID := "resource-rehydrate-pm-fail"
+			seedCatalogItemInstance(ctx, str, instanceID, []string{oldResourceID})
 
 			mockPM.rehydrateFunc = func(_ context.Context, _ string, _ string) (*placement.Resource, error) {
 				return nil, errors.New("PM rehydrate unavailable")
@@ -888,22 +899,13 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			// Verify resource_id rolled back to original
 			got, err := svc.CatalogItemInstance().Get(ctx, instanceID)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(*got.ResourceId).To(Equal(oldResourceID))
+			Expect(*got.Spec.ResourceIds).To(Equal([]string{oldResourceID}))
 		})
 
 		It("should return ErrPlacementManagerPolicyRejected when PM rehydrate returns 406", func() {
 			instanceID := "rehydrate-policy-fail"
-			created, err := svc.CatalogItemInstance().Create(ctx, &service.CreateCatalogItemInstanceRequest{
-				ID:          &instanceID,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "PM Rehydrate Policy Fail",
-				Spec: v1alpha1.CatalogItemInstanceSpec{
-					CatalogItemId: "small-vm",
-					UserValues:    []v1alpha1.UserValue{},
-				},
-			})
-			Expect(err).ToNot(HaveOccurred())
-			oldResourceID := *created.ResourceId
+			oldResourceID := "resource-rehydrate-policy-fail"
+			seedCatalogItemInstance(ctx, str, instanceID, []string{oldResourceID})
 
 			mockPM.rehydrateFunc = func(_ context.Context, _ string, _ string) (*placement.Resource, error) {
 				return nil, &placement.PlacementError{StatusCode: 406, Body: "policy rejected"}
@@ -917,22 +919,13 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			// Verify resource_id rolled back
 			got, err := svc.CatalogItemInstance().Get(ctx, instanceID)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(*got.ResourceId).To(Equal(oldResourceID))
+			Expect(*got.Spec.ResourceIds).To(Equal([]string{oldResourceID}))
 		})
 
 		It("should return ErrPlacementManagerProviderError when PM rehydrate returns 422", func() {
 			instanceID := "rehydrate-provider-fail"
-			created, err := svc.CatalogItemInstance().Create(ctx, &service.CreateCatalogItemInstanceRequest{
-				ID:          &instanceID,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "PM Rehydrate Provider Fail",
-				Spec: v1alpha1.CatalogItemInstanceSpec{
-					CatalogItemId: "small-vm",
-					UserValues:    []v1alpha1.UserValue{},
-				},
-			})
-			Expect(err).ToNot(HaveOccurred())
-			oldResourceID := *created.ResourceId
+			oldResourceID := "resource-rehydrate-provider-fail"
+			seedCatalogItemInstance(ctx, str, instanceID, []string{oldResourceID})
 
 			mockPM.rehydrateFunc = func(_ context.Context, _ string, _ string) (*placement.Resource, error) {
 				return nil, &placement.PlacementError{StatusCode: 422, Body: "provider error"}
@@ -946,22 +939,13 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			// Verify resource_id rolled back
 			got, err := svc.CatalogItemInstance().Get(ctx, instanceID)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(*got.ResourceId).To(Equal(oldResourceID))
+			Expect(*got.Spec.ResourceIds).To(Equal([]string{oldResourceID}))
 		})
 
 		It("should return ErrPlacementManagerPolicyDependency when PM rehydrate returns 424", func() {
 			instanceID := "rehydrate-dependency-fail"
-			created, err := svc.CatalogItemInstance().Create(ctx, &service.CreateCatalogItemInstanceRequest{
-				ID:          &instanceID,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "PM Rehydrate Dependency Fail",
-				Spec: v1alpha1.CatalogItemInstanceSpec{
-					CatalogItemId: "small-vm",
-					UserValues:    []v1alpha1.UserValue{},
-				},
-			})
-			Expect(err).ToNot(HaveOccurred())
-			oldResourceID := *created.ResourceId
+			oldResourceID := "resource-rehydrate-dependency-fail"
+			seedCatalogItemInstance(ctx, str, instanceID, []string{oldResourceID})
 
 			mockPM.rehydrateFunc = func(_ context.Context, _ string, _ string) (*placement.Resource, error) {
 				return nil, &placement.PlacementError{StatusCode: 424, Body: "policy dependency"}
@@ -975,40 +959,25 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			// Verify resource_id rolled back
 			got, err := svc.CatalogItemInstance().Get(ctx, instanceID)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(*got.ResourceId).To(Equal(oldResourceID))
+			Expect(*got.Spec.ResourceIds).To(Equal([]string{oldResourceID}))
 		})
 	})
 
 	Describe("Delete with PM", func() {
 		It("should delete PM resource using stored resource ID then local record", func() {
-			var createdResourceID string
 			var deletedResourceID string
-			mockPM.createFunc = func(_ context.Context, _ placement.CreateResourceRequest, id string) (*placement.Resource, error) {
-				createdResourceID = id
-				return &placement.Resource{ID: id}, nil
-			}
+			storedResourceID := "resource-delete-pm"
 			mockPM.deleteFunc = func(_ context.Context, resourceID string) error {
 				deletedResourceID = resourceID
 				return nil
 			}
 
 			instanceID := "delete-pm-instance"
-			_, err := svc.CatalogItemInstance().Create(ctx, &service.CreateCatalogItemInstanceRequest{
-				ID:          &instanceID,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "To Delete",
-				Spec: v1alpha1.CatalogItemInstanceSpec{
-					CatalogItemId: "small-vm",
-					UserValues:    []v1alpha1.UserValue{},
-				},
-			})
-			Expect(err).ToNot(HaveOccurred())
+			seedCatalogItemInstance(ctx, str, instanceID, []string{storedResourceID})
 
-			err = svc.CatalogItemInstance().Delete(ctx, instanceID)
+			err := svc.CatalogItemInstance().Delete(ctx, instanceID)
 			Expect(err).ToNot(HaveOccurred())
-			// Delete should use the stored resource ID, not the instance ID
-			Expect(deletedResourceID).ToNot(Equal(instanceID))
-			Expect(deletedResourceID).To(Equal(createdResourceID))
+			Expect(deletedResourceID).To(Equal(storedResourceID))
 
 			// Verify local record deleted
 			_, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
@@ -1016,28 +985,15 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 		})
 
 		It("should not delete local record when PM delete fails", func() {
-			mockPM.createFunc = func(_ context.Context, _ placement.CreateResourceRequest, _ string) (*placement.Resource, error) {
-				return &placement.Resource{ID: "pm-fail-delete"}, nil
-			}
-
 			instanceID := "pm-delete-fail"
-			_, err := svc.CatalogItemInstance().Create(ctx, &service.CreateCatalogItemInstanceRequest{
-				ID:          &instanceID,
-				ApiVersion:  "v1alpha1",
-				DisplayName: "PM Delete Fail",
-				Spec: v1alpha1.CatalogItemInstanceSpec{
-					CatalogItemId: "small-vm",
-					UserValues:    []v1alpha1.UserValue{},
-				},
-			})
-			Expect(err).ToNot(HaveOccurred())
+			seedCatalogItemInstance(ctx, str, instanceID, []string{"resource-pm-delete-fail"})
 
 			// Make PM delete fail
 			mockPM.deleteFunc = func(_ context.Context, _ string) error {
 				return errors.New("PM delete unavailable")
 			}
 
-			err = svc.CatalogItemInstance().Delete(ctx, instanceID)
+			err := svc.CatalogItemInstance().Delete(ctx, instanceID)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("placement manager delete resource failed"))
 

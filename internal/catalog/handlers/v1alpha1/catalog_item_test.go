@@ -11,9 +11,22 @@ import (
 
 	v1alpha1API "github.com/dcm-project/control-plane/api/catalog/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/catalog/api/server"
-	v1alpha1 "github.com/dcm-project/control-plane/internal/catalog/handlers/v1alpha1"
+	"github.com/dcm-project/control-plane/internal/catalog/handlers/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/catalog/service"
+	"github.com/dcm-project/control-plane/internal/catalog/testutil"
 )
+
+func strPtr(s string) *string {
+	return &s
+}
+
+func catalogItemBody(apiVersion, displayName string, spec v1alpha1API.CatalogItemSpec) *v1alpha1API.CatalogItem {
+	return &v1alpha1API.CatalogItem{
+		ApiVersion:  &apiVersion,
+		DisplayName: &displayName,
+		Spec:        &spec,
+	}
+}
 
 // Mock CatalogItemService for testing
 type mockCatalogItemService struct {
@@ -82,17 +95,15 @@ func (m *mockCatalogItemServiceWrapper) Seed(_ context.Context) error {
 
 var _ = Describe("CatalogItem Handler", func() {
 	var (
-		ctx                  context.Context
-		handler              *v1alpha1.Handler
-		mockCIService        *mockCatalogItemService
-		mockSvc              service.Service
-		testTime             time.Time
-		testID               string
-		testPath             string
-		testApiVersion       = "v1alpha1"
-		serviceTypeVM        = "vm"
-		serviceTypeContainer = "container"
-		strintPtr            = func(s string) *string { return &s }
+		ctx            context.Context
+		handler        *v1alpha1.Handler
+		mockCIService  *mockCatalogItemService
+		mockSvc        service.Service
+		testTime       time.Time
+		testID         string
+		testPath       string
+		testApiVersion = "v1alpha1"
+		serviceTypeVM  = "vm"
 	)
 
 	BeforeEach(func() {
@@ -109,37 +120,26 @@ var _ = Describe("CatalogItem Handler", func() {
 		Context("with valid request", func() {
 			It("should create a catalog item and return 201", func() {
 				displayName := "Test Catalog Item"
+				spec := testutil.CatalogSpec("vm", []v1alpha1API.FieldConfiguration{
+					{Path: "spec.vcpu.count", Default: 2},
+				})
 				mockCIService.createFunc = func(_ context.Context, req *service.CreateCatalogItemRequest) (*v1alpha1API.CatalogItem, error) {
 					Expect(req.DisplayName).To(Equal(displayName))
 					Expect(req.ApiVersion).To(Equal("v1alpha1"))
-					Expect(*req.Spec.ServiceType).To(Equal(serviceTypeVM))
+					Expect(req.Spec.Resources[0].ServiceType).To(Equal(serviceTypeVM))
 					return &v1alpha1API.CatalogItem{
 						Uid:         &testID,
 						Path:        &testPath,
 						ApiVersion:  &testApiVersion,
-						DisplayName: strintPtr(displayName),
-						Spec: &v1alpha1API.CatalogItemSpec{
-							ServiceType: &serviceTypeVM,
-							Fields: &[]v1alpha1API.FieldConfiguration{
-								{Path: "spec.vcpu.count", Default: 2},
-							},
-						},
-						CreateTime: &testTime,
-						UpdateTime: &testTime,
+						DisplayName: &displayName,
+						Spec:        &spec,
+						CreateTime:  &testTime,
+						UpdateTime:  &testTime,
 					}, nil
 				}
 
 				request := server.CreateCatalogItemRequestObject{
-					Body: &v1alpha1API.CatalogItem{
-						ApiVersion:  &testApiVersion,
-						DisplayName: strintPtr(displayName),
-						Spec: &v1alpha1API.CatalogItemSpec{
-							ServiceType: &serviceTypeVM,
-							Fields: &[]v1alpha1API.FieldConfiguration{
-								{Path: "spec.vcpu.count", Default: 2},
-							},
-						},
-					},
+					Body: catalogItemBody(testApiVersion, displayName, spec),
 				}
 
 				response, err := handler.CreateCatalogItem(ctx, request)
@@ -154,6 +154,7 @@ var _ = Describe("CatalogItem Handler", func() {
 			It("should handle optional ID query param", func() {
 				userID := "my-catalog-item"
 				displayName := "My Item"
+				spec := testutil.CatalogSpec("vm", []v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}})
 				mockCIService.createFunc = func(_ context.Context, req *service.CreateCatalogItemRequest) (*v1alpha1API.CatalogItem, error) {
 					Expect(req.ID).ToNot(BeNil())
 					Expect(*req.ID).To(Equal(userID))
@@ -162,26 +163,16 @@ var _ = Describe("CatalogItem Handler", func() {
 						Uid:         &userID,
 						Path:        &path,
 						ApiVersion:  &testApiVersion,
-						DisplayName: strintPtr(displayName),
-						Spec: &v1alpha1API.CatalogItemSpec{
-							ServiceType: &serviceTypeVM,
-							Fields:      &[]v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-						},
-						CreateTime: &testTime,
-						UpdateTime: &testTime,
+						DisplayName: &displayName,
+						Spec:        &spec,
+						CreateTime:  &testTime,
+						UpdateTime:  &testTime,
 					}, nil
 				}
 
 				request := server.CreateCatalogItemRequestObject{
 					Params: v1alpha1API.CreateCatalogItemParams{Id: &userID},
-					Body: &v1alpha1API.CatalogItem{
-						ApiVersion:  &testApiVersion,
-						DisplayName: strintPtr(displayName),
-						Spec: &v1alpha1API.CatalogItemSpec{
-							ServiceType: &serviceTypeVM,
-							Fields:      &[]v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-						},
-					},
+					Body:   catalogItemBody(testApiVersion, displayName, spec),
 				}
 
 				response, err := handler.CreateCatalogItem(ctx, request)
@@ -195,12 +186,8 @@ var _ = Describe("CatalogItem Handler", func() {
 			It("should return 400 when api_version is nil", func() {
 				request := server.CreateCatalogItemRequestObject{
 					Body: &v1alpha1API.CatalogItem{
-						ApiVersion:  nil,
-						DisplayName: strintPtr("My Item"),
-						Spec: &v1alpha1API.CatalogItemSpec{
-							ServiceType: &serviceTypeVM,
-							Fields:      &[]v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-						},
+						DisplayName: strPtr("My Item"),
+						Spec:        testutil.PtrCatalogSpec("vm", []v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}}),
 					},
 				}
 
@@ -216,11 +203,9 @@ var _ = Describe("CatalogItem Handler", func() {
 			})
 
 			It("should return 400 when api_version is not v1alpha1", func() {
+				spec := testutil.CatalogSpec("vm", []v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}})
 				request := server.CreateCatalogItemRequestObject{
-					Body: &v1alpha1API.CatalogItem{
-						ApiVersion:  strintPtr("v1beta1"),
-						DisplayName: strintPtr("My Item"),
-					},
+					Body: catalogItemBody("v1beta1", "My Item", spec),
 				}
 
 				response, err := handler.CreateCatalogItem(ctx, request)
@@ -235,14 +220,11 @@ var _ = Describe("CatalogItem Handler", func() {
 			})
 
 			It("should return 400 when display_name is nil", func() {
+				spec := testutil.CatalogSpec("vm", []v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}})
 				request := server.CreateCatalogItemRequestObject{
 					Body: &v1alpha1API.CatalogItem{
-						ApiVersion:  &testApiVersion,
-						DisplayName: nil,
-						Spec: &v1alpha1API.CatalogItemSpec{
-							ServiceType: &serviceTypeVM,
-							Fields:      &[]v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-						},
+						ApiVersion: &testApiVersion,
+						Spec:       &spec,
 					},
 				}
 
@@ -261,8 +243,7 @@ var _ = Describe("CatalogItem Handler", func() {
 				request := server.CreateCatalogItemRequestObject{
 					Body: &v1alpha1API.CatalogItem{
 						ApiVersion:  &testApiVersion,
-						DisplayName: strintPtr("My Item"),
-						Spec:        nil,
+						DisplayName: strPtr("My Item"),
 					},
 				}
 
@@ -277,15 +258,12 @@ var _ = Describe("CatalogItem Handler", func() {
 				Expect(*badRequest.Detail).To(ContainSubstring("spec"))
 			})
 
-			It("should return 400 when spec.service_type is nil", func() {
+			It("should return 400 when spec.resources is empty", func() {
 				request := server.CreateCatalogItemRequestObject{
 					Body: &v1alpha1API.CatalogItem{
 						ApiVersion:  &testApiVersion,
-						DisplayName: strintPtr("My Item"),
-						Spec: &v1alpha1API.CatalogItemSpec{
-							ServiceType: nil,
-							Fields:      &[]v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-						},
+						DisplayName: strPtr("My Item"),
+						Spec:        &v1alpha1API.CatalogItemSpec{Resources: []v1alpha1API.CatalogResource{}},
 					},
 				}
 
@@ -297,30 +275,7 @@ var _ = Describe("CatalogItem Handler", func() {
 				Expect(badRequest.Status).To(Equal(int32(400)))
 				Expect(badRequest.Type).To(Equal(v1alpha1API.INVALIDARGUMENT))
 				Expect(badRequest.Detail).ToNot(BeNil())
-				Expect(*badRequest.Detail).To(ContainSubstring("spec.service_type"))
-			})
-
-			It("should return 400 when spec.fields is nil", func() {
-				request := server.CreateCatalogItemRequestObject{
-					Body: &v1alpha1API.CatalogItem{
-						ApiVersion:  &testApiVersion,
-						DisplayName: strintPtr("My Item"),
-						Spec: &v1alpha1API.CatalogItemSpec{
-							ServiceType: &serviceTypeVM,
-							Fields:      nil,
-						},
-					},
-				}
-
-				response, err := handler.CreateCatalogItem(ctx, request)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(response).To(BeAssignableToTypeOf(server.CreateCatalogItem400JSONResponse{}))
-
-				badRequest := response.(server.CreateCatalogItem400JSONResponse)
-				Expect(badRequest.Status).To(Equal(int32(400)))
-				Expect(badRequest.Type).To(Equal(v1alpha1API.INVALIDARGUMENT))
-				Expect(badRequest.Detail).ToNot(BeNil())
-				Expect(*badRequest.Detail).To(ContainSubstring("fields"))
+				Expect(*badRequest.Detail).To(ContainSubstring("resources"))
 			})
 		})
 
@@ -330,15 +285,9 @@ var _ = Describe("CatalogItem Handler", func() {
 					return nil, service.ErrCatalogItemIDTaken
 				}
 
+				spec := testutil.CatalogSpec("vm", []v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}})
 				request := server.CreateCatalogItemRequestObject{
-					Body: &v1alpha1API.CatalogItem{
-						ApiVersion:  &testApiVersion,
-						DisplayName: strintPtr("Duplicate"),
-						Spec: &v1alpha1API.CatalogItemSpec{
-							ServiceType: &serviceTypeVM,
-							Fields:      &[]v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-						},
-					},
+					Body: catalogItemBody(testApiVersion, "Duplicate", spec),
 				}
 
 				response, err := handler.CreateCatalogItem(ctx, request)
@@ -357,15 +306,9 @@ var _ = Describe("CatalogItem Handler", func() {
 					return nil, service.ErrServiceTypeNotFound
 				}
 
+				spec := testutil.CatalogSpec("vm", []v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}})
 				request := server.CreateCatalogItemRequestObject{
-					Body: &v1alpha1API.CatalogItem{
-						ApiVersion:  &testApiVersion,
-						DisplayName: strintPtr("Test"),
-						Spec: &v1alpha1API.CatalogItemSpec{
-							ServiceType: &serviceTypeVM,
-							Fields:      &[]v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-						},
-					},
+					Body: catalogItemBody(testApiVersion, "Test", spec),
 				}
 
 				response, err := handler.CreateCatalogItem(ctx, request)
@@ -386,15 +329,9 @@ var _ = Describe("CatalogItem Handler", func() {
 					return nil, errors.New("database error")
 				}
 
+				spec := testutil.CatalogSpec("vm", []v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}})
 				request := server.CreateCatalogItemRequestObject{
-					Body: &v1alpha1API.CatalogItem{
-						ApiVersion:  &testApiVersion,
-						DisplayName: strintPtr("Test"),
-						Spec: &v1alpha1API.CatalogItemSpec{
-							ServiceType: &serviceTypeVM,
-							Fields:      &[]v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}},
-						},
-					},
+					Body: catalogItemBody(testApiVersion, "Test", spec),
 				}
 
 				response, err := handler.CreateCatalogItem(ctx, request)
@@ -411,6 +348,8 @@ var _ = Describe("CatalogItem Handler", func() {
 	Describe("ListCatalogItems", func() {
 		Context("with valid request", func() {
 			It("should list catalog items and return 200", func() {
+				spec := testutil.CatalogSpecVM([]v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}})
+				displayName := "Item 1"
 				mockCIService.listFunc = func(_ context.Context, _ service.CatalogItemListOptions) (*service.CatalogItemListResult, error) {
 					return &service.CatalogItemListResult{
 						CatalogItems: []v1alpha1API.CatalogItem{
@@ -418,8 +357,8 @@ var _ = Describe("CatalogItem Handler", func() {
 								Uid:         &testID,
 								Path:        &testPath,
 								ApiVersion:  &testApiVersion,
-								DisplayName: strintPtr("Item 1"),
-								Spec:        &v1alpha1API.CatalogItemSpec{ServiceType: &serviceTypeVM},
+								DisplayName: &displayName,
+								Spec:        &spec,
 							},
 						},
 					}, nil
@@ -502,14 +441,16 @@ var _ = Describe("CatalogItem Handler", func() {
 	Describe("GetCatalogItem", func() {
 		Context("with valid request", func() {
 			It("should get a catalog item and return 200", func() {
+				spec := testutil.CatalogSpecVM([]v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}})
+				displayName := "Test Item"
 				mockCIService.getFunc = func(_ context.Context, id string) (*v1alpha1API.CatalogItem, error) {
 					Expect(id).To(Equal(testID))
 					return &v1alpha1API.CatalogItem{
 						Uid:         &testID,
 						Path:        &testPath,
 						ApiVersion:  &testApiVersion,
-						DisplayName: strintPtr("Test Item"),
-						Spec:        &v1alpha1API.CatalogItemSpec{ServiceType: &serviceTypeVM},
+						DisplayName: &displayName,
+						Spec:        &spec,
 						CreateTime:  &testTime,
 						UpdateTime:  &testTime,
 					}, nil
@@ -573,6 +514,7 @@ var _ = Describe("CatalogItem Handler", func() {
 		Context("with valid update", func() {
 			It("should update catalog item and return 200", func() {
 				displayName := "Updated Name"
+				spec := testutil.CatalogSpecVM([]v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}})
 				mockCIService.updateFunc = func(_ context.Context, id string, req *service.UpdateCatalogItemRequest) (*v1alpha1API.CatalogItem, error) {
 					Expect(id).To(Equal(testID))
 					Expect(req.DisplayName).ToNot(BeNil())
@@ -581,8 +523,8 @@ var _ = Describe("CatalogItem Handler", func() {
 						Uid:         &testID,
 						Path:        &testPath,
 						ApiVersion:  &testApiVersion,
-						DisplayName: strintPtr(displayName),
-						Spec:        &v1alpha1API.CatalogItemSpec{ServiceType: &serviceTypeVM},
+						DisplayName: &displayName,
+						Spec:        &spec,
 						UpdateTime:  &testTime,
 					}, nil
 				}
@@ -590,7 +532,7 @@ var _ = Describe("CatalogItem Handler", func() {
 				request := server.UpdateCatalogItemRequestObject{
 					CatalogItemId: testID,
 					Body: &v1alpha1API.CatalogItem{
-						DisplayName: strintPtr(displayName),
+						DisplayName: &displayName,
 					},
 				}
 
@@ -604,20 +546,21 @@ var _ = Describe("CatalogItem Handler", func() {
 
 			It("should update display_name only", func() {
 				displayName := "New Name"
+				spec := testutil.CatalogSpecVM([]v1alpha1API.FieldConfiguration{{Path: "spec.vcpu", Default: 2}})
 				mockCIService.updateFunc = func(_ context.Context, _ string, req *service.UpdateCatalogItemRequest) (*v1alpha1API.CatalogItem, error) {
 					Expect(req.DisplayName).ToNot(BeNil())
 					Expect(req.Spec).To(BeNil())
 					return &v1alpha1API.CatalogItem{
 						Uid:         &testID,
-						DisplayName: strintPtr(displayName),
-						Spec:        &v1alpha1API.CatalogItemSpec{ServiceType: &serviceTypeVM},
+						DisplayName: &displayName,
+						Spec:        &spec,
 					}, nil
 				}
 
 				request := server.UpdateCatalogItemRequestObject{
 					CatalogItemId: testID,
 					Body: &v1alpha1API.CatalogItem{
-						DisplayName: strintPtr(displayName),
+						DisplayName: &displayName,
 					},
 				}
 
@@ -630,16 +573,14 @@ var _ = Describe("CatalogItem Handler", func() {
 		Context("with immutable field update attempt", func() {
 			It("should return 400 for immutable field", func() {
 				mockCIService.updateFunc = func(_ context.Context, _ string, _ *service.UpdateCatalogItemRequest) (*v1alpha1API.CatalogItem, error) {
-					return nil, service.ErrImmutableFieldUpdate
+					return nil, service.ErrImmutableSpecStructureUpdate
 				}
 
+				spec := testutil.CatalogSpec("container", nil)
 				request := server.UpdateCatalogItemRequestObject{
 					CatalogItemId: testID,
 					Body: &v1alpha1API.CatalogItem{
-						ApiVersion: strintPtr("v2beta1"), // Attempting to change immutable field
-						Spec: &v1alpha1API.CatalogItemSpec{
-							ServiceType: &serviceTypeContainer, // Attempting to change immutable field
-						},
+						Spec: &spec,
 					},
 				}
 
@@ -659,10 +600,11 @@ var _ = Describe("CatalogItem Handler", func() {
 					return nil, service.ErrCatalogItemNotFound
 				}
 
+				updatedName := "Updated"
 				request := server.UpdateCatalogItemRequestObject{
 					CatalogItemId: "nonexistent",
 					Body: &v1alpha1API.CatalogItem{
-						DisplayName: strintPtr("Updated"),
+						DisplayName: &updatedName,
 					},
 				}
 
@@ -682,10 +624,11 @@ var _ = Describe("CatalogItem Handler", func() {
 					return nil, errors.New("database error")
 				}
 
+				updatedName := "Updated"
 				request := server.UpdateCatalogItemRequestObject{
 					CatalogItemId: testID,
 					Body: &v1alpha1API.CatalogItem{
-						DisplayName: strintPtr("Updated"),
+						DisplayName: &updatedName,
 					},
 				}
 

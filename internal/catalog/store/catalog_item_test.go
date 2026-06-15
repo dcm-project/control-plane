@@ -14,6 +14,7 @@ import (
 
 	"github.com/dcm-project/control-plane/internal/catalog/store"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
+	"github.com/dcm-project/control-plane/internal/catalog/testutil"
 )
 
 var _ = Describe("CatalogItem Store", func() {
@@ -72,16 +73,13 @@ var _ = Describe("CatalogItem Store", func() {
 				ID:          "small-vm",
 				ApiVersion:  "v1alpha1",
 				DisplayName: "Small VM",
-				Spec: model.CatalogItemSpec{
-					ServiceType: "vm",
-					Fields: []model.FieldConfiguration{
-						{
-							Path:     "spec.vcpu.count",
-							Editable: false,
-							Default:  2,
-						},
+				Spec: testutil.ModelCatalogSpec("vm", []model.FieldConfiguration{
+					{
+						Path:     "spec.vcpu.count",
+						Editable: false,
+						Default:  2,
 					},
-				},
+				}),
 				Path: "catalog-items/small-vm",
 			}
 
@@ -93,8 +91,7 @@ var _ = Describe("CatalogItem Store", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(retrieved.ID).To(Equal("small-vm"))
 			Expect(retrieved.DisplayName).To(Equal("Small VM"))
-			Expect(retrieved.Spec.ServiceType).To(Equal("vm"))
-			Expect(retrieved.SpecServiceType).To(Equal("vm"))
+			Expect(retrieved.Spec.Resources[0].ServiceType).To(Equal("vm"))
 		})
 
 		It("should return error when creating duplicate ID", func() {
@@ -105,11 +102,8 @@ var _ = Describe("CatalogItem Store", func() {
 				ID:          "duplicate-ci",
 				ApiVersion:  "v1alpha1",
 				DisplayName: "Original",
-				Spec: model.CatalogItemSpec{
-					ServiceType: "vm",
-					Fields:      []model.FieldConfiguration{},
-				},
-				Path: "catalog-items/duplicate-ci",
+				Spec:        testutil.ModelCatalogSpec("vm", []model.FieldConfiguration{}),
+				Path:        "catalog-items/duplicate-ci",
 			}
 
 			_, err := catalogItemStore.Create(context.Background(), *ci)
@@ -120,31 +114,12 @@ var _ = Describe("CatalogItem Store", func() {
 				ID:          "duplicate-ci",
 				ApiVersion:  "v1alpha1",
 				DisplayName: "Duplicate",
-				Spec: model.CatalogItemSpec{
-					ServiceType: "vm",
-					Fields:      []model.FieldConfiguration{},
-				},
-				Path: "catalog-items/duplicate-ci",
+				Spec:        testutil.ModelCatalogSpec("vm", []model.FieldConfiguration{}),
+				Path:        "catalog-items/duplicate-ci",
 			}
 
 			_, err = catalogItemStore.Create(context.Background(), ci2)
 			Expect(err).To(Equal(store.ErrCatalogItemIDTaken))
-		})
-
-		It("should return error when creating with non-existent service type", func() {
-			ci := &model.CatalogItem{
-				ID:          "invalid-st-ci",
-				ApiVersion:  "v1alpha1",
-				DisplayName: "Invalid Service Type",
-				Spec: model.CatalogItemSpec{
-					ServiceType: "non-existent-service-type",
-					Fields:      []model.FieldConfiguration{},
-				},
-				Path: "catalog-items/invalid-st-ci",
-			}
-
-			_, err := catalogItemStore.Create(context.Background(), *ci)
-			Expect(err).To(Equal(store.ErrServiceTypeNotFound))
 		})
 
 		It("should create catalog item with valid service type", func() {
@@ -155,11 +130,8 @@ var _ = Describe("CatalogItem Store", func() {
 				ID:          "valid-ci",
 				ApiVersion:  "v1alpha1",
 				DisplayName: "Valid Catalog Item",
-				Spec: model.CatalogItemSpec{
-					ServiceType: "valid-service",
-					Fields:      []model.FieldConfiguration{},
-				},
-				Path: "catalog-items/valid-ci",
+				Spec:        testutil.ModelCatalogSpec("valid-service", []model.FieldConfiguration{}),
+				Path:        "catalog-items/valid-ci",
 			}
 
 			_, err := catalogItemStore.Create(context.Background(), *ci)
@@ -176,12 +148,9 @@ var _ = Describe("CatalogItem Store", func() {
 				ID:          "get-test-ci",
 				ApiVersion:  "v1alpha1",
 				DisplayName: "Test Item",
-				Spec: model.CatalogItemSpec{
-					ServiceType: "database",
-					Fields: []model.FieldConfiguration{
-						{Path: "spec.engine", Default: "postgres"},
-					},
-				},
+				Spec: testutil.ModelCatalogSpec("database", []model.FieldConfiguration{
+					{Path: "spec.engine", Default: "postgres"},
+				}),
 				Path: "catalog-items/get-test-ci",
 			}
 
@@ -191,7 +160,7 @@ var _ = Describe("CatalogItem Store", func() {
 			retrieved, err := catalogItemStore.Get(context.Background(), "get-test-ci")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(retrieved.ID).To(Equal("get-test-ci"))
-			Expect(retrieved.Spec.ServiceType).To(Equal("database"))
+			Expect(retrieved.Spec.Resources[0].ServiceType).To(Equal("database"))
 		})
 
 		It("should return error for non-existent catalog item", func() {
@@ -209,12 +178,9 @@ var _ = Describe("CatalogItem Store", func() {
 				ID:          "update-test",
 				ApiVersion:  "v1alpha1",
 				DisplayName: "Original Name",
-				Spec: model.CatalogItemSpec{
-					ServiceType: "vm",
-					Fields: []model.FieldConfiguration{
-						{Path: "spec.vcpu.count", Default: 2},
-					},
-				},
+				Spec: testutil.ModelCatalogSpec("vm", []model.FieldConfiguration{
+					{Path: "spec.vcpu.count", Default: 2},
+				}),
 				Path: "catalog-items/update-test",
 			}
 
@@ -224,7 +190,7 @@ var _ = Describe("CatalogItem Store", func() {
 
 			// Update mutable fields
 			ci.DisplayName = "Updated Name"
-			ci.Spec.Fields = append(ci.Spec.Fields, model.FieldConfiguration{
+			ci.Spec.Resources[0].Fields = append(ci.Spec.Resources[0].Fields, model.FieldConfiguration{
 				Path:    "spec.memory.size_gb",
 				Default: 8,
 			})
@@ -236,7 +202,7 @@ var _ = Describe("CatalogItem Store", func() {
 			retrieved, err := catalogItemStore.Get(context.Background(), "update-test")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(retrieved.DisplayName).To(Equal("Updated Name"))
-			Expect(retrieved.Spec.Fields).To(HaveLen(2))
+			Expect(retrieved.Spec.Resources[0].Fields).To(HaveLen(2))
 		})
 
 		It("should not update immutable fields", func() {
@@ -249,11 +215,8 @@ var _ = Describe("CatalogItem Store", func() {
 				ID:          "immutable-update-test",
 				ApiVersion:  originalApiVersion,
 				DisplayName: "Original Name",
-				Spec: model.CatalogItemSpec{
-					ServiceType: "vm",
-					Fields:      []model.FieldConfiguration{},
-				},
-				Path: originalPath,
+				Spec:        testutil.ModelCatalogSpec("vm", []model.FieldConfiguration{}),
+				Path:        originalPath,
 			}
 
 			created, err := catalogItemStore.Create(context.Background(), *ci)
@@ -277,62 +240,25 @@ var _ = Describe("CatalogItem Store", func() {
 		})
 
 		It("should return error when updating non-existent catalog item", func() {
-			// Create prerequisite service type
-			createTestServiceType("vm-st-nonexist", "vm")
-
 			ci := &model.CatalogItem{
 				ID:          "non-existent",
 				DisplayName: "Updated",
-				Spec: model.CatalogItemSpec{
-					ServiceType: "vm",
-					Fields:      []model.FieldConfiguration{},
-				},
+				Spec:        testutil.ModelCatalogSpec("vm", []model.FieldConfiguration{}),
 			}
 
 			err := catalogItemStore.Update(context.Background(), ci)
 			Expect(err).To(Equal(store.ErrCatalogItemNotFound))
 		})
-
-		It("should return error when updating with non-existent service type", func() {
-			// Create prerequisite service types
-			createTestServiceType("vm-st-orig", "vm")
-
-			ci := &model.CatalogItem{
-				ID:          "update-invalid-st",
-				ApiVersion:  "v1alpha1",
-				DisplayName: "Original",
-				Spec: model.CatalogItemSpec{
-					ServiceType: "vm",
-					Fields:      []model.FieldConfiguration{},
-				},
-				Path: "catalog-items/update-invalid-st",
-			}
-
-			created, err := catalogItemStore.Create(context.Background(), *ci)
-			Expect(err).ToNot(HaveOccurred())
-			ci = created
-
-			// Try to update with non-existent service type
-			ci.Spec.ServiceType = "non-existent-service-type"
-			err = catalogItemStore.Update(context.Background(), ci)
-			Expect(err).To(Equal(store.ErrServiceTypeNotFound))
-		})
 	})
 
 	Describe("Delete", func() {
 		It("should delete an existing catalog item", func() {
-			// Create prerequisite service type
-			createTestServiceType("vm-st-del", "vm")
-
 			ci := &model.CatalogItem{
 				ID:          "delete-test",
 				ApiVersion:  "v1alpha1",
 				DisplayName: "To Delete",
-				Spec: model.CatalogItemSpec{
-					ServiceType: "vm",
-					Fields:      []model.FieldConfiguration{},
-				},
-				Path: "catalog-items/delete-test",
+				Spec:        testutil.ModelCatalogSpec("vm", []model.FieldConfiguration{}),
+				Path:        "catalog-items/delete-test",
 			}
 
 			_, err := catalogItemStore.Create(context.Background(), *ci)
@@ -373,11 +299,8 @@ var _ = Describe("CatalogItem Store", func() {
 					ID:          fmt.Sprintf("ci-%d", i),
 					ApiVersion:  "v1alpha1",
 					DisplayName: fmt.Sprintf("Item %d", i),
-					Spec: model.CatalogItemSpec{
-						ServiceType: "vm",
-						Fields:      []model.FieldConfiguration{},
-					},
-					Path: fmt.Sprintf("catalog-items/ci-%d", i),
+					Spec:        testutil.ModelCatalogSpec("vm", []model.FieldConfiguration{}),
+					Path:        fmt.Sprintf("catalog-items/ci-%d", i),
 				}
 				time.Sleep(time.Millisecond)
 				_, err := catalogItemStore.Create(context.Background(), ci)
@@ -400,11 +323,8 @@ var _ = Describe("CatalogItem Store", func() {
 				ID:          "vm-item",
 				ApiVersion:  "v1alpha1",
 				DisplayName: "VM Item",
-				Spec: model.CatalogItemSpec{
-					ServiceType: "vm",
-					Fields:      []model.FieldConfiguration{},
-				},
-				Path: "catalog-items/vm-item",
+				Spec:        testutil.ModelCatalogSpec("vm", []model.FieldConfiguration{}),
+				Path:        "catalog-items/vm-item",
 			}
 			_, err := catalogItemStore.Create(context.Background(), ci1)
 			Expect(err).ToNot(HaveOccurred())
@@ -413,11 +333,8 @@ var _ = Describe("CatalogItem Store", func() {
 				ID:          "db-item",
 				ApiVersion:  "v1alpha1",
 				DisplayName: "DB Item",
-				Spec: model.CatalogItemSpec{
-					ServiceType: "database",
-					Fields:      []model.FieldConfiguration{},
-				},
-				Path: "catalog-items/db-item",
+				Spec:        testutil.ModelCatalogSpec("database", []model.FieldConfiguration{}),
+				Path:        "catalog-items/db-item",
 			}
 			_, err = catalogItemStore.Create(context.Background(), ci2)
 			Expect(err).ToNot(HaveOccurred())
@@ -427,20 +344,56 @@ var _ = Describe("CatalogItem Store", func() {
 			result, err := catalogItemStore.List(context.Background(), &store.CatalogItemListOptions{PageSize: 100, ServiceType: &serviceTypeVM})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.CatalogItems).To(HaveLen(1))
-			Expect(result.CatalogItems[0].Spec.ServiceType).To(Equal("vm"))
+			Expect(result.CatalogItems[0].Spec.Resources[0].ServiceType).To(Equal("vm"))
 
 			// Filter for database service type
 			serviceTypeDB := "database"
 			result, err = catalogItemStore.List(context.Background(), &store.CatalogItemListOptions{PageSize: 100, ServiceType: &serviceTypeDB})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.CatalogItems).To(HaveLen(1))
-			Expect(result.CatalogItems[0].Spec.ServiceType).To(Equal("database"))
+			Expect(result.CatalogItems[0].Spec.Resources[0].ServiceType).To(Equal("database"))
 
 			// Filter for non-existent service type
 			serviceTypeNonExistent := "non-existent"
 			result, err = catalogItemStore.List(context.Background(), &store.CatalogItemListOptions{PageSize: 100, ServiceType: &serviceTypeNonExistent})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.CatalogItems).To(BeEmpty())
+		})
+
+		It("should filter multi-resource items when any resource matches", func() {
+			ci1 := model.CatalogItem{
+				ID:          "vm-only",
+				ApiVersion:  "v1alpha1",
+				DisplayName: "VM Only",
+				Spec:        testutil.ModelCatalogSpec("vm", []model.FieldConfiguration{}),
+				Path:        "catalog-items/vm-only",
+			}
+			_, err := catalogItemStore.Create(context.Background(), ci1)
+			Expect(err).ToNot(HaveOccurred())
+
+			ci2 := model.CatalogItem{
+				ID:          "dev-app",
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Dev App",
+				Spec: model.CatalogItemSpec{
+					Resources: []model.CatalogResource{
+						{Name: "ordersDb", ServiceType: "database"},
+						{Name: "app", ServiceType: "container"},
+					},
+				},
+				Path: "catalog-items/dev-app",
+			}
+			_, err = catalogItemStore.Create(context.Background(), ci2)
+			Expect(err).ToNot(HaveOccurred())
+
+			containerFilter := "container"
+			result, err := catalogItemStore.List(context.Background(), &store.CatalogItemListOptions{
+				PageSize:    100,
+				ServiceType: &containerFilter,
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.CatalogItems).To(HaveLen(1))
+			Expect(result.CatalogItems[0].ID).To(Equal("dev-app"))
 		})
 
 		It("should handle pagination correctly", func() {
@@ -453,11 +406,8 @@ var _ = Describe("CatalogItem Store", func() {
 					ID:          fmt.Sprintf("page-ci-%d", i),
 					ApiVersion:  "v1alpha1",
 					DisplayName: fmt.Sprintf("Item %d", i),
-					Spec: model.CatalogItemSpec{
-						ServiceType: "vm",
-						Fields:      []model.FieldConfiguration{},
-					},
-					Path: fmt.Sprintf("catalog-items/page-ci-%d", i),
+					Spec:        testutil.ModelCatalogSpec("vm", []model.FieldConfiguration{}),
+					Path:        fmt.Sprintf("catalog-items/page-ci-%d", i),
 				}
 				time.Sleep(time.Millisecond)
 				_, err := catalogItemStore.Create(context.Background(), ci)

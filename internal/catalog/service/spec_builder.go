@@ -5,15 +5,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/catalog/store"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
+	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 // ServiceTypeKey is the key for the service_type field in the spec map
 const ServiceTypeKey = "service_type"
+
+// ResolvedResource is a catalog resource after resolution.
+type ResolvedResource struct {
+	Name              string
+	ServiceType       string
+	RequiresResources []string
+	Spec              map[string]any
+	ResourceId        string
+}
 
 // specBuilder resolves the reference chain and constructs the final resource spec
 type specBuilder struct {
@@ -25,12 +36,11 @@ func newSpecBuilder(store store.Store) *specBuilder {
 	return &specBuilder{store: store}
 }
 
-// BuildResourceSpec resolves the reference chain (CatalogItemInstance → CatalogItem → ServiceType)
-// and constructs the final resource spec by:
-// 1. Deep-copying the ServiceType spec as the base template
-// 2. Applying CatalogItem field defaults
-// 3. Applying user_values on top (with validation)
-func (b *specBuilder) BuildResourceSpec(ctx context.Context, catalogItemId string, userValues []v1alpha1.UserValue) (map[string]any, error) {
+// BuildResourceGraph resolves a catalog item to an effective resource graph.
+// Each node includes merged specs and requires_resources edges for placement.
+// Resource order matches catalog item order; DAG sort and level-by-level provisioning
+// are placement's responsibility.
+func (b *specBuilder) BuildResourceGraph(ctx context.Context, catalogItemId string, userValues []v1alpha1.UserValue) ([]ResolvedResource, error) {
 	// 1. Look up CatalogItem
 	catalogItem, err := b.store.CatalogItem().Get(ctx, catalogItemId)
 	if err != nil {
@@ -40,31 +50,75 @@ func (b *specBuilder) BuildResourceSpec(ctx context.Context, catalogItemId strin
 		return nil, err
 	}
 
-	// 2. Look up ServiceType by CatalogItem's service_type
-	serviceType, err := b.store.ServiceType().GetByServiceType(ctx, catalogItem.Spec.ServiceType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve service type %q: %w", catalogItem.Spec.ServiceType, err)
+	// 2. Validate user_values against catalog item resources (paths, resources, CEL rules)
+	if err := validateUserValuesForCatalogItem(catalogItem.Spec, userValues); err != nil {
+		return nil, err
 	}
 
-	// 3. Deep-copy ServiceType spec as base template
+	// 3. Resolve each catalog resource into an effective spec node
+	out := make([]ResolvedResource, 0, len(catalogItem.Spec.Resources))
+	resourcesByName := catalogResourcesByName(catalogItem.Spec.Resources)
+	for _, resource := range catalogItem.Spec.Resources {
+		resourceUserValues := userValuesForResource(userValues, resource.Name)
+		specMap, err := b.buildResourceSpecFromFields(ctx, resourcesByName, resource, resourceUserValues)
+		if err != nil {
+			return nil, fmt.Errorf("resource %s: %w", resource.Name, err)
+		}
+		out = append(out, ResolvedResource{
+			Name:              resource.Name,
+			ServiceType:       resource.ServiceType,
+			RequiresResources: append([]string(nil), resource.RequiresResources...),
+			Spec:              specMap,
+			ResourceId:        uuid.New().String(),
+		})
+	}
+	return out, nil
+}
+
+// buildResourceSpecFromFields merges a catalog resource's field configuration and
+// instance user values onto the service type base spec, producing the effective
+// spec for one node in the resource graph.
+//
+// Merge order: service type spec → catalog field defaults → user values.
+// CEL references (${resource.output}) in defaults are validated at merge time
+// when the full resource graph is known; user_values must not contain CEL.
+func (b *specBuilder) buildResourceSpecFromFields(
+	ctx context.Context,
+	resourcesByName map[string]model.CatalogResource,
+	resource model.CatalogResource,
+	userValues []v1alpha1.UserValue,
+) (map[string]any, error) {
+	serviceTypeName := resource.ServiceType
+	fields := resource.Fields
+
+	// 1. Look up ServiceType by resource's service_type
+	serviceType, err := b.store.ServiceType().GetByServiceType(ctx, serviceTypeName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve service type %q: %w", serviceTypeName, err)
+	}
+
+	// 2. Deep-copy ServiceType spec as base template
 	specMap, err := deepCopyMap(serviceType.Spec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to copy service type spec: %w", err)
 	}
 
-	// 3.1. Set service_type from the ServiceType instance
+	// 2.1. Set service_type from the ServiceType instance
 	specMap[ServiceTypeKey] = serviceType.ServiceType
 
-	// 4. Build a lookup map of CatalogItem fields by path
+	// 3. Build a lookup map of catalog resource fields by path
 	fieldsByPath := make(map[string]model.FieldConfiguration)
-	for _, field := range catalogItem.Spec.Fields {
+	for _, field := range fields {
 		fieldsByPath[field.Path] = field
 	}
 
-	// 5. Apply CatalogItem field defaults (validated against schema when present)
-	for _, field := range catalogItem.Spec.Fields {
+	// 4. Apply catalog field defaults (CEL, schema validation, then overlay)
+	for _, field := range fields {
 		if field.Default == nil {
 			continue
+		}
+		if err := validateCELReferenceValue(ctx, b.store, resourcesByName, resource.Name, field.Path, field.Default); err != nil {
+			return nil, err
 		}
 		if field.ValidationSchema != nil {
 			if err := validateAgainstSchema(field.ValidationSchema, field.Default); err != nil {
@@ -76,9 +130,13 @@ func (b *specBuilder) BuildResourceSpec(ctx context.Context, catalogItemId strin
 		}
 	}
 
-	// 6. Apply user_values on top (with path, editable, and schema validation)
+	// 5. Apply user_values on top (with path, editable, and schema validation)
 	for _, uv := range userValues {
-		// Validate: user_value path must match a CatalogItem field
+		if isCELStringValue(uv.Value) {
+			return nil, fmt.Errorf("%w: %s", ErrUserValueCELNotAllowed, uv.Path)
+		}
+
+		// Validate: user_value path must match a catalog resource field
 		field, ok := fieldsByPath[uv.Path]
 		if !ok {
 			return nil, fmt.Errorf("%w: %s", ErrUserValuePathNotFound, uv.Path)
@@ -102,7 +160,7 @@ func (b *specBuilder) BuildResourceSpec(ctx context.Context, catalogItemId strin
 		}
 	}
 
-	// 7. Validate depends_on constraints against final spec (all user values applied)
+	// 6. Validate depends_on constraints against final spec (all user values applied)
 	for _, uv := range userValues {
 		field := fieldsByPath[uv.Path]
 		if field.DependsOn != nil {
@@ -113,6 +171,14 @@ func (b *specBuilder) BuildResourceSpec(ctx context.Context, catalogItemId strin
 	}
 
 	return specMap, nil
+}
+
+func isCELStringValue(value any) bool {
+	str, ok := value.(string)
+	if !ok {
+		return false
+	}
+	return strings.Contains(str, "${")
 }
 
 // deepCopyMap creates a deep copy of a map[string]any by marshaling/unmarshaling JSON
