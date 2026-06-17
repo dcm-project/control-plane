@@ -40,12 +40,12 @@ Use `kubernetes` as the alias (short, always present in the SAN list):
 ```bash
 podman network connect \
   --alias kubernetes \
-  control-plane_default \
+  deploy_default \
   kind-control-plane
 ```
 
 > **Note:** `make compose-up` sets `COMPOSE_PROJECT_NAME=control-plane`, so the
-> network is `control-plane_default`. Verify with `podman network ls`.
+> network is `deploy_default`. Verify with `podman network ls`.
 > `make compose-down` disconnects Kind and removes the network automatically.
 
 ### 4. Generate a kubeconfig that uses the alias
@@ -89,7 +89,7 @@ export K8S_CONTAINER_SP_EXTERNAL_SVC_TYPE=LoadBalancer
 
 | Problem | Cause |
 |---|---|
-| SP container can't reach Kind's IP | That IP belongs to Kind's network; compose services are on `control-plane_default` |
+| SP container can't reach Kind's IP | That IP belongs to Kind's network; compose services are on `deploy_default` |
 | SP connects to `127.0.0.1:<random-port>` | Kind's default kubeconfig uses the host-side port mapping, unreachable from other containers |
 | TLS error using arbitrary hostname | The API server certificate only includes specific SANs |
 
