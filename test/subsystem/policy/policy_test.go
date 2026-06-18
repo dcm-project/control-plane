@@ -19,6 +19,11 @@ var (
 	minPolicyPriority = int32(1)
 )
 
+const (
+	testRegoWithMain       = "package test\n\nmain := {\n  \"rejected\": false\n}"
+	testRegoUpdatedPackage = "package updated\n\nmain := {\n  \"rejected\": true\n}"
+)
+
 var _ = Describe("Policy CRUD Operations", func() {
 	var createdPolicyIDs []string
 
@@ -38,7 +43,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(100)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			resp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
@@ -59,7 +64,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(101)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			resp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{Id: &clientID}, policy)
 			Expect(err).NotTo(HaveOccurred())
@@ -75,7 +80,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(102)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
@@ -101,7 +106,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(103)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
@@ -132,7 +137,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(104)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
@@ -166,7 +171,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 					PolicyType:  ptr(v1alpha1.GLOBAL),
 					Priority:    ptr(int32(110 + i)),
 					Enabled:     ptr(true),
-					RegoCode:    ptr("package test\nallow = true"),
+					RegoCode:    ptr(testRegoWithMain),
 				}
 
 				resp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{Id: &id}, policy)
@@ -194,7 +199,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 					PolicyType:  ptr(v1alpha1.GLOBAL),
 					Priority:    ptr(int32(120 + i)),
 					Enabled:     ptr(true),
-					RegoCode:    ptr("package test\nallow = true"),
+					RegoCode:    ptr(testRegoWithMain),
 				}
 
 				resp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{Id: &id}, policy)
@@ -209,7 +214,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(130)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			resp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
@@ -229,7 +234,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(140)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			// Create first policy
@@ -253,7 +258,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(150)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			// Create first policy
@@ -279,7 +284,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(201)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			respA, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policyA)
 			Expect(err).NotTo(HaveOccurred())
@@ -291,7 +296,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.USER),
 				Priority:    ptr(int32(202)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			respB, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policyB)
 			Expect(err).NotTo(HaveOccurred())
@@ -306,7 +311,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(prio),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			respA, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policyA)
 			Expect(err).NotTo(HaveOccurred())
@@ -318,7 +323,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.USER),
 				Priority:    ptr(prio),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			respB, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policyB)
 			Expect(err).NotTo(HaveOccurred())
@@ -332,7 +337,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(203)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			respA, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policyA)
 			Expect(err).NotTo(HaveOccurred())
@@ -344,7 +349,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(204)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			respB, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policyB)
 			Expect(err).NotTo(HaveOccurred())
@@ -361,7 +366,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(220)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			respA, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policyA)
 			Expect(err).NotTo(HaveOccurred())
@@ -373,7 +378,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(220)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			respB, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policyB)
 			Expect(err).NotTo(HaveOccurred())
@@ -390,7 +395,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(301)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			respA, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policyA)
 			Expect(err).NotTo(HaveOccurred())
@@ -402,7 +407,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(302)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			respB, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policyB)
 			Expect(err).NotTo(HaveOccurred())
@@ -426,7 +431,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(401)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			respA, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policyA)
 			Expect(err).NotTo(HaveOccurred())
@@ -438,7 +443,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(402)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			respB, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policyB)
 			Expect(err).NotTo(HaveOccurred())
@@ -462,7 +467,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(310)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
 			Expect(err).NotTo(HaveOccurred())
@@ -482,7 +487,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(410)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
 			Expect(err).NotTo(HaveOccurred())
@@ -506,7 +511,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 					PolicyType:  ptr(v1alpha1.GLOBAL),
 					Priority:    ptr(int32(160 + i)),
 					Enabled:     ptr(true),
-					RegoCode:    ptr("package test\nallow = true"),
+					RegoCode:    ptr(testRegoWithMain),
 				}
 				resp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
 				Expect(err).NotTo(HaveOccurred())
@@ -586,21 +591,21 @@ var _ = Describe("Policy CRUD Operations", func() {
 					PolicyType:  ptr(v1alpha1.GLOBAL),
 					Priority:    ptr(int32(170)),
 					Enabled:     ptr(true),
-					RegoCode:    ptr("package test\nallow = true"),
+					RegoCode:    ptr(testRegoWithMain),
 				},
 				{
 					DisplayName: ptr("Filter User Policy 1"),
 					PolicyType:  ptr(v1alpha1.USER),
 					Priority:    ptr(int32(100)),
 					Enabled:     ptr(true),
-					RegoCode:    ptr("package test\nallow = true"),
+					RegoCode:    ptr(testRegoWithMain),
 				},
 				{
 					DisplayName: ptr("Filter Disabled Policy"),
 					PolicyType:  ptr(v1alpha1.GLOBAL),
 					Priority:    ptr(int32(171)),
 					Enabled:     ptr(false),
-					RegoCode:    ptr("package test\nallow = true"),
+					RegoCode:    ptr(testRegoWithMain),
 				},
 			}
 
@@ -719,21 +724,21 @@ var _ = Describe("Policy CRUD Operations", func() {
 					PolicyType:  ptr(v1alpha1.GLOBAL),
 					Priority:    ptr(int32(180)),
 					Enabled:     ptr(true),
-					RegoCode:    ptr("package test\nallow = true"),
+					RegoCode:    ptr(testRegoWithMain),
 				},
 				{
 					DisplayName: ptr("A Order Policy"),
 					PolicyType:  ptr(v1alpha1.GLOBAL),
 					Priority:    ptr(int32(181)),
 					Enabled:     ptr(true),
-					RegoCode:    ptr("package test\nallow = true"),
+					RegoCode:    ptr(testRegoWithMain),
 				},
 				{
 					DisplayName: ptr("M Order Policy"),
 					PolicyType:  ptr(v1alpha1.GLOBAL),
 					Priority:    ptr(int32(182)),
 					Enabled:     ptr(true),
-					RegoCode:    ptr("package test\nallow = true"),
+					RegoCode:    ptr(testRegoWithMain),
 				},
 			}
 
@@ -865,7 +870,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(minPolicyPriority - 1), // Below minimum
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			resp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
@@ -879,7 +884,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(maxPolicyPriority + 1), // Above maximum
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			resp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
@@ -894,13 +899,29 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.USER),
 				Priority:    ptr(int32(101)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			resp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode()).To(Equal(http.StatusCreated))
 			createdPolicyIDs = append(createdPolicyIDs, *resp.JSON201.Id)
+		})
+
+		It("should reject Rego without a main rule", func() {
+			policy := v1alpha1.Policy{
+				DisplayName: ptr("No Main Rule Policy"),
+				PolicyType:  ptr(v1alpha1.GLOBAL),
+				Priority:    ptr(int32(102)),
+				Enabled:     ptr(true),
+				RegoCode:    ptr("package test\ndefault allow = true"),
+			}
+
+			resp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode()).To(Equal(http.StatusBadRequest))
+			Expect(resp.JSON400).NotTo(BeNil())
+			Expect(string(resp.JSON400.Type)).To(Equal("INVALID_ARGUMENT"))
 		})
 	})
 
@@ -911,7 +932,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(300)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
 			Expect(err).NotTo(HaveOccurred())
@@ -931,7 +952,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(301)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
 			Expect(err).NotTo(HaveOccurred())
@@ -951,7 +972,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(302)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
 			Expect(err).NotTo(HaveOccurred())
@@ -971,7 +992,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(303)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
 			Expect(err).NotTo(HaveOccurred())
@@ -994,7 +1015,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(200)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
@@ -1018,7 +1039,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(210)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
 			Expect(err).NotTo(HaveOccurred())
@@ -1040,7 +1061,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(211)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
 			Expect(err).NotTo(HaveOccurred())
@@ -1062,7 +1083,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(212)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
 			Expect(err).NotTo(HaveOccurred())
@@ -1085,7 +1106,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(213)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
 			Expect(err).NotTo(HaveOccurred())
@@ -1108,7 +1129,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(214)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
 			Expect(err).NotTo(HaveOccurred())
@@ -1139,7 +1160,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				LabelSelector: &map[string]string{
 					"env": "dev",
 				},
-				RegoCode: ptr("package test\nallow = true"),
+				RegoCode: ptr(testRegoWithMain),
 			}
 
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
@@ -1156,7 +1177,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				LabelSelector: &map[string]string{
 					"env": "prod",
 				},
-				RegoCode: ptr("package updated\nallow = false"),
+				RegoCode: ptr(testRegoUpdatedPackage),
 			}
 
 			updateResp, err := apiClient.UpdatePolicyWithApplicationMergePatchPlusJSONBodyWithResponse(ctx, policyID, update)
@@ -1203,7 +1224,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 					"env":  "production",
 					"team": "platform",
 				},
-				RegoCode: ptr("package test\nallow = true"),
+				RegoCode: ptr(testRegoWithMain),
 			}
 
 			resp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
@@ -1222,7 +1243,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(211)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			resp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
@@ -1242,7 +1263,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				LabelSelector: &map[string]string{
 					"env": "dev",
 				},
-				RegoCode: ptr("package test\nallow = true"),
+				RegoCode: ptr(testRegoWithMain),
 			}
 
 			createResp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
@@ -1282,7 +1303,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(1)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			resp1, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, minPolicy)
@@ -1295,7 +1316,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(1000)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			resp2, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, maxPolicy)
@@ -1309,27 +1330,23 @@ var _ = Describe("Policy CRUD Operations", func() {
 
 import future.keywords.if
 
-default allow := false
+default main := {"rejected": true}
 
-# Allow admins to do anything
-allow if {
+main := {"rejected": false} if {
     input.user.role == "admin"
 }
 
-# Allow users to read their own data
-allow if {
+main := {"rejected": false} if {
     input.method == "GET"
     input.user.id == input.resource.owner_id
 }
 
-# Allow users to update their own data
-allow if {
+main := {"rejected": false} if {
     input.method in ["PUT", "PATCH"]
     input.user.id == input.resource.owner_id
 }
 
-# Complex rule with multiple conditions
-allow if {
+main := {"rejected": false} if {
     input.user.role == "moderator"
     input.resource.type == "comment"
     input.method in ["DELETE", "PUT"]
@@ -1356,7 +1373,7 @@ allow if {
 				PolicyType:  ptr(v1alpha1.GLOBAL),
 				Priority:    ptr(int32(221)),
 				Enabled:     ptr(true),
-				RegoCode:    ptr("package test\nallow = true"),
+				RegoCode:    ptr(testRegoWithMain),
 			}
 
 			resp, err := apiClient.CreatePolicyWithResponse(ctx, &v1alpha1.CreatePolicyParams{}, policy)
@@ -1371,7 +1388,7 @@ allow if {
 
 	Describe("OPA Integration", func() {
 		It("should store and retrieve Rego code", func() {
-			regoCode := "package authz\n\ndefault allow = false\n\nallow if {\n\tinput.user == \"admin\"\n}"
+			regoCode := "package authz\n\ndefault main := {\"rejected\": true}\n\nmain := {\"rejected\": false} if {\n\tinput.user == \"admin\"\n}"
 			policy := v1alpha1.Policy{
 				DisplayName: ptr("OPA Test Policy"),
 				PolicyType:  ptr(v1alpha1.GLOBAL),
@@ -1413,7 +1430,7 @@ allow if {
 		})
 
 		It("should update Rego code", func() {
-			originalRego := "package authz\n\ndefault allow = false"
+			originalRego := "package authz\n\ndefault main := {\"rejected\": true}"
 			policy := v1alpha1.Policy{
 				DisplayName: ptr("Update Rego Test"),
 				PolicyType:  ptr(v1alpha1.GLOBAL),
@@ -1430,7 +1447,7 @@ allow if {
 			createdPolicyIDs = append(createdPolicyIDs, policyID)
 
 			// Update Rego code
-			updatedRego := "package authz\n\ndefault allow = true"
+			updatedRego := "package authz\n\nmain := {\"rejected\": false}"
 			patch := v1alpha1.Policy{
 				RegoCode: &updatedRego,
 			}
@@ -1448,7 +1465,7 @@ allow if {
 		})
 
 		It("should reject invalid Rego on update and preserve original code", func() {
-			originalRego := "package authz\n\ndefault allow = false\n\nallow if { input.user == \"admin\" }"
+			originalRego := "package authz\n\ndefault main := {\"rejected\": true}\n\nmain := {\"rejected\": false} if { input.user == \"admin\" }"
 			policy := v1alpha1.Policy{
 				DisplayName: ptr("Invalid Update Rego Test"),
 				PolicyType:  ptr(v1alpha1.GLOBAL),
@@ -1479,7 +1496,7 @@ allow if {
 		})
 
 		It("should delete policy and remove Rego from OPA", func() {
-			regoCode := "package authz\n\ndefault allow = false\n\nallow if { input.role == \"admin\" }"
+			regoCode := "package authz\n\ndefault main := {\"rejected\": true}\n\nmain := {\"rejected\": false} if { input.role == \"admin\" }"
 			policy := v1alpha1.Policy{
 				DisplayName: ptr("Delete OPA Test Policy"),
 				PolicyType:  ptr(v1alpha1.GLOBAL),
@@ -1510,7 +1527,7 @@ allow if {
 		})
 
 		It("should return rego_code in LIST responses", func() {
-			regoCode := "package test\n\ndefault allow = false"
+			regoCode := "package test\n\ndefault main := {\"rejected\": true}"
 			policy := v1alpha1.Policy{
 				DisplayName: ptr("List Test Policy"),
 				PolicyType:  ptr(v1alpha1.GLOBAL),
@@ -1547,7 +1564,7 @@ allow if {
 
 		It("should support Unicode characters in Rego code", func() {
 			// Rego code with Unicode comments
-			unicodeRego := "package test\n\n# 政策规则 - Policy Rule\n# Правило политики\ndefault allow = false\n\n# Allow admin users\nallow if {\n\t# 管理员用户\n\tinput.user == \"admin\"\n}"
+			unicodeRego := "package test\n\n# 政策规则 - Policy Rule\n# Правило политики\ndefault main := {\"rejected\": true}\n\n# Allow admin users\nmain := {\"rejected\": false} if {\n\t# 管理员用户\n\tinput.user == \"admin\"\n}"
 			policy := v1alpha1.Policy{
 				DisplayName: ptr("Unicode Rego Policy"),
 				PolicyType:  ptr(v1alpha1.GLOBAL),
