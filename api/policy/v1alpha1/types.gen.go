@@ -176,10 +176,9 @@ type Policy struct {
 	// RegoCode The OPA Rego policy code. This code is executed when the policy
 	// is evaluated. Must be valid Rego syntax.
 	//
-	// The code should define a package and decision rules. Common patterns:
-	// - Define a default allow/deny
-	// - Implement conditional logic based on input
-	// - Reference data from the policy engine
+	// The code should define a package and a `main` rule that returns a
+	// policy decision object (for example `rejected`, `selected_provider`).
+	// Conditional logic may use additional `main` rules and `default main`.
 	//
 	// The Rego code is validated on create and update operations.
 	RegoCode *string `json:"rego_code,omitempty"`
