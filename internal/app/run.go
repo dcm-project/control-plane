@@ -158,12 +158,16 @@ func Run() int {
 	cleanupScheduler.Start(ctx)
 	defer cleanupScheduler.Stop()
 
-	router := newRouter(RouteHandlers{
+	router, err := newRouter(RouteHandlers{
 		Catalog:    cataloghandlers.NewHandler(catalogSvc, logger),
 		Policy:     policyhandlers.NewPolicyHandler(policyService),
 		SPProvider: spproviderhandler.NewHandler(spProviderService),
 		SPRM:       sprmhandler.NewHandler(spInstanceService),
 	})
+	if err != nil {
+		slog.Error("Failed to configure HTTP router", "error", err)
+		return 1
+	}
 
 	listener, err := net.Listen("tcp", cfg.Service.BindAddress)
 	if err != nil {
@@ -204,10 +208,16 @@ type RouteHandlers struct {
 	SPRM       sprmserver.StrictServerInterface
 }
 
-func newRouter(h RouteHandlers) chi.Router {
+func newRouter(h RouteHandlers) (chi.Router, error) {
+	validators, err := newOpenAPIValidators()
+	if err != nil {
+		return nil, err
+	}
+
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
 	router.Use(middleware.Recoverer)
+	router.Use(validators.middleware())
 
 	const baseURL = "/api/v1alpha1"
 
@@ -237,7 +247,7 @@ func newRouter(h RouteHandlers) chi.Router {
 	)
 	router.Mount(baseURL, apiRouter)
 
-	return router
+	return router, nil
 }
 
 func buildPlacementClient(cfg *Config, svc *placementservice.PlacementService, logger *slog.Logger) (catalogplacement.Client, error) {
