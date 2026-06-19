@@ -1,0 +1,16 @@
+name: Subsystem Tests
+
+on:
+  push:
+    branches: [main, 'release/v*']
+  pull_request:
+    branches: [main, 'release/v*']
+
+jobs:
+  policy-subsystem:
+    uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@main
+    with:
+      up-target: policy-subsystem-test-up
+      test-target: policy-subsystem-test
+      down-target: policy-subsystem-test-down
+      images: "quay.io/sclorg/postgresql-16-c9s:latest"
