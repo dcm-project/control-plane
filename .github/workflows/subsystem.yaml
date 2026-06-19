@@ -14,3 +14,19 @@ jobs:
       test-target: policy-subsystem-test
       down-target: policy-subsystem-test-down
       images: "quay.io/sclorg/postgresql-16-c9s:latest"
+
+  catalog-subsystem:
+    uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@main
+    with:
+      up-target: catalog-subsystem-test-up
+      test-target: catalog-subsystem-test
+      down-target: catalog-subsystem-test-down
+      images: "quay.io/sclorg/postgresql-16-c9s:latest wiremock/wiremock:3x"
+
+  sp-subsystem:
+    uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@main
+    with:
+      up-target: sp-subsystem-test-up
+      test-target: sp-subsystem-test
+      down-target: sp-subsystem-test-down
+      images: "quay.io/sclorg/postgresql-16-c9s:latest wiremock/wiremock:3x docker.io/library/nats:2-alpine"
