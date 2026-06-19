@@ -61,7 +61,7 @@ var _ = Describe("OpenAPI request validation", func() {
 func expectInvalidJSONRejected(validators *openAPIValidators, path string) {
 	router := chi.NewRouter()
 	router.Use(validators.middleware())
-	router.Post(path, func(w http.ResponseWriter, _ *http.Request) {
+	router.Post(path, func(_ http.ResponseWriter, _ *http.Request) {
 		Fail("validator passed invalid JSON through to handler for POST " + path)
 	})
 
