@@ -45,8 +45,8 @@ var _ = BeforeSuite(func() {
 			return err
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode() != http.StatusOK {
-			return fmt.Errorf("health check returned %d", resp.StatusCode())
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("health check returned %d", resp.StatusCode)
 		}
 		return nil
 	}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
