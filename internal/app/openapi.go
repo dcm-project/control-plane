@@ -56,6 +56,10 @@ func oapiRequestValidator(spec *openapi3.T) func(http.Handler) http.Handler {
 	return nethttpmiddleware.OapiRequestValidatorWithOptions(spec, &nethttpmiddleware.Options{
 		Options: openapi3filter.Options{
 			AuthenticationFunc: openapi3filter.NoopAuthenticationFunc,
+			// kin-openapi rewrites validated bodies when schema defaults are applied,
+			// but only registers encoders for application/json. PATCH merge bodies
+			// use application/merge-patch+json and must stay partial (RFC 7396).
+			SkipSettingDefaults: true,
 		},
 		SilenceServersWarning: true,
 	})

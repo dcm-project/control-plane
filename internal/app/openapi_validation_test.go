@@ -37,6 +37,22 @@ var _ = Describe("OpenAPI request validation", func() {
 		It("rejects malformed JSON on POST /policies", func() {
 			expectInvalidJSONRejected(validators, "/api/v1alpha1/policies")
 		})
+
+		It("allows valid partial PATCH on /policies/{policyId}", func() {
+			router := chi.NewRouter()
+			router.Use(validators.middleware())
+			router.Patch("/api/v1alpha1/policies/{policyId}", func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})
+
+			body := `{"display_name":"Updated Name","priority":600}`
+			req := httptest.NewRequest(http.MethodPatch, "/api/v1alpha1/policies/test-policy-id", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/merge-patch+json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			Expect(rec.Code).To(Equal(http.StatusOK), rec.Body.String())
+		})
 	})
 
 	Describe("catalog routes", func() {
