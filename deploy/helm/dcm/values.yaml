@@ -18,6 +18,13 @@ nats:
 controlPlane:
   image: quay.io/dcm-project/control-plane
   tag: ""  # defaults to global.imageTag
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
   route:
     enabled: true
     host: ""  # leave empty for auto-generated OpenShift hostname

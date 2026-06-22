@@ -20,6 +20,8 @@ spec:
       containers:
         - name: control-plane
           image: "{{ .Values.controlPlane.image }}:{{ include "dcm.imageTag" (dict "tag" .Values.controlPlane.tag "global" .Values.global) }}"
+          securityContext:
+            {{- toYaml .Values.controlPlane.securityContext | nindent 12 }}
           ports:
             - containerPort: 8080
               protocol: TCP
