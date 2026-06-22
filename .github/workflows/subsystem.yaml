@@ -6,13 +6,6 @@ on:
   pull_request:
     branches: [main, 'release/v*']
 
-# All jobs build control-plane via Containerfile (UBI builder + runtime).
-# Pre-pull with retries avoids flaky CDN EOFs during podman-compose build.
-env:
-  CONTROL_PLANE_BUILD_IMAGES: >-
-    registry.access.redhat.com/ubi9/go-toolset:1.25.5
-    registry.access.redhat.com/ubi9/ubi-minimal:latest
-
 jobs:
   policy-subsystem:
     uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@main
@@ -20,7 +13,10 @@ jobs:
       up-target: policy-subsystem-test-up
       test-target: policy-subsystem-test
       down-target: policy-subsystem-test-down
-      images: "${{ env.CONTROL_PLANE_BUILD_IMAGES }} quay.io/sclorg/postgresql-16-c9s:latest"
+      images: >-
+        registry.access.redhat.com/ubi9/go-toolset:1.25.5
+        registry.access.redhat.com/ubi9/ubi-minimal:latest
+        quay.io/sclorg/postgresql-16-c9s:latest
 
   catalog-subsystem:
     uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@main
@@ -28,7 +24,11 @@ jobs:
       up-target: catalog-subsystem-test-up
       test-target: catalog-subsystem-test
       down-target: catalog-subsystem-test-down
-      images: "${{ env.CONTROL_PLANE_BUILD_IMAGES }} quay.io/sclorg/postgresql-16-c9s:latest wiremock/wiremock:3x"
+      images: >-
+        registry.access.redhat.com/ubi9/go-toolset:1.25.5
+        registry.access.redhat.com/ubi9/ubi-minimal:latest
+        quay.io/sclorg/postgresql-16-c9s:latest
+        wiremock/wiremock:3x
 
   sp-subsystem:
     uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@main
@@ -36,4 +36,9 @@ jobs:
       up-target: sp-subsystem-test-up
       test-target: sp-subsystem-test
       down-target: sp-subsystem-test-down
-      images: "${{ env.CONTROL_PLANE_BUILD_IMAGES }} quay.io/sclorg/postgresql-16-c9s:latest wiremock/wiremock:3x docker.io/library/nats:2-alpine"
+      images: >-
+        registry.access.redhat.com/ubi9/go-toolset:1.25.5
+        registry.access.redhat.com/ubi9/ubi-minimal:latest
+        quay.io/sclorg/postgresql-16-c9s:latest
+        wiremock/wiremock:3x
+        docker.io/library/nats:2-alpine
