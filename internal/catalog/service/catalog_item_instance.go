@@ -102,18 +102,6 @@ func (s *catalogItemInstanceService) Create(ctx context.Context, req *CreateCata
 	id := getOrGenerateID(req.ID)
 	path := fmt.Sprintf("catalog-item-instances/%s", id)
 
-	catalogItem, err := s.store.CatalogItem().Get(ctx, req.Spec.CatalogItemId)
-	if err != nil {
-		if errors.Is(err, store.ErrCatalogItemNotFound) {
-			return nil, ErrCatalogItemNotFoundForInstance
-		}
-		return nil, err
-	}
-
-	if err := validateUserValuesForCatalogItem(catalogItem.Spec, req.Spec.UserValues); err != nil {
-		return nil, err
-	}
-
 	return s.createInstance(ctx, id, path, req)
 }
 
