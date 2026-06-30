@@ -56,10 +56,6 @@ func NewCatalogItemStore(db *gorm.DB, logger *slog.Logger) CatalogItemStore {
 
 // List returns a paginated list of catalog items
 func (s *catalogItemStore) List(ctx context.Context, opts *CatalogItemListOptions) (*CatalogItemListResult, error) {
-	var catalogItems model.CatalogItemList
-	query := s.db.WithContext(ctx)
-
-	// Default max page size
 	pageSize := 100
 	if opts != nil && opts.PageSize > 0 {
 		pageSize = opts.PageSize
@@ -74,22 +70,50 @@ func (s *catalogItemStore) List(ctx context.Context, opts *CatalogItemListOption
 		}
 	}
 
-	query = query.Order("id ASC").Limit(pageSize + 1).Offset(offset)
+	// service_type filter: load all, filter in memory, then paginate the filtered set.
+	// Filter must run before pagination so each page contains matching items only.
 	if opts != nil && opts.ServiceType != nil && *opts.ServiceType != "" {
-		query = applyCatalogItemServiceTypeFilter(query, *opts.ServiceType)
+		var all model.CatalogItemList
+		if err := s.db.WithContext(ctx).Order("id ASC").Find(&all).Error; err != nil {
+			return nil, err
+		}
+		filtered := make(model.CatalogItemList, 0)
+		for _, item := range all {
+			if item.Spec.HasResourceServiceType(*opts.ServiceType) {
+				filtered = append(filtered, item)
+			}
+		}
+		return paginateFilterCatalogItems(filtered, pageSize, offset)
 	}
 
-	if err := query.Find(&catalogItems).Error; err != nil {
+	// Default list: paginate in the database (limit+1 detects a next page).
+	var items model.CatalogItemList
+	if err := s.db.WithContext(ctx).Order("id ASC").Limit(pageSize + 1).Offset(offset).Find(&items).Error; err != nil {
 		return nil, err
 	}
-
-	result := &CatalogItemListResult{
-		CatalogItems: catalogItems,
+	result := &CatalogItemListResult{CatalogItems: items}
+	if len(items) > pageSize {
+		result.CatalogItems = items[:pageSize]
+		nextPageToken, err := encodePageToken(offset + pageSize)
+		if err != nil {
+			return nil, err
+		}
+		result.NextPageToken = &nextPageToken
 	}
-	if len(catalogItems) > pageSize {
-		result.CatalogItems = catalogItems[:pageSize]
-		nextOffset := offset + pageSize
-		nextPageToken, err := encodePageToken(nextOffset)
+	return result, nil
+}
+
+// paginateFilterCatalogItems pages an in-memory list after service_type filtering.
+func paginateFilterCatalogItems(items model.CatalogItemList, pageSize, offset int) (*CatalogItemListResult, error) {
+	if offset > len(items) {
+		return &CatalogItemListResult{CatalogItems: model.CatalogItemList{}}, nil
+	}
+	// Skip rows consumed by prior pages.
+	remaining := items[offset:]
+	result := &CatalogItemListResult{CatalogItems: remaining}
+	if len(remaining) > pageSize {
+		result.CatalogItems = remaining[:pageSize]
+		nextPageToken, err := encodePageToken(offset + pageSize)
 		if err != nil {
 			return nil, err
 		}
