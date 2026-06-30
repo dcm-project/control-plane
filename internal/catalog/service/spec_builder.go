@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/catalog/store"
@@ -80,8 +79,8 @@ func (b *specBuilder) BuildResourceGraph(ctx context.Context, catalogItemId stri
 // spec for one node in the resource graph.
 //
 // Merge order: service type spec → catalog field defaults → user values.
-// CEL references (${resource.output}) in defaults are validated at merge time
-// when the full resource graph is known; user_values must not contain CEL.
+// CEL references (${resource.output}) in defaults and editable user_values are
+// validated at merge time when the full resource graph is known.
 func (b *specBuilder) buildResourceSpecFromFields(
 	ctx context.Context,
 	resourcesByName map[string]model.CatalogResource,
@@ -117,6 +116,7 @@ func (b *specBuilder) buildResourceSpecFromFields(
 		if field.Default == nil {
 			continue
 		}
+		// Validate CEL wiring in catalog defaults
 		if err := validateCELReferenceValue(ctx, b.store, resourcesByName, resource.Name, field.Path, field.Default); err != nil {
 			return nil, err
 		}
@@ -130,12 +130,8 @@ func (b *specBuilder) buildResourceSpecFromFields(
 		}
 	}
 
-	// 5. Apply user_values on top (with path, editable, and schema validation)
+	// 5. Apply user_values on top (with path, editable, CEL and schema validation)
 	for _, uv := range userValues {
-		if isCELStringValue(uv.Value) {
-			return nil, fmt.Errorf("%w: %s", ErrUserValueCELNotAllowed, uv.Path)
-		}
-
 		// Validate: user_value path must match a catalog resource field
 		field, ok := fieldsByPath[uv.Path]
 		if !ok {
@@ -145,6 +141,11 @@ func (b *specBuilder) buildResourceSpecFromFields(
 		// Validate: field must be editable
 		if !field.Editable {
 			return nil, fmt.Errorf("%w: %s", ErrUserValueNotEditable, uv.Path)
+		}
+
+		// Validate CEL wiring overrides in user values
+		if err := validateCELReferenceValue(ctx, b.store, resourcesByName, resource.Name, uv.Path, uv.Value); err != nil {
+			return nil, err
 		}
 
 		// Validate: if field has a validation_schema, validate the value against it
@@ -171,14 +172,6 @@ func (b *specBuilder) buildResourceSpecFromFields(
 	}
 
 	return specMap, nil
-}
-
-func isCELStringValue(value any) bool {
-	str, ok := value.(string)
-	if !ok {
-		return false
-	}
-	return strings.Contains(str, "${")
 }
 
 // deepCopyMap creates a deep copy of a map[string]any by marshaling/unmarshaling JSON

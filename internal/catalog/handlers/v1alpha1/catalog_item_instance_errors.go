@@ -35,8 +35,7 @@ func mapCreateCatalogItemInstanceErrorToHTTP(err error) server.CreateCatalogItem
 		errors.Is(err, service.ErrInvalidCELExpression),
 		errors.Is(err, service.ErrCELResourceNotFound),
 		errors.Is(err, service.ErrCELSelfReference),
-		errors.Is(err, service.ErrCELServiceTypeOutputNotFound),
-		errors.Is(err, service.ErrUserValueCELNotAllowed):
+		errors.Is(err, service.ErrCELServiceTypeOutputNotFound):
 		return server.CreateCatalogItemInstance400JSONResponse(v1alpha1.Error{
 			Type:   v1alpha1.INVALIDARGUMENT,
 			Status: 400,

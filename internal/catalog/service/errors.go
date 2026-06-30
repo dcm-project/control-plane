@@ -88,9 +88,6 @@ var (
 	// ErrCELServiceTypeOutputNotFound indicates the referenced output is not declared on the source service type
 	ErrCELServiceTypeOutputNotFound = errors.New("CEL reference output not found on service type")
 
-	// ErrUserValueCELNotAllowed indicates user_values cannot contain CEL expressions
-	ErrUserValueCELNotAllowed = errors.New("user values cannot contain CEL expressions")
-
 	// ErrPlacementManagerPolicyRejected indicates the Placement Manager rejected the request due to policy (406)
 	ErrPlacementManagerPolicyRejected = errors.New("placement manager request rejected by policy engine")
 

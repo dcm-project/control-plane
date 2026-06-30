@@ -63,7 +63,6 @@ var clientErrors = []error{
 	service.ErrCELResourceNotFound,
 	service.ErrCELSelfReference,
 	service.ErrCELServiceTypeOutputNotFound,
-	service.ErrUserValueCELNotAllowed,
 	service.ErrPlacementManagerPolicyRejected,
 	service.ErrPlacementManagerProviderError,
 	service.ErrPlacementManagerPolicyDependency,

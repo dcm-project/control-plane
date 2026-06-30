@@ -188,11 +188,72 @@ var _ = Describe("CEL validation", func() {
 			Expect(errors.Is(err, service.ErrCELServiceTypeOutputNotFound)).To(BeTrue())
 		})
 
-		It("rejects user_values containing CEL expressions", func() {
+		It("accepts CEL user_values on editable fields and overrides the default", func() {
+			editable := true
+			spec := devAppCatalogItemSpecWithCEL()
+			(*spec.Resources[1].Fields)[0].Editable = &editable
+			catalogItemID := createCatalogItemWithSpec(spec)
+			req := &service.CreateCatalogItemInstanceRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "User CEL override",
+				Spec: v1alpha1.CatalogItemInstanceSpec{
+					CatalogItemId: catalogItemID,
+					UserValues: []v1alpha1.UserValue{
+						{Resource: "app", Path: "database_url", Value: "${ordersDb.connectionString}"},
+					},
+				},
+			}
+			result, err := svc.CatalogItemInstance().Create(ctx, req)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).ToNot(BeNil())
+		})
+
+		It("accepts CEL user_values referencing another catalog resource", func() {
+			editable := true
+			spec := v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{Name: "ordersDb", ServiceType: "database", Fields: &[]v1alpha1.FieldConfiguration{
+						{Path: "engine", Default: "postgres"},
+					}},
+					{Name: "myOrdersDb", ServiceType: "database", Fields: &[]v1alpha1.FieldConfiguration{
+						{Path: "engine", Default: "postgres"},
+					}},
+					{
+						Name:        "app",
+						ServiceType: "container",
+						Fields: &[]v1alpha1.FieldConfiguration{
+							{Path: "database_url", Default: "${ordersDb.connectionString}", Editable: &editable},
+						},
+					},
+				},
+			}
+			catalogItemID := createCatalogItemWithSpec(spec)
+			req := &service.CreateCatalogItemInstanceRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Switch DB CEL",
+				Spec: v1alpha1.CatalogItemInstanceSpec{
+					CatalogItemId: catalogItemID,
+					UserValues: []v1alpha1.UserValue{
+						{Resource: "app", Path: "database_url", Value: "${myOrdersDb.connectionString}"},
+					},
+				},
+			}
+			result, err := svc.CatalogItemInstance().Create(ctx, req)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).ToNot(BeNil())
+
+			builder := service.NewSpecBuilderForTest(str)
+			graph, err := builder.BuildResourceGraph(ctx, catalogItemID, req.Spec.UserValues)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(graph).To(HaveLen(3))
+			Expect(graph[2].Spec["database_url"]).To(Equal("${myOrdersDb.connectionString}"))
+		})
+
+		It("rejects CEL user_values on non-editable fields", func() {
 			catalogItemID := createCatalogItemWithSpec(devAppCatalogItemSpecWithCEL())
 			req := &service.CreateCatalogItemInstanceRequest{
 				ApiVersion:  "v1alpha1",
-				DisplayName: "Bad User CEL",
+				DisplayName: "Non-editable CEL",
 				Spec: v1alpha1.CatalogItemInstanceSpec{
 					CatalogItemId: catalogItemID,
 					UserValues: []v1alpha1.UserValue{
@@ -202,7 +263,27 @@ var _ = Describe("CEL validation", func() {
 			}
 			_, err := svc.CatalogItemInstance().Create(ctx, req)
 			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, service.ErrUserValueCELNotAllowed)).To(BeTrue())
+			Expect(errors.Is(err, service.ErrUserValueNotEditable)).To(BeTrue())
+		})
+
+		It("rejects invalid CEL user_values on editable fields", func() {
+			editable := true
+			spec := devAppCatalogItemSpecWithCEL()
+			(*spec.Resources[1].Fields)[0].Editable = &editable
+			catalogItemID := createCatalogItemWithSpec(spec)
+			req := &service.CreateCatalogItemInstanceRequest{
+				ApiVersion:  "v1alpha1",
+				DisplayName: "Bad User CEL",
+				Spec: v1alpha1.CatalogItemInstanceSpec{
+					CatalogItemId: catalogItemID,
+					UserValues: []v1alpha1.UserValue{
+						{Resource: "app", Path: "database_url", Value: "${missingDb.connectionString}"},
+					},
+				},
+			}
+			_, err := svc.CatalogItemInstance().Create(ctx, req)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrCELResourceNotFound)).To(BeTrue())
 		})
 	})
 
