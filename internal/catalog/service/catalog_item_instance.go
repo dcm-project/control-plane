@@ -211,6 +211,9 @@ func (s *catalogItemInstanceService) Rehydrate(ctx context.Context, id string) (
 	}
 
 	// TODO: Rehydrate for multi-resources
+	if len(instance.Spec.ResourceIDs) == 0 {
+		return nil, ErrCatalogItemInstanceResourceIDsEmpty
+	}
 	oldResourceID := instance.Spec.ResourceIDs[0]
 	newResourceID := uuid.New().String()
 

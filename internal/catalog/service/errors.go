@@ -111,4 +111,7 @@ var (
 
 	// ErrCatalogItemInstanceConflict indicates a concurrent modification was detected
 	ErrCatalogItemInstanceConflict = errors.New("catalog item instance was modified concurrently")
+
+	// ErrCatalogItemInstanceResourceIDsEmpty indicates the instance has no placement resource IDs
+	ErrCatalogItemInstanceResourceIDsEmpty = errors.New("catalog item instance has no resource IDs")
 )

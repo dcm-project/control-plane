@@ -856,6 +856,16 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			Expect(mockPM.rehydrateCalls).To(Equal(0))
 		})
 
+		It("should return ErrCatalogItemInstanceResourceIDsEmpty when instance has no resource IDs", func() {
+			instanceID := "rehydrate-no-resources"
+			seedCatalogItemInstance(ctx, str, instanceID, nil)
+
+			result, err := svc.CatalogItemInstance().Rehydrate(ctx, instanceID)
+			Expect(err).To(Equal(service.ErrCatalogItemInstanceResourceIDsEmpty))
+			Expect(result).To(BeNil())
+			Expect(mockPM.rehydrateCalls).To(Equal(0))
+		})
+
 		It("should rollback resource_id and not call PM when a second rehydrate races", func() {
 			instanceID := "rehydrate-conflict"
 			oldResourceID := "resource-conflict-old"

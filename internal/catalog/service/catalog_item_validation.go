@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/catalog/store"
@@ -153,23 +154,11 @@ func validateCatalogImmutable(existing, updated model.CatalogItemSpec) error {
 			return ErrImmutableSpecStructureUpdate
 		}
 		if oldR.ServiceType != newR.ServiceType ||
-			!sameStringSlice(oldR.RequiresResources, newR.RequiresResources) {
+			!slices.Equal(oldR.RequiresResources, newR.RequiresResources) {
 			return ErrImmutableSpecStructureUpdate
 		}
 	}
 	return nil
-}
-
-func sameStringSlice(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // userValuesForResource returns user values that target the given resource name.
