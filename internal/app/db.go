@@ -9,6 +9,7 @@ import (
 	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
 	authmodel "github.com/dcm-project/control-plane/internal/auth/store/model"
 	catalogmodel "github.com/dcm-project/control-plane/internal/catalog/store/model"
+	gitopsmodel "github.com/dcm-project/control-plane/internal/gitops/store/model"
 	placementmodel "github.com/dcm-project/control-plane/internal/placement/store/model"
 	policymodel "github.com/dcm-project/control-plane/internal/policy/store/model"
 	spmodel "github.com/dcm-project/control-plane/internal/sp/store/model"
@@ -76,6 +77,7 @@ func openDB(cfg *Config) (*gorm.DB, error) {
 		&catalogmodel.ServiceType{},
 		&catalogmodel.CatalogItem{},
 		&catalogmodel.CatalogItemInstance{},
+		&gitopsmodel.GitRepository{},
 		&placementmodel.Resource{},
 		&policymodel.Policy{},
 		&spmodel.ServiceTypeInstance{},
