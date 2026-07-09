@@ -26,6 +26,10 @@ import (
 	catalogplacement "github.com/dcm-project/control-plane/internal/catalog/placement"
 	catalogservice "github.com/dcm-project/control-plane/internal/catalog/service"
 	catalogstore "github.com/dcm-project/control-plane/internal/catalog/store"
+	gitopsserver "github.com/dcm-project/control-plane/internal/gitops/api/server"
+	gitopshandlers "github.com/dcm-project/control-plane/internal/gitops/handlers/v1alpha1"
+	gitopsservice "github.com/dcm-project/control-plane/internal/gitops/service"
+	gitopsstore "github.com/dcm-project/control-plane/internal/gitops/store"
 	placementagent "github.com/dcm-project/control-plane/internal/placement/agent"
 	placementlogging "github.com/dcm-project/control-plane/internal/placement/logging"
 	placementpolicy "github.com/dcm-project/control-plane/internal/placement/policy"
@@ -88,6 +92,7 @@ func Run() int {
 	authSvc := authservice.NewService(authDataStore, cfg.Auth.AdminSubject, logger)
 
 	catalogDataStore := catalogstore.NewStore(db, logger)
+	gitopsDataStore := gitopsstore.NewStore(db)
 	policyDataStore := policystore.NewStore(db)
 	placementDataStore := placementstore.NewStore(db)
 	spDataStore := spstore.NewStore(db)
@@ -250,9 +255,12 @@ func Run() int {
 		authMiddleware = auth.Middleware(mwCfg)
 	}
 
+	gitopsSvc := gitopsservice.NewGitRepositoryService(gitopsDataStore)
+
 	router, err := newRouter(authMiddleware, RouteHandlers{
 		Agent:   agenthandlers.NewHandler(agentSvc),
 		Catalog: cataloghandlers.NewHandler(catalogSvc, logger),
+		Gitops:  gitopshandlers.NewHandler(gitopsSvc),
 		Policy:  policyhandlers.NewPolicyHandler(policyService),
 		SPRM:    sprmhandler.NewHandler(spInstanceService),
 	}, checkers...)
@@ -296,6 +304,7 @@ func Run() int {
 type RouteHandlers struct {
 	Agent   agentserver.StrictServerInterface
 	Catalog catalogserver.StrictServerInterface
+	Gitops  gitopsserver.StrictServerInterface
 	Policy  policyserver.StrictServerInterface
 	SPRM    sprmserver.StrictServerInterface
 }
@@ -328,6 +337,11 @@ func newRouter(authMW func(http.Handler) http.Handler, h RouteHandlers, checkers
 	)
 	policyserver.HandlerFromMuxWithBaseURL(
 		policyserver.NewStrictHandler(h.Policy, nil),
+		router,
+		baseURL,
+	)
+	gitopsserver.HandlerFromMuxWithBaseURL(
+		gitopsserver.NewStrictHandler(h.Gitops, nil),
 		router,
 		baseURL,
 	)

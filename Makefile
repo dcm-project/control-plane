@@ -33,11 +33,15 @@ include make/placement.mk
 include make/policy.mk
 include make/sp.mk
 include make/agent.mk
+include make/gitops.mk
 
 # Same as Containerfile: static build, no CGO (Postgres in prod/compose).
 # For SQLite local dev use make run (go run with CGO).
 build:
-	CGO_ENABLED=0 go build -buildvcs=false -o bin/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
+	CGO_ENABLED=1 go build -buildvcs=false -o bin/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
+
+build-gitops:
+	CGO_ENABLED=0 go build -buildvcs=false -o bin/dcm-gitops ./cmd/dcm-gitops
 
 # Quick local start with SQLite (no Postgres/NATS stack required).
 # Uses a throwaway file under /tmp; override DB_NAME if you want a different path.
@@ -112,6 +116,6 @@ test:
 tidy:
 	go mod tidy
 
-.PHONY: build run run-dev compose-up compose-up-with-providers compose-down image-build \
-	clean fmt vet lint test test-catalog test-placement test-policy test-sp tidy \
+.PHONY: build build-gitops run run-dev compose-up compose-up-with-providers compose-down image-build \
+	clean fmt vet lint test test-catalog test-placement test-policy test-sp test-gitops tidy \
 	helm-chart-sync helm-chart-verify-sync helm-chart-verify-admin-subject helm-chart-verify helm-chart-verify-schema helm-chart-lint helm-chart-template helm-chart-check
