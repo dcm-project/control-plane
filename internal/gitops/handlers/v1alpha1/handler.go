@@ -79,14 +79,6 @@ func (h *Handler) DeleteGitRepository(ctx context.Context, request server.Delete
 	return server.DeleteGitRepository204Response{}, nil
 }
 
-func (h *Handler) GetGitRepositoryStatus(ctx context.Context, request server.GetGitRepositoryStatusRequestObject) (server.GetGitRepositoryStatusResponseObject, error) {
-	status, err := h.service.GetStatus(ctx, request.GitRepositoryId)
-	if err != nil {
-		return handleGetStatusError(err), nil
-	}
-	return server.GetGitRepositoryStatus200JSONResponse(*status), nil
-}
-
 func (h *Handler) SyncGitRepository(ctx context.Context, request server.SyncGitRepositoryRequestObject) (server.SyncGitRepositoryResponseObject, error) {
 	status, err := h.service.TriggerSync(ctx, request.GitRepositoryId)
 	if err != nil {

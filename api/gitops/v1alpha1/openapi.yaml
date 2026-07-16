@@ -221,35 +221,6 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /git-repositories/{gitRepositoryId}/status:
-    get:
-      operationId: getGitRepositoryStatus
-      summary: Get git repository sync status
-      description: |
-        Retrieves the current sync status for a git repository.
-      parameters:
-        - $ref: '#/components/parameters/GitRepositoryIdPath'
-
-      responses:
-        '200':
-          description: Sync status retrieved
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GitRepositoryStatus'
-
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
   /git-repositories/{gitRepositoryId}:sync:
     post:
       operationId: syncGitRepository
