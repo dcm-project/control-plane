@@ -39,7 +39,6 @@ services:
     command: ["--jetstream", "--store_dir=/data"]
     ports:
       - "4222:4222"
-      - "8222:8222"
     volumes:
       - nats_data:/data
 
