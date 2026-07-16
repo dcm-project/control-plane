@@ -104,21 +104,6 @@ func handleDeleteError(err error) server.DeleteGitRepositoryResponseObject {
 	}
 }
 
-func handleGetStatusError(err error) server.GetGitRepositoryStatusResponseObject {
-	if errors.Is(err, service.ErrNotFound) {
-		return server.GetGitRepositoryStatus404JSONResponse{
-			NotFoundJSONResponse: server.NotFoundJSONResponse(buildError(
-				404, v1alpha1.NOTFOUND, "Resource not found", err.Error(),
-			)),
-		}
-	}
-	return server.GetGitRepositoryStatus500JSONResponse{
-		InternalServerErrorJSONResponse: server.InternalServerErrorJSONResponse(buildError(
-			500, v1alpha1.INTERNAL, "Internal server error", err.Error(),
-		)),
-	}
-}
-
 func handleSyncError(err error) server.SyncGitRepositoryResponseObject {
 	if errors.Is(err, service.ErrNotFound) {
 		return server.SyncGitRepository404JSONResponse{

@@ -33,9 +33,6 @@ type ServerInterface interface {
 	// Update a git repository
 	// (PUT /git-repositories/{gitRepositoryId})
 	UpdateGitRepository(w http.ResponseWriter, r *http.Request, gitRepositoryId GitRepositoryIdPath)
-	// Get git repository sync status
-	// (GET /git-repositories/{gitRepositoryId}/status)
-	GetGitRepositoryStatus(w http.ResponseWriter, r *http.Request, gitRepositoryId GitRepositoryIdPath)
 	// Trigger immediate sync
 	// (POST /git-repositories/{gitRepositoryId}:sync)
 	SyncGitRepository(w http.ResponseWriter, r *http.Request, gitRepositoryId GitRepositoryIdPath)
@@ -72,12 +69,6 @@ func (_ Unimplemented) GetGitRepository(w http.ResponseWriter, r *http.Request, 
 // Update a git repository
 // (PUT /git-repositories/{gitRepositoryId})
 func (_ Unimplemented) UpdateGitRepository(w http.ResponseWriter, r *http.Request, gitRepositoryId GitRepositoryIdPath) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Get git repository sync status
-// (GET /git-repositories/{gitRepositoryId}/status)
-func (_ Unimplemented) GetGitRepositoryStatus(w http.ResponseWriter, r *http.Request, gitRepositoryId GitRepositoryIdPath) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -253,32 +244,6 @@ func (siw *ServerInterfaceWrapper) UpdateGitRepository(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
-// GetGitRepositoryStatus operation middleware
-func (siw *ServerInterfaceWrapper) GetGitRepositoryStatus(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "gitRepositoryId" -------------
-	var gitRepositoryId GitRepositoryIdPath
-
-	err = runtime.BindStyledParameterWithOptions("simple", "gitRepositoryId", chi.URLParam(r, "gitRepositoryId"), &gitRepositoryId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "gitRepositoryId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetGitRepositoryStatus(w, r, gitRepositoryId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // SyncGitRepository operation middleware
 func (siw *ServerInterfaceWrapper) SyncGitRepository(w http.ResponseWriter, r *http.Request) {
 
@@ -432,9 +397,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/git-repositories/{gitRepositoryId}", wrapper.UpdateGitRepository)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/git-repositories/{gitRepositoryId}/status", wrapper.GetGitRepositoryStatus)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/git-repositories/{gitRepositoryId}:sync", wrapper.SyncGitRepository)
@@ -879,86 +841,6 @@ func (response UpdateGitRepository500JSONResponse) VisitUpdateGitRepositoryRespo
 	return err
 }
 
-type GetGitRepositoryStatusRequestObject struct {
-	GitRepositoryId GitRepositoryIdPath `json:"gitRepositoryId"`
-}
-
-type GetGitRepositoryStatusResponseObject interface {
-	VisitGetGitRepositoryStatusResponse(w http.ResponseWriter) error
-}
-
-type GetGitRepositoryStatus200JSONResponse GitRepositoryStatus
-
-func (response GetGitRepositoryStatus200JSONResponse) VisitGetGitRepositoryStatusResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetGitRepositoryStatus401JSONResponse struct{ UnauthorizedJSONResponse }
-
-func (response GetGitRepositoryStatus401JSONResponse) VisitGetGitRepositoryStatusResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetGitRepositoryStatus403JSONResponse struct{ ForbiddenJSONResponse }
-
-func (response GetGitRepositoryStatus403JSONResponse) VisitGetGitRepositoryStatusResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetGitRepositoryStatus404JSONResponse struct{ NotFoundJSONResponse }
-
-func (response GetGitRepositoryStatus404JSONResponse) VisitGetGitRepositoryStatusResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetGitRepositoryStatus500JSONResponse struct {
-	InternalServerErrorJSONResponse
-}
-
-func (response GetGitRepositoryStatus500JSONResponse) VisitGetGitRepositoryStatusResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
 type SyncGitRepositoryRequestObject struct {
 	GitRepositoryId GitRepositoryIdPath `json:"gitRepositoryId"`
 }
@@ -1056,9 +938,6 @@ type StrictServerInterface interface {
 	// Update a git repository
 	// (PUT /git-repositories/{gitRepositoryId})
 	UpdateGitRepository(ctx context.Context, request UpdateGitRepositoryRequestObject) (UpdateGitRepositoryResponseObject, error)
-	// Get git repository sync status
-	// (GET /git-repositories/{gitRepositoryId}/status)
-	GetGitRepositoryStatus(ctx context.Context, request GetGitRepositoryStatusRequestObject) (GetGitRepositoryStatusResponseObject, error)
 	// Trigger immediate sync
 	// (POST /git-repositories/{gitRepositoryId}:sync)
 	SyncGitRepository(ctx context.Context, request SyncGitRepositoryRequestObject) (SyncGitRepositoryResponseObject, error)
@@ -1230,32 +1109,6 @@ func (sh *strictHandler) UpdateGitRepository(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateGitRepositoryResponseObject); ok {
 		if err := validResponse.VisitUpdateGitRepositoryResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetGitRepositoryStatus operation middleware
-func (sh *strictHandler) GetGitRepositoryStatus(w http.ResponseWriter, r *http.Request, gitRepositoryId GitRepositoryIdPath) {
-	var request GetGitRepositoryStatusRequestObject
-
-	request.GitRepositoryId = gitRepositoryId
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetGitRepositoryStatus(ctx, request.(GetGitRepositoryStatusRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetGitRepositoryStatus")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetGitRepositoryStatusResponseObject); ok {
-		if err := validResponse.VisitGetGitRepositoryStatusResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

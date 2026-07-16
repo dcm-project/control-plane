@@ -23,7 +23,6 @@ type GitRepositoryService interface {
 	Create(ctx context.Context, req v1alpha1.GitRepository, clientID *string) (*v1alpha1.GitRepository, error)
 	Update(ctx context.Context, id string, req v1alpha1.GitRepository) (*v1alpha1.GitRepository, error)
 	Delete(ctx context.Context, id string) error
-	GetStatus(ctx context.Context, id string) (*v1alpha1.GitRepositoryStatus, error)
 	TriggerSync(ctx context.Context, id string) (*v1alpha1.GitRepositoryStatus, error)
 }
 
@@ -104,15 +103,6 @@ func (s *gitRepositoryService) Delete(ctx context.Context, id string) error {
 		return mapStoreError(err)
 	}
 	return nil
-}
-
-func (s *gitRepositoryService) GetStatus(ctx context.Context, id string) (*v1alpha1.GitRepositoryStatus, error) {
-	repo, err := s.store.GitRepository().Get(ctx, id)
-	if err != nil {
-		return nil, mapStoreError(err)
-	}
-	status := modelToStatus(repo)
-	return &status, nil
 }
 
 func (s *gitRepositoryService) TriggerSync(ctx context.Context, id string) (*v1alpha1.GitRepositoryStatus, error) {
