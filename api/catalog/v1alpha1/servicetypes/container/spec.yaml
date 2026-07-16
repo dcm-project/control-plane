@@ -85,21 +85,21 @@ components:
 
     CpuResources:
       type: object
-      description: CPU allocation (in cores)
+      description: CPU allocation in whole cores or millicores (e.g. 2, 500m, 1000m = 1 core)
       required:
         - min
         - max
       properties:
         min:
-          type: integer
-          description: Minimum guaranteed CPU cores
-          minimum: 1
-          example: 1
+          type: string
+          description: Minimum guaranteed CPU in whole cores or millicores
+          pattern: '^[1-9][0-9]*m?$'
+          example: "500m"
         max:
-          type: integer
-          description: Maximum allowed CPU cores
-          minimum: 1
-          example: 2
+          type: string
+          description: Maximum allowed CPU in whole cores or millicores
+          pattern: '^[1-9][0-9]*m?$'
+          example: "1000m"
       additionalProperties: true
 
     MemoryResources:

@@ -59,7 +59,7 @@ type ContainerPortVisibility string
 
 // ContainerResources Resource allocation (CPU and memory)
 type ContainerResources struct {
-	// Cpu CPU allocation (in cores)
+	// Cpu CPU allocation in whole cores or millicores (e.g. 2, 500m, 1000m = 1 core)
 	Cpu CpuResources `json:"cpu"`
 
 	// Memory Memory allocation
@@ -119,13 +119,13 @@ type ContainerSpec struct {
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
-// CpuResources CPU allocation (in cores)
+// CpuResources CPU allocation in whole cores or millicores (e.g. 2, 500m, 1000m = 1 core)
 type CpuResources struct {
-	// Max Maximum allowed CPU cores
-	Max int `json:"max"`
+	// Max Maximum allowed CPU in whole cores or millicores
+	Max string `json:"max"`
 
-	// Min Minimum guaranteed CPU cores
-	Min                  int                    `json:"min"`
+	// Min Minimum guaranteed CPU in whole cores or millicores
+	Min                  string                 `json:"min"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
