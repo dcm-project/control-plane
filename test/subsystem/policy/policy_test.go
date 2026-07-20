@@ -921,7 +921,7 @@ var _ = Describe("Policy CRUD Operations", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode()).To(Equal(http.StatusBadRequest))
 			Expect(resp.JSON400).NotTo(BeNil())
-			Expect(string(resp.JSON400.Type)).To(Equal("https://dcm.example.com/errors/invalid-argument"))
+			Expect(string(resp.JSON400.Type)).To(Equal(string(v1alpha1.INVALIDARGUMENT)))
 		})
 	})
 
@@ -1426,7 +1426,7 @@ main := {"rejected": false} if {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode()).To(Equal(http.StatusBadRequest), "Should reject invalid Rego")
 			Expect(resp.JSON400).NotTo(BeNil())
-			Expect(string(resp.JSON400.Type)).To(Equal("https://dcm.example.com/errors/invalid-argument"))
+			Expect(string(resp.JSON400.Type)).To(Equal(string(v1alpha1.INVALIDARGUMENT)))
 		})
 
 		It("should update Rego code", func() {
