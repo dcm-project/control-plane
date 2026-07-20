@@ -11,7 +11,7 @@ import (
 
 // Error codes returned by service operations.
 const (
-	ErrCodeNotFound            = "NOT_FOUND"
+	ErrCodeNotFound            = "https://dcm.example.com/errors/not-found"
 	ErrCodeConflict            = "CONFLICT"
 	ErrCodeValidation          = "VALIDATION"
 	ErrCodeProviderError       = "PROVIDER_ERROR"
