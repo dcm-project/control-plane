@@ -1486,7 +1486,7 @@ main := {"rejected": false} if {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updateResp.StatusCode()).To(Equal(http.StatusBadRequest), "Should reject invalid Rego on update")
 			Expect(updateResp.JSON400).NotTo(BeNil())
-			Expect(string(updateResp.JSON400.Type)).To(Equal("INVALID_ARGUMENT"))
+			Expect(string(updateResp.JSON400.Type)).To(Equal(string(v1alpha1.INVALIDARGUMENT)))
 
 			getResp, err := apiClient.GetPolicyWithResponse(ctx, policyID)
 			Expect(err).NotTo(HaveOccurred())
