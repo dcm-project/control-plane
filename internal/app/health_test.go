@@ -70,7 +70,10 @@ var _ = Describe("Monolith health", func() {
 
 	It("returns 503 when postgres is unreachable", func() {
 		router = chi.NewRouter()
-		registerMonolithHealth(router, stubChecker{name: "database", err: errors.New("db down")})
+		registerMonolithHealth(router,
+			stubChecker{name: "database", err: errors.New("db down")},
+			stubChecker{name: "nats"},
+		)
 
 		rec := serveHealth()
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -78,7 +81,10 @@ var _ = Describe("Monolith health", func() {
 		var body healthResponse
 		Expect(json.NewDecoder(rec.Body).Decode(&body)).To(Succeed())
 		Expect(body.Status).To(Equal("unhealthy"))
-		Expect(body.Checks).To(Equal(map[string]string{"database": "unavailable"}))
+		Expect(body.Checks).To(Equal(map[string]string{
+			"database": "unavailable",
+			"nats":     "ok",
+		}))
 	})
 
 	It("returns 503 when nats is unreachable", func() {
