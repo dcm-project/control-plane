@@ -106,6 +106,51 @@ var _ = Describe("Monolith health", func() {
 		}))
 	})
 
+	It("returns 503 when database and nats are both unreachable", func() {
+		router = chi.NewRouter()
+		registerMonolithHealth(router,
+			stubChecker{name: "database", err: errors.New("db down")},
+			stubChecker{name: "nats", err: errors.New("nats down")},
+		)
+
+		rec := serveHealth()
+		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
+
+		var body healthResponse
+		Expect(json.NewDecoder(rec.Body).Decode(&body)).To(Succeed())
+		Expect(body.Status).To(Equal("unhealthy"))
+		Expect(body.Checks).To(Equal(map[string]string{
+			"database": "unavailable",
+			"nats":     "unavailable",
+		}))
+	})
+
+	It("returns 503 when the request context is already cancelled", func() {
+		router = chi.NewRouter()
+		registerMonolithHealth(router,
+			stubChecker{name: "database"},
+			stubChecker{name: "nats"},
+		)
+
+		req := httptest.NewRequest(http.MethodGet, auth.MonolithHealthPath, nil)
+		ctx, cancel := context.WithCancel(req.Context())
+		cancel()
+		req = req.WithContext(ctx)
+
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
+
+		var body healthResponse
+		Expect(json.NewDecoder(rec.Body).Decode(&body)).To(Succeed())
+		Expect(body.Status).To(Equal("unhealthy"))
+		Expect(body.Checks).To(Equal(map[string]string{
+			"database": "unavailable",
+			"nats":     "unavailable",
+		}))
+	})
+
 	It("returns 503 when no checkers are configured", func() {
 		router = chi.NewRouter()
 		registerMonolithHealth(router)
