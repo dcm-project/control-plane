@@ -27,7 +27,7 @@ var _ = Describe("OpenAPI request validation", func() {
 		It("bypasses domain validators", func() {
 			router := chi.NewRouter()
 			router.Use(validators.middleware())
-			registerMonolithHealth(router)
+			registerMonolithHealth(router, stubChecker{name: "database"})
 
 			req := httptest.NewRequest(http.MethodGet, auth.MonolithHealthPath, nil)
 			rec := httptest.NewRecorder()

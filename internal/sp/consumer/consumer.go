@@ -16,6 +16,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+const healthFlushTimeout = 2 * time.Second
+
 // StatusEvent represents a status event payload.
 type StatusEvent struct {
 	Id        string    `json:"id"`
@@ -125,6 +127,23 @@ func (c *StatusConsumer) Stop() {
 	}
 	c.conn.Close()
 	slog.Info("StatusConsumer stopped")
+}
+
+// Check verifies the NATS connection is usable (connected and responsive).
+func (c *StatusConsumer) Check(ctx context.Context) error {
+	if c.conn == nil || !c.conn.IsConnected() {
+		return errors.New("nats not connected")
+	}
+	timeout := healthFlushTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 && remaining < timeout {
+			timeout = remaining
+		}
+	}
+	if err := c.conn.FlushTimeout(timeout); err != nil {
+		return fmt.Errorf("nats flush: %w", err)
+	}
+	return nil
 }
 
 func (c *StatusConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) {

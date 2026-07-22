@@ -186,4 +186,8 @@ var _ = Describe("StatusConsumer", func() {
 			return inst.Status
 		}, 2*time.Second, 100*time.Millisecond).Should(Equal("RUNNING"))
 	})
+
+	It("Check succeeds while connected", func() {
+		Expect(sc.Check(bg.ctx)).To(Succeed())
+	})
 })

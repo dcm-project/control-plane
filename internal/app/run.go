@@ -134,6 +134,8 @@ func Run() int {
 		return 1
 	}
 
+	checkers := []Checker{NewPostgresChecker(db)}
+
 	if !cfg.NATS.Disabled {
 		statusConsumer, err := spconsumer.New(cfg.NATS.URL, cfg.NATS.Subject, spDataStore,
 			spconsumer.SetStreamName(cfg.NATS.StreamName),
@@ -148,6 +150,7 @@ func Run() int {
 			return 1
 		}
 		defer statusConsumer.Stop()
+		checkers = append(checkers, NewNATSChecker(statusConsumer))
 	}
 
 	healthMonitor := sphealthcheck.NewMonitor(
@@ -207,7 +210,7 @@ func Run() int {
 		Policy:     policyhandlers.NewPolicyHandler(policyService),
 		SPProvider: spproviderhandler.NewHandler(spProviderService),
 		SPRM:       sprmhandler.NewHandler(spInstanceService),
-	})
+	}, checkers...)
 	if err != nil {
 		slog.Error("Failed to configure HTTP router", "error", err)
 		return 1
@@ -252,7 +255,7 @@ type RouteHandlers struct {
 	SPRM       sprmserver.StrictServerInterface
 }
 
-func newRouter(authMW func(http.Handler) http.Handler, h RouteHandlers) (chi.Router, error) {
+func newRouter(authMW func(http.Handler) http.Handler, h RouteHandlers, checkers ...Checker) (chi.Router, error) {
 	validators, err := newOpenAPIValidators()
 	if err != nil {
 		return nil, err
@@ -268,7 +271,7 @@ func newRouter(authMW func(http.Handler) http.Handler, h RouteHandlers) (chi.Rou
 
 	// Single monolith health endpoint; domain OpenAPI specs omit /health to avoid
 	// duplicate chi route registration when mounting multiple generated servers.
-	registerMonolithHealth(router)
+	registerMonolithHealth(router, checkers...)
 
 	catalogserver.HandlerFromMuxWithBaseURL(
 		catalogserver.NewStrictHandler(h.Catalog, nil),
