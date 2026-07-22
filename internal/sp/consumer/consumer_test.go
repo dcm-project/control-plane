@@ -3,6 +3,7 @@ package consumer_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -189,5 +190,15 @@ var _ = Describe("StatusConsumer", func() {
 
 	It("Check succeeds while connected", func() {
 		Expect(sc.Check(bg.ctx)).To(Succeed())
+	})
+
+	It("Check returns immediately when the context is already done", func() {
+		expired, cancel := context.WithTimeout(bg.ctx, time.Nanosecond)
+		defer cancel()
+		time.Sleep(time.Millisecond)
+
+		err := sc.Check(expired)
+		Expect(err).To(HaveOccurred())
+		Expect(errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)).To(BeTrue())
 	})
 })

@@ -131,15 +131,27 @@ func (c *StatusConsumer) Stop() {
 
 // Check verifies the NATS connection is usable (connected and responsive).
 func (c *StatusConsumer) Check(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if c.conn == nil || !c.conn.IsConnected() {
 		return errors.New("nats not connected")
 	}
+
 	timeout := healthFlushTimeout
 	if deadline, ok := ctx.Deadline(); ok {
-		if remaining := time.Until(deadline); remaining > 0 && remaining < timeout {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return context.DeadlineExceeded
+		}
+		if remaining < timeout {
 			timeout = remaining
 		}
 	}
+
 	if err := c.conn.FlushTimeout(timeout); err != nil {
 		return fmt.Errorf("nats flush: %w", err)
 	}

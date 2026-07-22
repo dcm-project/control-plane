@@ -81,6 +81,12 @@ func registerMonolithHealth(router chi.Router, checkers ...Checker) {
 		healthy := len(checkers) > 0
 
 		for _, checker := range checkers {
+			if ctx.Err() != nil {
+				checks[checker.Name()] = "unavailable"
+				healthy = false
+				continue
+			}
+
 			checkCtx, checkCancel := context.WithTimeout(ctx, checkerTimeout)
 			err := checker.Check(checkCtx)
 			checkCancel()
