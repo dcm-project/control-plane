@@ -164,7 +164,7 @@ services:
       - "7007:7007"
     environment:
       APP_BASE_URL: http://localhost:7007
-      DCM_API_URL: http://control-plane:8080
+      DCM_API_GATEWAY_URL: http://control-plane:8080
     depends_on:
       control-plane:
         condition: service_started
