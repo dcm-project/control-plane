@@ -1,0 +1,136 @@
+openapi: 3.0.4
+
+info:
+  title: DCM Network Specification
+  description: |
+    Provider-agnostic network service specification
+
+    This schema defines minimal portable fields for network
+    provisioning. Platform-specific configuration (backend targets, selectors,
+    node ports) should be specified via provider_hints  
+  version: v1alpha1
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+paths: {}
+
+components:
+  schemas:
+    NetworkSpec:
+      type: object
+      description: |
+        Provider-agnostic network specification.
+
+        Includes common fields (service_type, metadata, provider_hints)
+        plus fields for ports and routing_level.
+
+        Providers translate this specification to their native format.
+      allOf:
+        - $ref: '../common.yaml#/components/schemas/CommonFields'
+        - type: object
+          required:
+            - ports
+            - routing_level
+          properties:
+            ports:
+              type: array
+              description: Ports to expose on the service
+              minItems: 1
+              items:
+                $ref: '#/components/schemas/NetworkPort'
+
+            routing_level:
+              type: string
+              description: |
+                Routing tier for the service.
+
+                - network: L4 (TCP/UDP) routing
+                - application: L7 (HTTP/gRPC) routing
+
+                The provider infers the backend service type from this field
+                combined with provider_hints (e.g. presence of node_ports).
+              enum:
+                - network
+                - application
+              example: network
+
+          additionalProperties: true
+
+    NetworkPort:
+      type: object
+      description: Network service port specification
+      required:
+        - port
+        - target_port
+      properties:
+        name:
+          type: string
+          description: |
+            Port name for identification.
+            Must be unique within the ports list.
+          pattern: '^[a-z]([-a-z0-9]*[a-z0-9])?$'
+          maxLength: 15
+          example: http
+        port:
+          type: integer
+          description: The port exposed by the service
+          minimum: 1
+          maximum: 65535
+          example: 80
+        target_port:
+          type: integer
+          description: Port on the backend receiving traffic
+          minimum: 1
+          maximum: 65535
+          example: 8080
+        protocol:
+          type: string
+          description: Transport protocol
+          enum:
+            - TCP
+            - UDP
+          default: TCP
+          example: TCP
+        node_port:
+          type: integer
+          description: |
+            Allocated node port (response-only).
+            Present for NodePort and LoadBalancer types.
+          minimum: 30000
+          maximum: 32767
+          readOnly: true
+          example: 31234
+      additionalProperties: true
+
+    KubernetesProviderHints:
+      type: object
+      description: |
+        Kubernetes-specific settings supplied under
+        provider_hints.kubernetes in requests.
+      additionalProperties: false
+      properties:
+        selector:
+          type: object
+          description: Label selector for pod routing
+          additionalProperties:
+            type: string
+          example:
+            app: backend
+        cluster_ip:
+          type: string
+          description: |
+            Specific ClusterIP address, "None" for headless service,
+            or omit for automatic allocation.
+          example: "10.96.1.5"
+        node_ports:
+          type: object
+          description: |
+            Port name to NodePort value mapping (30000-32767).
+            Presence triggers NodePort or LoadBalancer type inference.
+          additionalProperties:
+            type: integer
+            minimum: 30000
+            maximum: 32767
+          example:
+            http: 30080

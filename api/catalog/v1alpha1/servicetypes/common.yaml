@@ -30,6 +30,7 @@ components:
         - database
         - cluster
         - storage
+        - network
         - three-tier-app-demo
       example: vm
 

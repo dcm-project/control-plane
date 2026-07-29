@@ -5,6 +5,7 @@ import (
 
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/container"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/database"
+	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/network"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/three_tier_app_demo"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/vm"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
@@ -86,6 +87,16 @@ func defaultServiceTypes() []model.ServiceType {
 				"capacity": "",
 			},
 			Path: "service-types/storage",
+		},
+		{
+			ID:          "network",
+			ApiVersion:  "v1alpha1",
+			ServiceType: "network",
+			Spec: map[string]any{
+				"ports":         []network.NetworkPort{},
+				"routing_level": "",
+			},
+			Path: "service-types/network",
 		},
 	}
 }

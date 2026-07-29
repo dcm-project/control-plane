@@ -61,18 +61,18 @@ var _ = Describe("Seed", func() {
 				var serviceTypes []model.ServiceType
 				err = db.Find(&serviceTypes).Error
 				Expect(err).ToNot(HaveOccurred())
-				Expect(serviceTypes).To(HaveLen(6))
+				Expect(serviceTypes).To(HaveLen(7))
 
 				ids := make([]string, len(serviceTypes))
 				for i, st := range serviceTypes {
 					ids[i] = st.ID
 				}
-				Expect(ids).To(ConsistOf("three-tier-app-demo", "vm", "container", "database", "cluster", "storage"))
+				Expect(ids).To(ConsistOf("three-tier-app-demo", "vm", "container", "database", "cluster", "storage", "network"))
 			})
 
 			It("inserts missing service types when upgrading a partially seeded database", func() {
 				ctx := context.Background()
-				legacyIDs := []string{"three-tier-app-demo", "vm", "container", "database", "cluster"}
+				legacyIDs := []string{"three-tier-app-demo", "vm", "container", "database", "cluster", "storage"}
 				for _, id := range legacyIDs {
 					st := model.ServiceType{
 						ID:          id,
@@ -91,19 +91,20 @@ var _ = Describe("Seed", func() {
 				var count int64
 				err = db.Model(&model.ServiceType{}).Count(&count).Error
 				Expect(err).ToNot(HaveOccurred())
-				Expect(count).To(Equal(int64(6)))
+				Expect(count).To(Equal(int64(7)))
 
-				storage, err := dataStore.ServiceType().Get(ctx, "storage")
+				network, err := dataStore.ServiceType().Get(ctx, "network")
 				Expect(err).ToNot(HaveOccurred())
-				Expect(storage.ServiceType).To(Equal("storage"))
-				Expect(storage.Spec).To(HaveKey("capacity"))
+				Expect(network.ServiceType).To(Equal("network"))
+				Expect(network.Spec).To(HaveKey("ports"))
+				Expect(network.Spec).To(HaveKey("routing_level"))
 
 				err = svc.Seed(ctx)
 				Expect(err).ToNot(HaveOccurred())
 
 				err = db.Model(&model.ServiceType{}).Count(&count).Error
 				Expect(err).ToNot(HaveOccurred())
-				Expect(count).To(Equal(int64(6)))
+				Expect(count).To(Equal(int64(7)))
 			})
 
 			DescribeTable("seeds service type with correct spec keys",
@@ -127,6 +128,7 @@ var _ = Describe("Seed", func() {
 				Entry("database", "database", []string{"engine", "version", "resources"}),
 				Entry("cluster", "cluster", []string{"version"}),
 				Entry("storage", "storage", []string{"capacity"}),
+				Entry("network", "network", []string{"ports", "routing_level"}),
 			)
 		})
 

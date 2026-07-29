@@ -12,6 +12,7 @@ const (
 	Cluster          ServiceType = "cluster"
 	Container        ServiceType = "container"
 	Database         ServiceType = "database"
+	Network          ServiceType = "network"
 	Storage          ServiceType = "storage"
 	ThreeTierAppDemo ServiceType = "three-tier-app-demo"
 	Vm               ServiceType = "vm"
@@ -25,6 +26,8 @@ func (e ServiceType) Valid() bool {
 	case Container:
 		return true
 	case Database:
+		return true
+	case Network:
 		return true
 	case Storage:
 		return true
