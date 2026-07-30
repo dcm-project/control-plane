@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strings"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 // validRepoID matches DNS-1123 label format used for git repository IDs.
@@ -23,7 +26,7 @@ type GitOperations interface {
 	WorkDir(repoID string) string
 }
 
-// GitClient implements GitOperations using the git CLI.
+// GitClient implements GitOperations using go-git.
 type GitClient struct {
 	baseDir string
 }
@@ -37,50 +40,101 @@ func (g *GitClient) WorkDir(repoID string) string {
 	return filepath.Join(g.baseDir, repoID)
 }
 
-func (g *GitClient) CloneOrFetch(ctx context.Context, url, branch, repoID string) (string, error) {
+func (g *GitClient) CloneOrFetch(ctx context.Context, repoURL, branch, repoID string) (string, error) {
 	if !validRepoID.MatchString(repoID) {
 		return "", fmt.Errorf("invalid repo ID %q: must match DNS-1123 label format", repoID)
 	}
 
 	dir := g.WorkDir(repoID)
+	refName := plumbing.NewBranchReferenceName(branch)
 
 	if _, err := os.Stat(filepath.Join(dir, ".git")); os.IsNotExist(err) {
-		if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
-			return "", fmt.Errorf("create parent dir: %w", err)
-		}
-		if err := g.run(ctx, g.baseDir, "git", "clone", "--branch", branch, "--single-branch", "--depth", "1", url, repoID); err != nil {
-			return "", fmt.Errorf("git clone: %w", err)
-		}
-	} else {
-		if err := g.run(ctx, dir, "git", "fetch", "origin", branch); err != nil {
-			return "", fmt.Errorf("git fetch: %w", err)
-		}
-		if err := g.run(ctx, dir, "git", "reset", "--hard", "origin/"+branch); err != nil {
-			return "", fmt.Errorf("git reset: %w", err)
-		}
+		return g.cloneRepo(ctx, repoURL, branch, dir, refName)
 	}
-
-	commit, err := g.output(ctx, dir, "git", "rev-parse", "HEAD")
-	if err != nil {
-		return "", fmt.Errorf("git rev-parse: %w", err)
-	}
-	return strings.TrimSpace(commit), nil
+	return g.fetchAndReset(ctx, branch, dir, refName)
 }
 
-func (g *GitClient) run(ctx context.Context, dir string, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = dir
-	cmd.Stdout = os.Stderr // log git output to stderr
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+func (g *GitClient) cloneRepo(ctx context.Context, repoURL, branch, dir string, refName plumbing.ReferenceName) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		return "", fmt.Errorf("create parent dir: %w", err)
+	}
+
+	repo, err := git.PlainCloneContext(ctx, dir, false, &git.CloneOptions{
+		URL:           repoURL,
+		ReferenceName: refName,
+		SingleBranch:  true,
+		Depth:         1,
+	})
+	if err != nil {
+		return "", fmt.Errorf("git clone: %w", err)
+	}
+
+	return headCommit(repo)
 }
 
-func (g *GitClient) output(ctx context.Context, dir string, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
+func (g *GitClient) fetchAndReset(ctx context.Context, branch, dir string, refName plumbing.ReferenceName) (string, error) {
+	repo, err := git.PlainOpen(dir)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("open repo: %w", err)
 	}
-	return string(out), nil
+
+	err = repo.FetchContext(ctx, &git.FetchOptions{
+		RemoteName: "origin",
+		RefSpecs:   []config.RefSpec{config.RefSpec(fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branch, branch))},
+		Depth:      1,
+		Force:      true,
+	})
+	if err != nil && err != git.NoErrAlreadyUpToDate {
+		return "", fmt.Errorf("git fetch: %w", err)
+	}
+
+	// Resolve origin/<branch> and reset HEAD to it
+	remoteRef, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", branch), true)
+	if err != nil {
+		return "", fmt.Errorf("resolve remote ref: %w", err)
+	}
+
+	wt, err := repo.Worktree()
+	if err != nil {
+		return "", fmt.Errorf("worktree: %w", err)
+	}
+
+	if err := wt.Reset(&git.ResetOptions{
+		Commit: remoteRef.Hash(),
+		Mode:   git.HardReset,
+	}); err != nil {
+		return "", fmt.Errorf("git reset: %w", err)
+	}
+
+	return remoteRef.Hash().String(), nil
+}
+
+func headCommit(repo *git.Repository) (string, error) {
+	head, err := repo.Head()
+	if err != nil {
+		return "", fmt.Errorf("resolve HEAD: %w", err)
+	}
+	return head.Hash().String(), nil
+}
+
+// LatestRemoteCommit resolves the latest commit on a remote branch without
+// cloning the full repository. This can be used for lightweight polling.
+func LatestRemoteCommit(ctx context.Context, repoURL, branch string) (string, error) {
+	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{repoURL},
+	})
+
+	refs, err := remote.ListContext(ctx, &git.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("ls-remote: %w", err)
+	}
+
+	target := plumbing.NewBranchReferenceName(branch)
+	for _, ref := range refs {
+		if ref.Name() == target {
+			return ref.Hash().String(), nil
+		}
+	}
+	return "", fmt.Errorf("branch %q not found on remote", branch)
 }
