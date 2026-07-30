@@ -6,8 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+// validRepoID matches DNS-1123 label format used for git repository IDs.
+var validRepoID = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // GitOperations abstracts git operations for testability.
 type GitOperations interface {
@@ -34,6 +38,10 @@ func (g *GitClient) WorkDir(repoID string) string {
 }
 
 func (g *GitClient) CloneOrFetch(ctx context.Context, url, branch, repoID string) (string, error) {
+	if !validRepoID.MatchString(repoID) {
+		return "", fmt.Errorf("invalid repo ID %q: must match DNS-1123 label format", repoID)
+	}
+
 	dir := g.WorkDir(repoID)
 
 	if _, err := os.Stat(filepath.Join(dir, ".git")); os.IsNotExist(err) {

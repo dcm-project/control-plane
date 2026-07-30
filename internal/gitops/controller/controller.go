@@ -12,11 +12,15 @@ import (
 
 // Controller manages per-GitRepository reconciliation goroutines.
 type Controller struct {
-	reconciler *Reconciler
-	store      store.Store
+	reconciler   *Reconciler
+	store        store.Store
 	pollInterval time.Duration // how often to reload repos from DB
-	stopCh     chan struct{}
-	wg         sync.WaitGroup
+	stopCh       chan struct{}
+	wg           sync.WaitGroup
+
+	// repoLocks prevents concurrent reconciliations of the same repository.
+	repoLocks   map[string]*sync.Mutex
+	repoLocksMu sync.Mutex
 }
 
 // NewController creates a new Controller.
@@ -27,6 +31,7 @@ func NewController(reconciler *Reconciler, gitopsStore store.Store, pollInterval
 		store:        gitopsStore,
 		pollInterval: pollInterval,
 		stopCh:       make(chan struct{}),
+		repoLocks:    make(map[string]*sync.Mutex),
 	}
 }
 
@@ -87,8 +92,28 @@ func (c *Controller) reconcileAll(ctx context.Context) {
 			}
 		}
 
+		mu := c.repoLock(repo.ID)
+		if !mu.TryLock() {
+			slog.DebugContext(ctx, "Skipping repo, reconciliation already in progress", "repo_id", repo.ID)
+			continue
+		}
+
 		if err := c.reconciler.Reconcile(ctx, repo); err != nil {
 			slog.ErrorContext(ctx, "Reconciliation failed", "repo_id", repo.ID, "error", err)
 		}
+		mu.Unlock()
 	}
+}
+
+// repoLock returns a per-repository mutex, creating one if it doesn't exist.
+func (c *Controller) repoLock(repoID string) *sync.Mutex {
+	c.repoLocksMu.Lock()
+	defer c.repoLocksMu.Unlock()
+
+	mu, ok := c.repoLocks[repoID]
+	if !ok {
+		mu = &sync.Mutex{}
+		c.repoLocks[repoID] = mu
+	}
+	return mu
 }

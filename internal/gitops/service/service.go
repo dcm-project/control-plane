@@ -4,11 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 
 	v1alpha1 "github.com/dcm-project/control-plane/api/gitops/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/gitops/store"
 	"github.com/dcm-project/control-plane/internal/gitops/store/model"
 	"github.com/google/uuid"
+)
+
+const (
+	minIntervalSeconds = 10
+	maxIntervalSeconds = 86400
+	maxRetries         = 100
+	maxBackoffSeconds  = 3600
 )
 
 var (
@@ -23,7 +31,6 @@ type GitRepositoryService interface {
 	Create(ctx context.Context, req v1alpha1.GitRepository, clientID *string) (*v1alpha1.GitRepository, error)
 	Update(ctx context.Context, id string, req v1alpha1.GitRepository) (*v1alpha1.GitRepository, error)
 	Delete(ctx context.Context, id string) error
-	TriggerSync(ctx context.Context, id string) (*v1alpha1.GitRepositoryStatus, error)
 }
 
 type gitRepositoryService struct {
@@ -70,8 +77,8 @@ func (s *gitRepositoryService) Get(ctx context.Context, id string) (*v1alpha1.Gi
 func (s *gitRepositoryService) Create(ctx context.Context, req v1alpha1.GitRepository, clientID *string) (*v1alpha1.GitRepository, error) {
 	id := getOrGenerateID(clientID)
 
-	if req.Spec.Url == "" {
-		return nil, fmt.Errorf("%w: spec.url is required", ErrInvalidArgument)
+	if err := validateGitRepository(req); err != nil {
+		return nil, err
 	}
 
 	m := apiToModel(id, req)
@@ -84,8 +91,8 @@ func (s *gitRepositoryService) Create(ctx context.Context, req v1alpha1.GitRepos
 }
 
 func (s *gitRepositoryService) Update(ctx context.Context, id string, req v1alpha1.GitRepository) (*v1alpha1.GitRepository, error) {
-	if req.Spec.Url == "" {
-		return nil, fmt.Errorf("%w: spec.url is required", ErrInvalidArgument)
+	if err := validateGitRepository(req); err != nil {
+		return nil, err
 	}
 
 	m := apiToModel(id, req)
@@ -105,16 +112,35 @@ func (s *gitRepositoryService) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *gitRepositoryService) TriggerSync(ctx context.Context, id string) (*v1alpha1.GitRepositoryStatus, error) {
-	// Verify the repo exists
-	repo, err := s.store.GitRepository().Get(ctx, id)
-	if err != nil {
-		return nil, mapStoreError(err)
+func validateGitRepository(req v1alpha1.GitRepository) error {
+	if req.DisplayName == "" {
+		return fmt.Errorf("%w: display_name is required", ErrInvalidArgument)
 	}
-	// The actual sync is performed by dcm-gitops; here we just return current status.
-	// A future enhancement can notify the controller via a channel.
-	status := modelToStatus(repo)
-	return &status, nil
+	if len(req.DisplayName) > 63 {
+		return fmt.Errorf("%w: display_name must be at most 63 characters", ErrInvalidArgument)
+	}
+	if req.Spec.Url == "" {
+		return fmt.Errorf("%w: spec.url is required", ErrInvalidArgument)
+	}
+	if u, err := url.Parse(req.Spec.Url); err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("%w: spec.url must be a valid URL with scheme and host", ErrInvalidArgument)
+	}
+	if req.Spec.IntervalSeconds != nil {
+		v := int(*req.Spec.IntervalSeconds)
+		if v < minIntervalSeconds || v > maxIntervalSeconds {
+			return fmt.Errorf("%w: spec.interval_seconds must be between %d and %d", ErrInvalidArgument, minIntervalSeconds, maxIntervalSeconds)
+		}
+	}
+	if req.Spec.Reconciliation != nil && req.Spec.Reconciliation.RetryPolicy != nil {
+		rp := req.Spec.Reconciliation.RetryPolicy
+		if rp.MaxRetries != nil && (int(*rp.MaxRetries) < 0 || int(*rp.MaxRetries) > maxRetries) {
+			return fmt.Errorf("%w: spec.reconciliation.retry_policy.max_retries must be between 0 and %d", ErrInvalidArgument, maxRetries)
+		}
+		if rp.BackoffSeconds != nil && (int(*rp.BackoffSeconds) < 1 || int(*rp.BackoffSeconds) > maxBackoffSeconds) {
+			return fmt.Errorf("%w: spec.reconciliation.retry_policy.backoff_seconds must be between 1 and %d", ErrInvalidArgument, maxBackoffSeconds)
+		}
+	}
+	return nil
 }
 
 func getOrGenerateID(clientID *string) string {

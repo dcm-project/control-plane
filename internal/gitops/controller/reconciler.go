@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	catalogv1alpha1 "github.com/dcm-project/control-plane/api/catalog/v1alpha1"
 	catalogservice "github.com/dcm-project/control-plane/internal/catalog/service"
@@ -34,12 +35,18 @@ func NewReconciler(gitopsStore store.Store, catalogSvc catalogservice.CatalogIte
 	}
 }
 
+// gitOperationTimeout is the maximum time allowed for git clone/fetch operations.
+const gitOperationTimeout = 2 * time.Minute
+
 // Reconcile performs a single reconciliation cycle for the given GitRepository.
 func (r *Reconciler) Reconcile(ctx context.Context, repo model.GitRepository) error {
 	slog.InfoContext(ctx, "Reconciling git repository", "id", repo.ID, "url", repo.URL)
 
-	// 1. Clone or fetch
-	latestCommit, err := r.gitClient.CloneOrFetch(ctx, repo.URL, repo.Branch, repo.ID)
+	// 1. Clone or fetch (with timeout to prevent hanging on unresponsive servers)
+	gitCtx, gitCancel := context.WithTimeout(ctx, gitOperationTimeout)
+	defer gitCancel()
+
+	latestCommit, err := r.gitClient.CloneOrFetch(gitCtx, repo.URL, repo.Branch, repo.ID)
 	if err != nil {
 		r.setError(ctx, repo.ID, fmt.Sprintf("git fetch failed: %s", err.Error()))
 		return fmt.Errorf("git fetch: %w", err)
@@ -60,6 +67,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, repo model.GitRepository) er
 		slog.WarnContext(ctx, "Parse error", "id", repo.ID, "file", pe.File, "error", pe.Err)
 	}
 
+	// Abort reconciliation if all files failed to parse — this prevents
+	// mass-deletion of existing instances due to transient parse failures.
+	if len(parseResult.Instances) == 0 && len(parseResult.Errors) > 0 {
+		r.setError(ctx, repo.ID, fmt.Sprintf("all %d YAML files failed to parse, aborting reconciliation", len(parseResult.Errors)))
+		return fmt.Errorf("all %d YAML files failed to parse", len(parseResult.Errors))
+	}
+
 	// 4. Get existing git-managed instances for this repo
 	existingInstances, err := r.listManagedInstances(ctx, repo.ID)
 	if err != nil {
@@ -75,6 +89,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, repo model.GitRepository) er
 
 	existingByName := make(map[string]string, len(existingInstances)) // name -> id
 	for _, inst := range existingInstances {
+		if inst.Uid == nil {
+			slog.WarnContext(ctx, "Skipping instance with nil UID", "id", repo.ID, "display_name", inst.DisplayName)
+			continue
+		}
 		existingByName[inst.DisplayName] = *inst.Uid
 	}
 
