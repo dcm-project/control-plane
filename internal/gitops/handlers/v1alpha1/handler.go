@@ -78,4 +78,3 @@ func (h *Handler) DeleteGitRepository(ctx context.Context, request server.Delete
 	slog.InfoContext(ctx, "GitRepository deleted", "id", request.GitRepositoryId)
 	return server.DeleteGitRepository204Response{}, nil
 }
-

@@ -12,13 +12,13 @@ import (
 
 // DesiredInstance represents a CatalogItemInstance parsed from a YAML file.
 type DesiredInstance struct {
-	Name          string            `yaml:"-"`
-	ApiVersion    string            `yaml:"-"`
-	DisplayName   string            `yaml:"-"`
-	CatalogItemID string            `yaml:"-"`
+	Name          string             `yaml:"-"`
+	ApiVersion    string             `yaml:"-"`
+	DisplayName   string             `yaml:"-"`
+	CatalogItemID string             `yaml:"-"`
 	UserValues    []DesiredUserValue `yaml:"-"`
-	SourceFile    string            `yaml:"-"`
-	Labels        map[string]string `yaml:"-"`
+	SourceFile    string             `yaml:"-"`
+	Labels        map[string]string  `yaml:"-"`
 }
 
 // DesiredUserValue represents a user value in a desired instance YAML.

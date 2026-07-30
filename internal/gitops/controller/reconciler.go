@@ -12,13 +12,6 @@ import (
 	"github.com/dcm-project/control-plane/internal/gitops/store/model"
 )
 
-const (
-	labelManagedBy  = "gitops.dcm.io/managed-by"
-	labelRepository = "gitops.dcm.io/repository"
-	labelSourcePath = "gitops.dcm.io/source-path"
-	labelCommit     = "gitops.dcm.io/commit"
-)
-
 // Reconciler handles the reconciliation of a single GitRepository.
 type Reconciler struct {
 	gitopsStore store.Store
@@ -151,7 +144,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, repo model.GitRepository) er
 	return nil
 }
 
-func (r *Reconciler) createInstance(ctx context.Context, repoID, commit string, desired DesiredInstance) error {
+func (r *Reconciler) createInstance(ctx context.Context, _, _ string, desired DesiredInstance) error {
 	apiVersion := desired.ApiVersion
 	if apiVersion == "" {
 		apiVersion = "v1alpha1"
@@ -181,7 +174,7 @@ func (r *Reconciler) createInstance(ctx context.Context, repoID, commit string, 
 	return err
 }
 
-func (r *Reconciler) listManagedInstances(ctx context.Context, repoID string) ([]catalogv1alpha1.CatalogItemInstance, error) {
+func (r *Reconciler) listManagedInstances(ctx context.Context, _ string) ([]catalogv1alpha1.CatalogItemInstance, error) {
 	// List all instances and filter by gitops labels.
 	// A future optimization can add label-based filtering to the store.
 	result, err := r.catalogSvc.List(ctx, catalogservice.CatalogItemInstanceListOptions{})
