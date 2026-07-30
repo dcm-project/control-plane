@@ -1,3 +1,4 @@
+// Package app implements the dcm-gitops controller process.
 package app
 
 import (
@@ -8,8 +9,8 @@ import (
 
 // Config holds configuration for the dcm-gitops process.
 type Config struct {
-	Database DatabaseConfig
-	LogLevel string `envconfig:"LOG_LEVEL" default:"info"`
+	Database   DatabaseConfig
+	LogLevel   string `envconfig:"LOG_LEVEL" default:"info"`
 	GitWorkDir string `envconfig:"GIT_WORK_DIR" default:"/tmp/dcm-gitops"`
 	// PollInterval is how often (in seconds) the controller reloads the list of repos from the DB.
 	PollInterval int `envconfig:"POLL_INTERVAL" default:"15"`

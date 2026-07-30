@@ -1,3 +1,4 @@
+// Package service implements the GitRepository business logic.
 package service
 
 import (

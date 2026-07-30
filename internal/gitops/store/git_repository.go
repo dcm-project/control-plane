@@ -12,9 +12,9 @@ import (
 )
 
 var (
-	ErrGitRepositoryNotFound     = errors.New("git repository not found")
-	ErrGitRepositoryIDTaken      = errors.New("git repository ID already taken")
-	ErrDisplayNameTaken          = errors.New("display_name already taken")
+	ErrGitRepositoryNotFound = errors.New("git repository not found")
+	ErrGitRepositoryIDTaken  = errors.New("git repository ID already taken")
+	ErrDisplayNameTaken      = errors.New("display_name already taken")
 )
 
 // GitRepositoryListOptions contains options for listing git repositories.
@@ -149,10 +149,10 @@ func (s *GitRepositoryStore) UpdateSyncStatus(ctx context.Context, id, syncState
 	result := s.db.WithContext(ctx).Model(&model.GitRepository{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
-			"sync_state":        syncState,
-			"status_message":    statusMessage,
+			"sync_state":         syncState,
+			"status_message":     statusMessage,
 			"last_synced_commit": lastSyncedCommit,
-			"last_sync_time":    &now,
+			"last_sync_time":     &now,
 		})
 	if result.Error != nil {
 		return result.Error

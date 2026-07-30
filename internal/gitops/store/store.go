@@ -1,3 +1,4 @@
+// Package store provides the data persistence layer for gitops resources.
 package store
 
 import "gorm.io/gorm"

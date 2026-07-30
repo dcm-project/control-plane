@@ -103,4 +103,3 @@ func handleDeleteError(err error) server.DeleteGitRepositoryResponseObject {
 		)),
 	}
 }
-
