@@ -16,6 +16,7 @@ import (
 	catalogstore "github.com/dcm-project/control-plane/internal/catalog/store"
 	"github.com/dcm-project/control-plane/internal/gitops/controller"
 	gitopsstore "github.com/dcm-project/control-plane/internal/gitops/store"
+	gitopsmodel "github.com/dcm-project/control-plane/internal/gitops/store/model"
 	placementpolicy "github.com/dcm-project/control-plane/internal/placement/policy"
 	placementservice "github.com/dcm-project/control-plane/internal/placement/service"
 	placementsprm "github.com/dcm-project/control-plane/internal/placement/sprm"
@@ -60,6 +61,12 @@ func Run() int {
 			_ = sqlDB.Close()
 		}
 	}()
+
+	// Migrate gitops schema
+	if err := db.AutoMigrate(&gitopsmodel.GitRepository{}); err != nil {
+		slog.Error("Failed to migrate gitops schema", "error", err)
+		return 1
+	}
 
 	// Create stores
 	gitopsDataStore := gitopsstore.NewStore(db)

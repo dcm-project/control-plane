@@ -79,12 +79,3 @@ func (h *Handler) DeleteGitRepository(ctx context.Context, request server.Delete
 	return server.DeleteGitRepository204Response{}, nil
 }
 
-func (h *Handler) SyncGitRepository(ctx context.Context, request server.SyncGitRepositoryRequestObject) (server.SyncGitRepositoryResponseObject, error) {
-	status, err := h.service.TriggerSync(ctx, request.GitRepositoryId)
-	if err != nil {
-		return handleSyncError(err), nil
-	}
-
-	slog.InfoContext(ctx, "GitRepository sync triggered", "id", request.GitRepositoryId)
-	return server.SyncGitRepository202JSONResponse(*status), nil
-}

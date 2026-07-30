@@ -108,9 +108,6 @@ type ClientInterface interface {
 	UpdateGitRepositoryWithBody(ctx context.Context, gitRepositoryId GitRepositoryIdPath, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	UpdateGitRepository(ctx context.Context, gitRepositoryId GitRepositoryIdPath, body UpdateGitRepositoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// SyncGitRepository request
-	SyncGitRepository(ctx context.Context, gitRepositoryId GitRepositoryIdPath, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ListGitRepositories(ctx context.Context, params *ListGitRepositoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -187,18 +184,6 @@ func (c *Client) UpdateGitRepositoryWithBody(ctx context.Context, gitRepositoryI
 
 func (c *Client) UpdateGitRepository(ctx context.Context, gitRepositoryId GitRepositoryIdPath, body UpdateGitRepositoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateGitRepositoryRequest(c.Server, gitRepositoryId, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SyncGitRepository(ctx context.Context, gitRepositoryId GitRepositoryIdPath, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSyncGitRepositoryRequest(c.Server, gitRepositoryId)
 	if err != nil {
 		return nil, err
 	}
@@ -457,40 +442,6 @@ func NewUpdateGitRepositoryRequestWithBody(server string, gitRepositoryId GitRep
 	return req, nil
 }
 
-// NewSyncGitRepositoryRequest generates requests for SyncGitRepository
-func NewSyncGitRepositoryRequest(server string, gitRepositoryId GitRepositoryIdPath) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "gitRepositoryId", gitRepositoryId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/git-repositories/%s:sync", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -552,9 +503,6 @@ type ClientWithResponsesInterface interface {
 	UpdateGitRepositoryWithBodyWithResponse(ctx context.Context, gitRepositoryId GitRepositoryIdPath, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateGitRepositoryResponse, error)
 
 	UpdateGitRepositoryWithResponse(ctx context.Context, gitRepositoryId GitRepositoryIdPath, body UpdateGitRepositoryJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateGitRepositoryResponse, error)
-
-	// SyncGitRepositoryWithResponse request
-	SyncGitRepositoryWithResponse(ctx context.Context, gitRepositoryId GitRepositoryIdPath, reqEditors ...RequestEditorFn) (*SyncGitRepositoryResponse, error)
 }
 
 type ListGitRepositoriesResponse struct {
@@ -728,40 +676,6 @@ func (r UpdateGitRepositoryResponse) ContentType() string {
 	return ""
 }
 
-type SyncGitRepositoryResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON202      *GitRepositoryStatus
-	JSON401      *Unauthorized
-	JSON403      *Forbidden
-	JSON404      *NotFound
-	JSON500      *InternalServerError
-}
-
-// Status returns HTTPResponse.Status
-func (r SyncGitRepositoryResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r SyncGitRepositoryResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r SyncGitRepositoryResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
 // ListGitRepositoriesWithResponse request returning *ListGitRepositoriesResponse
 func (c *ClientWithResponses) ListGitRepositoriesWithResponse(ctx context.Context, params *ListGitRepositoriesParams, reqEditors ...RequestEditorFn) (*ListGitRepositoriesResponse, error) {
 	rsp, err := c.ListGitRepositories(ctx, params, reqEditors...)
@@ -821,15 +735,6 @@ func (c *ClientWithResponses) UpdateGitRepositoryWithResponse(ctx context.Contex
 		return nil, err
 	}
 	return ParseUpdateGitRepositoryResponse(rsp)
-}
-
-// SyncGitRepositoryWithResponse request returning *SyncGitRepositoryResponse
-func (c *ClientWithResponses) SyncGitRepositoryWithResponse(ctx context.Context, gitRepositoryId GitRepositoryIdPath, reqEditors ...RequestEditorFn) (*SyncGitRepositoryResponse, error) {
-	rsp, err := c.SyncGitRepository(ctx, gitRepositoryId, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSyncGitRepositoryResponse(rsp)
 }
 
 // ParseListGitRepositoriesResponse parses an HTTP response from a ListGitRepositoriesWithResponse call
@@ -1109,56 +1014,3 @@ func ParseUpdateGitRepositoryResponse(rsp *http.Response) (*UpdateGitRepositoryR
 	return response, nil
 }
 
-// ParseSyncGitRepositoryResponse parses an HTTP response from a SyncGitRepositoryWithResponse call
-func ParseSyncGitRepositoryResponse(rsp *http.Response) (*SyncGitRepositoryResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &SyncGitRepositoryResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
-		var dest GitRepositoryStatus
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON202 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest Unauthorized
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest Forbidden
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest NotFound
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalServerError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	return response, nil
-}
