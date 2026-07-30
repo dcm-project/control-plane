@@ -10,7 +10,6 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 // validRepoID matches DNS-1123 label format used for git repository IDs.
@@ -49,12 +48,12 @@ func (g *GitClient) CloneOrFetch(ctx context.Context, repoURL, branch, repoID st
 	refName := plumbing.NewBranchReferenceName(branch)
 
 	if _, err := os.Stat(filepath.Join(dir, ".git")); os.IsNotExist(err) {
-		return g.cloneRepo(ctx, repoURL, branch, dir, refName)
+		return g.cloneRepo(ctx, repoURL, dir, refName)
 	}
-	return g.fetchAndReset(ctx, branch, dir, refName)
+	return g.fetchAndReset(ctx, branch, dir)
 }
 
-func (g *GitClient) cloneRepo(ctx context.Context, repoURL, branch, dir string, refName plumbing.ReferenceName) (string, error) {
+func (g *GitClient) cloneRepo(ctx context.Context, repoURL, dir string, refName plumbing.ReferenceName) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return "", fmt.Errorf("create parent dir: %w", err)
 	}
@@ -72,7 +71,7 @@ func (g *GitClient) cloneRepo(ctx context.Context, repoURL, branch, dir string, 
 	return headCommit(repo)
 }
 
-func (g *GitClient) fetchAndReset(ctx context.Context, branch, dir string, refName plumbing.ReferenceName) (string, error) {
+func (g *GitClient) fetchAndReset(ctx context.Context, branch, dir string) (string, error) {
 	repo, err := git.PlainOpen(dir)
 	if err != nil {
 		return "", fmt.Errorf("open repo: %w", err)
@@ -115,26 +114,4 @@ func headCommit(repo *git.Repository) (string, error) {
 		return "", fmt.Errorf("resolve HEAD: %w", err)
 	}
 	return head.Hash().String(), nil
-}
-
-// LatestRemoteCommit resolves the latest commit on a remote branch without
-// cloning the full repository. This can be used for lightweight polling.
-func LatestRemoteCommit(ctx context.Context, repoURL, branch string) (string, error) {
-	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
-		Name: "origin",
-		URLs: []string{repoURL},
-	})
-
-	refs, err := remote.ListContext(ctx, &git.ListOptions{})
-	if err != nil {
-		return "", fmt.Errorf("ls-remote: %w", err)
-	}
-
-	target := plumbing.NewBranchReferenceName(branch)
-	for _, ref := range refs {
-		if ref.Name() == target {
-			return ref.Hash().String(), nil
-		}
-	}
-	return "", fmt.Errorf("branch %q not found on remote", branch)
 }
