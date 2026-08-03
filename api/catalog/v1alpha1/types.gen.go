@@ -110,6 +110,9 @@ type CatalogItemInstance struct {
 	// Path Resource path in the format: catalog-item-instances/{catalogItemInstanceId}
 	Path *string `json:"path,omitempty"`
 
+	// RunId Placement run id. Output-only on the API.
+	RunId *string `json:"run_id,omitempty"`
+
 	// Spec Specification for a catalog item instance, defining the catalog item reference
 	// and field configurations.
 	Spec CatalogItemInstanceSpec `json:"spec"`
@@ -141,10 +144,6 @@ type CatalogItemInstanceSpec struct {
 	// CatalogItemId The Catalog item ID this catalog item instance references.
 	// Immutable after creation.
 	CatalogItemId string `json:"catalog_item_id"`
-
-	// ResourceIds Unique identifier for the resource in the Placement Manager.
-	// This field is output-only and set by the server during creation.
-	ResourceIds *[]string `json:"resource_ids,omitempty"`
 
 	// UserValues Array of user values for this catalog item instance.
 	UserValues []UserValue `json:"user_values"`

@@ -111,7 +111,7 @@ func mapRehydrateCatalogItemInstanceErrorToHTTP(err error) server.RehydrateCatal
 				Detail: stringPtr("this instance was modified by another request; please retry"),
 			},
 		}
-	case errors.Is(err, service.ErrCatalogItemInstanceResourceIDsEmpty):
+	case errors.Is(err, service.ErrCatalogItemInstanceRunIDEmpty):
 		return server.RehydrateCatalogItemInstance422JSONResponse{
 			ProviderErrorJSONResponse: server.ProviderErrorJSONResponse{
 				Type:   v1alpha1.FAILEDPRECONDITION,

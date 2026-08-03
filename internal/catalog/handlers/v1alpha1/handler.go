@@ -45,7 +45,7 @@ var clientErrors = []error{
 	service.ErrImmutableSpecStructureUpdate,
 	service.ErrCatalogItemInstanceNotFound,
 	service.ErrCatalogItemInstanceIDTaken,
-	service.ErrCatalogItemInstanceResourceIDsEmpty,
+	service.ErrCatalogItemInstanceRunIDEmpty,
 	service.ErrCatalogItemNotFoundForInstance,
 	service.ErrUserValuePathNotFound,
 	service.ErrUserValueNotEditable,

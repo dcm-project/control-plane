@@ -44,6 +44,8 @@ var _ = Describe("Resource Store", func() {
 			approval := "APPROVED"
 			r := model.Resource{
 				ID:                    uuid.New().String(),
+				RunID:                 "run-1",
+				Name:                  "main",
 				CatalogItemInstanceId: "catalog-instance-123",
 				Spec:                  map[string]any{"cpu": "2", "memory": "4Gi"},
 				ProviderName:          &provider,
@@ -68,6 +70,8 @@ var _ = Describe("Resource Store", func() {
 			approval := "APPROVED"
 			r1 := model.Resource{
 				ID:                    id,
+				RunID:                 "run-1",
+				Name:                  "main",
 				CatalogItemInstanceId: "catalog-instance-123",
 				Spec:                  map[string]any{"cpu": "2"},
 				ProviderName:          &provider,
@@ -80,6 +84,8 @@ var _ = Describe("Resource Store", func() {
 			// Attempt to create another resource with same ID
 			r2 := model.Resource{
 				ID:                    id,
+				RunID:                 "run-1",
+				Name:                  "main",
 				CatalogItemInstanceId: "catalog-instance-456",
 				Spec:                  map[string]any{"cpu": "4"},
 				ProviderName:          &provider,
@@ -92,12 +98,100 @@ var _ = Describe("Resource Store", func() {
 		})
 	})
 
+	Describe("CreateBatch", func() {
+		It("persists multiple resources in one call", func() {
+			provider := "test-provider"
+			approval := "APPROVED"
+			id1 := uuid.New().String()
+			id2 := uuid.New().String()
+			rows := []model.Resource{
+				{
+					ID:                    id1,
+					RunID:                 "run-batch-1",
+					Name:                  "db",
+					CatalogItemInstanceId: "catalog-instance-123",
+					Spec:                  map[string]any{"cpu": "2"},
+					ProviderName:          &provider,
+					ApprovalStatus:        &approval,
+					Path:                  "resources/" + id1,
+					DagLevel:              0,
+				},
+				{
+					ID:                    id2,
+					RunID:                 "run-batch-1",
+					Name:                  "app",
+					CatalogItemInstanceId: "catalog-instance-123",
+					Spec:                  map[string]any{"cpu": "4"},
+					RequiresResources:     []string{"db"},
+					ProviderName:          &provider,
+					ApprovalStatus:        &approval,
+					Path:                  "resources/" + id2,
+					DagLevel:              1,
+				},
+			}
+
+			created, err := requestStore.CreateBatch(ctx, rows)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(created).To(HaveLen(2))
+			Expect(created[0].ID).To(Equal(id1))
+			Expect(created[1].ID).To(Equal(id2))
+
+			listed, err := requestStore.ListByRunID(ctx, "run-batch-1")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(listed).To(HaveLen(2))
+		})
+
+		It("returns error when any resource ID already exists", func() {
+			provider := "test-provider"
+			approval := "APPROVED"
+			existingID := uuid.New().String()
+			_, err := requestStore.Create(ctx, model.Resource{
+				ID:                    existingID,
+				RunID:                 "run-existing",
+				Name:                  "main",
+				CatalogItemInstanceId: "catalog-instance-123",
+				Spec:                  map[string]any{"cpu": "2"},
+				ProviderName:          &provider,
+				ApprovalStatus:        &approval,
+				Path:                  "resources/" + existingID,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			newID := uuid.New().String()
+			_, err = requestStore.CreateBatch(ctx, []model.Resource{
+				{
+					ID:                    newID,
+					RunID:                 "run-batch-dup",
+					Name:                  "a",
+					CatalogItemInstanceId: "catalog-instance-123",
+					Spec:                  map[string]any{},
+					ProviderName:          &provider,
+					ApprovalStatus:        &approval,
+					Path:                  "resources/" + newID,
+				},
+				{
+					ID:                    existingID,
+					RunID:                 "run-batch-dup",
+					Name:                  "b",
+					CatalogItemInstanceId: "catalog-instance-123",
+					Spec:                  map[string]any{},
+					ProviderName:          &provider,
+					ApprovalStatus:        &approval,
+					Path:                  "resources/" + existingID,
+				},
+			})
+			Expect(err).To(Equal(store.ErrResourceIdExist))
+		})
+	})
+
 	Describe("Get", func() {
 		It("retrieves by ID", func() {
 			provider := "test-provider"
 			approval := "APPROVED"
 			r := model.Resource{
 				ID:                    uuid.New().String(),
+				RunID:                 "run-1",
+				Name:                  "main",
 				CatalogItemInstanceId: "catalog-instance-456",
 				Spec:                  map[string]any{"test": "data"},
 				ProviderName:          &provider,
@@ -237,6 +331,8 @@ var _ = Describe("Resource Store", func() {
 			approval := "APPROVED"
 			r := model.Resource{
 				ID:                    uuid.New().String(),
+				RunID:                 "run-1",
+				Name:                  "main",
 				CatalogItemInstanceId: "cat-del",
 				Spec:                  map[string]any{},
 				ProviderName:          &provider,
@@ -256,6 +352,56 @@ var _ = Describe("Resource Store", func() {
 		It("returns ErrResourceNotFound for missing ID", func() {
 			err := requestStore.Delete(ctx, uuid.New().String())
 
+			Expect(err).To(Equal(store.ErrResourceNotFound))
+		})
+	})
+
+	Describe("UpdateStatusByRunID", func() {
+		It("updates status for all resources in the run", func() {
+			provider := "test-provider"
+			approval := "APPROVED"
+			id1 := uuid.New().String()
+			id2 := uuid.New().String()
+			_, err := requestStore.CreateBatch(ctx, []model.Resource{
+				{
+					ID:                    id1,
+					RunID:                 "run-status-1",
+					Name:                  "db",
+					CatalogItemInstanceId: "cat-1",
+					Spec:                  map[string]any{},
+					ProviderName:          &provider,
+					ApprovalStatus:        &approval,
+					Path:                  "resources/" + id1,
+					Status:                "PENDING",
+					DagLevel:              0,
+				},
+				{
+					ID:                    id2,
+					RunID:                 "run-status-1",
+					Name:                  "app",
+					CatalogItemInstanceId: "cat-1",
+					Spec:                  map[string]any{},
+					ProviderName:          &provider,
+					ApprovalStatus:        &approval,
+					Path:                  "resources/" + id2,
+					Status:                "PENDING",
+					DagLevel:              1,
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = requestStore.UpdateStatusByRunID(ctx, "run-status-1", "PENDING_DELETION")
+			Expect(err).NotTo(HaveOccurred())
+
+			listed, err := requestStore.ListByRunID(ctx, "run-status-1")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(listed).To(HaveLen(2))
+			Expect(listed[0].Status).To(Equal("PENDING_DELETION"))
+			Expect(listed[1].Status).To(Equal("PENDING_DELETION"))
+		})
+
+		It("returns ErrResourceNotFound when run has no resources", func() {
+			err := requestStore.UpdateStatusByRunID(ctx, "missing-run", "PENDING_DELETION")
 			Expect(err).To(Equal(store.ErrResourceNotFound))
 		})
 	})

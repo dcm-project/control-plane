@@ -980,6 +980,14 @@ components:
             Resource path in the format: catalog-item-instances/{catalogItemInstanceId}
           example: catalog-item-instances/small-vm
 
+        run_id:
+          type: string
+          readOnly: true
+          minLength: 1
+          description: |
+            Placement run id. Output-only on the API.
+          example: 7c4e8f2a-1b3d-4e5f-9a6b-0c1d2e3f4a5b
+
         create_time:
           type: string
           format: date-time
@@ -1017,18 +1025,6 @@ components:
             Array of user values for this catalog item instance.
           items:
             $ref: '#/components/schemas/UserValue'
-
-        resource_ids:
-          type: array
-          readOnly: true
-          description: |
-            Unique identifier for the resource in the Placement Manager.
-            This field is output-only and set by the server during creation.
-          items:
-            type: string
-            minLength: 1
-            readOnly: true
-            example: 650e8400-e29b-41d4-a716-446655440002
 
     UserValue:
       type: object

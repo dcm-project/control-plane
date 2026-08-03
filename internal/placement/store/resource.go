@@ -32,8 +32,13 @@ type ResourceListResult struct {
 type Resource interface {
 	List(ctx context.Context, opts *ResourceListOptions) (*ResourceListResult, error)
 	Create(ctx context.Context, request model.Resource) (*model.Resource, error)
+	CreateBatch(ctx context.Context, resources []model.Resource) ([]model.Resource, error)
 	Delete(ctx context.Context, id string) error
 	Get(ctx context.Context, id string) (*model.Resource, error)
+	ListByRunID(ctx context.Context, runID string) (model.ResourceList, error)
+	DeleteByRunID(ctx context.Context, runID string) error
+	UpdateRunID(ctx context.Context, oldRunID, newRunID string) error
+	UpdateStatusByRunID(ctx context.Context, runID, status string) error
 }
 
 type ResourceStore struct {
@@ -96,16 +101,29 @@ func (s *ResourceStore) List(ctx context.Context, opts *ResourceListOptions) (*R
 
 func (s *ResourceStore) Create(ctx context.Context, request model.Resource) (*model.Resource, error) {
 	if err := s.db.WithContext(ctx).Clauses(clause.Returning{}).Create(&request).Error; err != nil {
-		// Check for duplicate key errors (PostgreSQL, MySQL, SQLite)
-		errMsg := err.Error()
-		if errors.Is(err, gorm.ErrDuplicatedKey) ||
-			strings.Contains(errMsg, "UNIQUE constraint") ||
-			strings.Contains(errMsg, "duplicate key") {
-			return nil, ErrResourceIdExist
-		}
-		return nil, err
+		return nil, mapResourceCreateError(err)
 	}
 	return &request, nil
+}
+
+func (s *ResourceStore) CreateBatch(ctx context.Context, resources []model.Resource) ([]model.Resource, error) {
+	if len(resources) == 0 {
+		return nil, nil
+	}
+	if err := s.db.WithContext(ctx).Clauses(clause.Returning{}).Create(&resources).Error; err != nil {
+		return nil, mapResourceCreateError(err)
+	}
+	return resources, nil
+}
+
+func mapResourceCreateError(err error) error {
+	errMsg := err.Error()
+	if errors.Is(err, gorm.ErrDuplicatedKey) ||
+		strings.Contains(errMsg, "UNIQUE constraint") ||
+		strings.Contains(errMsg, "duplicate key") {
+		return ErrResourceIdExist
+	}
+	return err
 }
 
 func (s *ResourceStore) Delete(ctx context.Context, id string) error {
@@ -128,4 +146,52 @@ func (s *ResourceStore) Get(ctx context.Context, id string) (*model.Resource, er
 		return nil, err
 	}
 	return &request, nil
+}
+
+func (s *ResourceStore) ListByRunID(ctx context.Context, runID string) (model.ResourceList, error) {
+	var resources model.ResourceList
+	if err := s.db.WithContext(ctx).
+		Where("run_id = ?", runID).
+		Order("dag_level ASC, name ASC, id ASC").
+		Find(&resources).Error; err != nil {
+		return nil, err
+	}
+	return resources, nil
+}
+
+func (s *ResourceStore) DeleteByRunID(ctx context.Context, runID string) error {
+	result := s.db.WithContext(ctx).Where("run_id = ?", runID).Delete(&model.Resource{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrResourceNotFound
+	}
+	return nil
+}
+
+func (s *ResourceStore) UpdateRunID(ctx context.Context, oldRunID, newRunID string) error {
+	result := s.db.WithContext(ctx).Model(&model.Resource{}).
+		Where("run_id = ?", oldRunID).
+		Update("run_id", newRunID)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrResourceNotFound
+	}
+	return nil
+}
+
+func (s *ResourceStore) UpdateStatusByRunID(ctx context.Context, runID, status string) error {
+	result := s.db.WithContext(ctx).Model(&model.Resource{}).
+		Where("run_id = ?", runID).
+		Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrResourceNotFound
+	}
+	return nil
 }

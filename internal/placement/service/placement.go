@@ -2,9 +2,11 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/dcm-project/control-plane/internal/placement/logging"
@@ -34,173 +36,287 @@ func NewPlacementService(store store.Store, policyClient policy.Client, sprmClie
 	}
 }
 
-// CreateResource creates a new placement request.
-func (s *PlacementService) CreateResource(ctx context.Context, req *types.Resource, queryId *string) (*types.Resource, error) {
+// CreateRun executes a placement run for one or more resources.
+func (s *PlacementService) CreateRun(ctx context.Context, req *types.CreateRunRequest) (*types.Run, error) {
 	log := logging.FromContext(ctx)
 
-	// Get or Generate ID
-	resourceIDStr := getOrGenerateStringId(queryId)
+	// step 1: validate inputs
+	if err := s.validateCreateRunRequest(ctx, req); err != nil {
+		return nil, err
+	}
 
-	// Generate path
-	path := fmt.Sprintf("resources/%s", resourceIDStr)
+	// step 2: assign dag levels
+	resourceNameDagLevelMap, err := assignDagLevels(req.Resources)
+	if err != nil {
+		return nil, err
+	}
 
-	log.Debug("Creating resource",
-		"resource_id", resourceIDStr,
+	runID := req.RunId
+	log.Debug("Creating run",
+		"run_id", runID,
 		"catalog_item_instance_id", req.CatalogItemInstanceId,
+		"resource_count", len(req.Resources),
 	)
 
-	// Validate request with policy engine
-
-	// Build policy payload
-	policyRequest := policy.EvaluateRequest{
-		Spec: req.Spec,
+	type preparedResource struct {
+		resource      model.Resource
+		evaluatedSpec map[string]any
 	}
 
-	// Evaluate spec
-	log.Debug("Evaluating policy", "resource_id", resourceIDStr)
-	policyResponse, err := s.policy.Evaluate(ctx, policyRequest)
-	if err != nil {
-		log.Error("Policy evaluation failed", "resource_id", resourceIDStr, "error", err)
-		return nil, handlePolicyError(err)
-	}
+	// step 3: evaluate policy for each resource
+	prepared := make([]preparedResource, 0, len(req.Resources))
+	for _, resource := range req.Resources {
+		// Get or generate ID
+		resourceID := getOrGenerateStringId(resource.ID)
+		// Generate path
+		path := fmt.Sprintf("resources/%s", resourceID)
 
-	if policyResponse.SelectedProvider == "" {
-		log.Error("Policy response missing selected provider",
-			"resource_id", resourceIDStr,
-			"status", policyResponse.Status,
-		)
-		return nil, NewPolicyInternalError("policy response missing selected provider")
-	}
-
-	// Extract approvalStatus and providerName from policy response
-	approvalStatus := policyResponse.Status
-	providerName := policyResponse.SelectedProvider
-
-	// Update request with status and selected provider
-	req.ApprovalStatus = &approvalStatus
-	req.ProviderName = &providerName
-
-	// Convert API resource to store model
-	requestModel := resourceToStoreModel(req, resourceIDStr, path)
-
-	// Create resource in store
-	created, err := s.store.Resource().Create(ctx, requestModel)
-	if err != nil {
-		if errors.Is(err, store.ErrResourceIdExist) {
-			log.Warn("Duplicate resource ID", "resource_id", resourceIDStr)
-			return nil, NewConflictError(fmt.Sprintf("resource with id %s already exists", resourceIDStr))
+		// Evaluate spec with policy engine
+		policyRequest := policy.EvaluateRequest{Spec: resource.Spec}
+		log.Debug("Evaluating policy", "run_id", runID, "resource_id", resourceID, "name", resource.Name)
+		policyResponse, err := s.policy.Evaluate(ctx, policyRequest)
+		if err != nil {
+			log.Error("Policy evaluation failed", "run_id", runID, "resource_id", resourceID, "error", err)
+			return nil, handlePolicyError(err)
 		}
-		log.Error("Failed to create resource in store", "resource_id", resourceIDStr, "error", err)
-		return nil, NewInternalError(fmt.Sprintf("failed to create database record for resource %s: %v", resourceIDStr, err))
-	}
-
-	log.Debug("Resource persisted in store", "resource_id", resourceIDStr)
-
-	// Send request to SP Resource Manager
-	sprmRequest := sprm.CreateResourceRequest{
-		ID:           resourceIDStr,
-		Spec:         policyResponse.EvaluatedSpec,
-		ProviderName: providerName,
-	}
-
-	log.Debug("Provisioning resource via SPRM",
-		"resource_id", resourceIDStr,
-		"catalog_item_instance_id", created.CatalogItemInstanceId,
-	)
-
-	sprmResponse, err := s.sprm.CreateResource(ctx, sprmRequest)
-	if err != nil {
-		// SPRM call failed, rollback the database record
-		log.Error("SPRM provisioning failed, rolling back", "resource_id", resourceIDStr, "error", err)
-		if delErr := s.rollbackResourceDelete(created.ID); delErr != nil {
-			log.Error("Failed to rollback resource after SPRM error",
-				"resource_id", created.ID,
-				"db_error", delErr,
-				"sprm_error", err,
+		if policyResponse.SelectedProvider == "" {
+			log.Error("Policy response missing selected provider",
+				"run_id", runID,
+				"resource_id", resourceID,
+				"status", policyResponse.Status,
 			)
+			return nil, NewPolicyInternalError("policy response missing selected provider")
 		}
-		return nil, handleSPRMError(err)
+
+		// Extract approvalStatus and providerName from policy response
+		approval := policyResponse.Status
+		provider := policyResponse.SelectedProvider
+
+		prepared = append(prepared, preparedResource{
+			resource: model.Resource{
+				ID:                    resourceID,
+				RunID:                 runID,
+				CatalogItemInstanceId: req.CatalogItemInstanceId,
+				Name:                  resource.Name,
+				Spec:                  resource.Spec,
+				RequiresResources:     append([]string(nil), resource.RequiresResources...),
+				DagLevel:              resourceNameDagLevelMap[resource.Name],
+				Status:                types.ResourceStatusPending,
+				Path:                  path,
+				ProviderName:          &provider,
+				ApprovalStatus:        &approval,
+			},
+			evaluatedSpec: policyResponse.EvaluatedSpec,
+		})
 	}
 
-	log.Info("Resource created successfully",
-		"resource_id", created.ID,
-		"catalog_item_instance_id", created.CatalogItemInstanceId,
-		"provider", providerName,
-		"approval_status", approvalStatus,
-		"sprm_status", sprmResponse.Status,
+	// step 4: persist resources in store
+	rows := make([]model.Resource, 0, len(prepared))
+	for _, p := range prepared {
+		rows = append(rows, p.resource)
+	}
+	createdModels, err := s.store.Resource().CreateBatch(ctx, rows)
+	if err != nil {
+		_ = s.rollbackRunDelete(runID)
+		if errors.Is(err, store.ErrResourceIdExist) {
+			log.Warn("Duplicate resource ID in create run", "run_id", runID)
+			return nil, NewConflictError("one or more resources already exists")
+		}
+		log.Error("Failed to create resources in store", "run_id", runID, "error", err)
+		return nil, NewInternalError(fmt.Sprintf("failed to create database records for run %s: %v", runID, err))
+	}
+
+	// step 5: provision dag_level 0 via SPRM (higher levels continue asynchronously later)
+	var provisionedIDs []string
+	for _, p := range prepared {
+		if p.resource.DagLevel != 0 {
+			continue
+		}
+		sprmRequest := sprm.CreateResourceRequest{
+			ID:           p.resource.ID,
+			Spec:         p.evaluatedSpec,
+			ProviderName: *p.resource.ProviderName,
+		}
+		log.Debug("Provisioning resource via SPRM",
+			"run_id", runID,
+			"resource_id", p.resource.ID,
+			"name", p.resource.Name,
+		)
+		if _, err := s.sprm.CreateResource(ctx, sprmRequest); err != nil {
+			// SPRM call failed, rollback provisioned resources and DB records
+			log.Error("SPRM provisioning failed, rolling back create run",
+				"run_id", runID,
+				"resource_id", p.resource.ID,
+				"error", err,
+			)
+			s.rollbackProvisioned(provisionedIDs)
+			if delErr := s.rollbackRunDelete(runID); delErr != nil {
+				log.Error("Failed to rollback run after SPRM error",
+					"run_id", runID,
+					"db_error", delErr,
+					"sprm_error", err,
+				)
+			}
+			return nil, handleSPRMError(err)
+		}
+		provisionedIDs = append(provisionedIDs, p.resource.ID)
+	}
+
+	log.Info("Run created successfully",
+		"run_id", runID,
+		"catalog_item_instance_id", req.CatalogItemInstanceId,
+		"resource_count", len(createdModels),
+		"level0_provisioned", len(provisionedIDs),
 	)
-	return storeModelToResource(created), nil
+	return storeModelsToRun(createdModels), nil
 }
 
-// DeleteResource removes a placement request by ID.
-func (s *PlacementService) DeleteResource(ctx context.Context, requestID string) error {
+// GetRun returns a run by run_id.
+func (s *PlacementService) GetRun(ctx context.Context, runID string) (*types.Run, error) {
 	log := logging.FromContext(ctx)
-	log.Debug("Deleting resource", "resource_id", requestID)
-
-	// First, get the resource to obtain the CatalogItemInstanceId
-	resource, err := s.store.Resource().Get(ctx, requestID)
+	resources, err := s.store.Resource().ListByRunID(ctx, runID)
 	if err != nil {
-		if errors.Is(err, store.ErrResourceNotFound) {
-			return NewNotFoundError(fmt.Sprintf("resource %s not found", requestID))
+		log.Error("Failed to get run", "run_id", runID, "error", err)
+		return nil, NewInternalError(fmt.Sprintf("failed to retrieve run %s: %v", runID, err))
+	}
+	if len(resources) == 0 {
+		return nil, NewNotFoundError(fmt.Sprintf("run %s not found", runID))
+	}
+	return storeModelsToRun(resources), nil
+}
+
+// ListRun lists runs (resources grouped by run_id).
+// TODO: Paginate by distinct run_id (then load full resource sets per run).
+// Paginating resource rows first can split a multi-resource run across pages.
+func (s *PlacementService) ListRun(ctx context.Context, opts *store.ResourceListOptions) (*types.ListRunResult, error) {
+	log := logging.FromContext(ctx)
+	result, err := s.store.Resource().List(ctx, opts)
+	if err != nil {
+		log.Error("Failed to list runs", "error", err)
+		return nil, NewInternalError(fmt.Sprintf("failed to list runs: %v", err))
+	}
+
+	byRun := make(map[string]model.ResourceList)
+	order := make([]string, 0)
+	for i := range result.Resources {
+		r := result.Resources[i]
+		if _, ok := byRun[r.RunID]; !ok {
+			order = append(order, r.RunID)
 		}
-		log.Error("Failed to get resource for deletion", "resource_id", requestID, "error", err)
-		return NewInternalError(fmt.Sprintf("failed to retrieve resource for deletion: %v", err))
+		byRun[r.RunID] = append(byRun[r.RunID], r)
 	}
 
-	// Delete it from the SPRM first before deleting from the database
-	log.Debug("Deleting resource from SPRM",
-		"resource_id", requestID,
-		"catalog_item_instance_id", resource.CatalogItemInstanceId,
-	)
-
-	err = s.sprm.DeleteResource(ctx, requestID)
-	if err != nil {
-		log.Error("SPRM deletion failed, preserving DB record", "resource_id", requestID, "error", err)
-		return handleSPRMError(err)
-	}
-
-	// Delete record from the database
-	err = s.store.Resource().Delete(ctx, requestID)
-	if err != nil {
-		if errors.Is(err, store.ErrResourceNotFound) {
-			return NewNotFoundError(fmt.Sprintf("resource %s not found", requestID))
+	runs := make([]types.Run, 0, len(order))
+	for _, runID := range order {
+		run := storeModelsToRun(byRun[runID])
+		if run != nil {
+			runs = append(runs, *run)
 		}
-		log.Error("Failed to delete resource from store", "resource_id", requestID, "error", err)
-		return NewInternalError(fmt.Sprintf("failed to delete database record for resource %s: %v", requestID, err))
 	}
 
-	log.Info("Resource deleted successfully",
-		"resource_id", requestID,
-		"catalog_item_instance_id", resource.CatalogItemInstanceId,
+	return &types.ListRunResult{
+		Runs:          runs,
+		NextPageToken: result.NextPageToken,
+	}, nil
+}
+
+// DeleteRun starts deletion for a run by run_id.
+func (s *PlacementService) DeleteRun(ctx context.Context, runID string) error {
+	log := logging.FromContext(ctx)
+	log.Debug("Deleting run", "run_id", runID)
+
+	resources, err := s.store.Resource().ListByRunID(ctx, runID)
+	if err != nil {
+		log.Error("Failed to list resources for delete", "run_id", runID, "error", err)
+		return NewInternalError(fmt.Sprintf("failed to retrieve run for deletion: %v", err))
+	}
+	if len(resources) == 0 {
+		return NewNotFoundError(fmt.Sprintf("run %s not found", runID))
+	}
+
+	// Find the highest dag_level (first delete wave)
+	maxDagLevel := slices.MaxFunc(resources, func(a, b model.Resource) int {
+		return cmp.Compare(a.DagLevel, b.DagLevel)
+	}).DagLevel
+
+	// Mark all resources in the run as PENDING_DELETION
+	if err := s.store.Resource().UpdateStatusByRunID(ctx, runID, types.ResourceStatusPendingDeletion); err != nil {
+		log.Error("Failed to mark resources as pending deletion", "run_id", runID, "error", err)
+		return NewInternalError(fmt.Sprintf("failed to mark run %s as pending deletion: %v", runID, err))
+	}
+
+	for _, resource := range resources {
+		if resource.DagLevel != maxDagLevel {
+			continue
+		}
+		// Delete from SPRM first before deleting from the database
+		log.Debug("Deleting resource from SPRM",
+			"run_id", runID,
+			"resource_id", resource.ID,
+			"dag_level", resource.DagLevel,
+		)
+		if err := s.sprm.DeleteResource(ctx, resource.ID); err != nil {
+			// No delete-path rollback: already-deleted SPRM resources stay gone.
+			log.Error("SPRM deletion failed, preserving remaining DB records",
+				"run_id", runID,
+				"resource_id", resource.ID,
+				"error", err,
+			)
+			return handleSPRMError(err)
+		}
+		// Delete record from the database
+		if err := s.store.Resource().Delete(ctx, resource.ID); err != nil && !errors.Is(err, store.ErrResourceNotFound) {
+			log.Error("Failed to delete resource from store after SPRM success",
+				"run_id", runID,
+				"resource_id", resource.ID,
+				"error", err,
+			)
+			return NewInternalError(fmt.Sprintf("failed to delete database record for resource %s: %v", resource.ID, err))
+		}
+	}
+
+	log.Info("Run delete started for highest dag level",
+		"run_id", runID,
+		"dag_level", maxDagLevel,
 	)
 	return nil
 }
 
 // RehydrateResource re-evaluates an existing resource against current policies
-// and creates a new resource with the given newResourceID. The old resource is
-// deleted after the new one is successfully provisioned.
-func (s *PlacementService) RehydrateResource(ctx context.Context, resourceID, newResourceID string) (*types.Resource, error) {
+// and creates a new resource under newRunID. The old resource is deleted after
+// the new one is successfully provisioned.
+// TODO: Rehydrate all resources in the run (e.g. via CreateRun), then delete the
+// old run in reverse DAG order (similar to DeleteRun) instead of migrating run_id.
+func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunID string) (*types.Resource, error) {
 	log := logging.FromContext(ctx)
-	log.Debug("Rehydrating resource",
-		"resource_id", resourceID,
-		"new_resource_id", newResourceID,
+	log.Debug("Rehydrating run",
+		"run_id", runID,
+		"new_run_id", newRunID,
 	)
-
-	// Step 1: Retrieve the old resource
-	oldResource, err := s.store.Resource().Get(ctx, resourceID)
-	if err != nil {
-		if errors.Is(err, store.ErrResourceNotFound) {
-			return nil, NewNotFoundError(fmt.Sprintf("resource %s not found", resourceID))
-		}
-		log.Error("Failed to get resource for rehydration", "resource_id", resourceID, "error", err)
-		return nil, NewInternalError(fmt.Sprintf("failed to retrieve resource for rehydration: %v", err))
+	if runID == "" {
+		return nil, NewValidationError("run_id is required")
 	}
+	if newRunID == "" {
+		return nil, NewValidationError("new_run_id is required")
+	}
+
+	resources, err := s.store.Resource().ListByRunID(ctx, runID)
+	if err != nil {
+		log.Error("Failed to list resources for rehydration", "run_id", runID, "error", err)
+		return nil, NewInternalError(fmt.Sprintf("failed to list resources for run %s: %v", runID, err))
+	}
+	if len(resources) == 0 {
+		return nil, NewNotFoundError(fmt.Sprintf("run %s not found", runID))
+	}
+
+	// Step 1: Retrieve the old resource (first resource in the run)
+	oldResource := resources[0]
+	resourceID := oldResource.ID
+	// Generate UUID for the replacement resource
+	newResourceID := uuid.New().String()
 
 	// Step 2: Re-evaluate the original spec through policy
-	policyRequest := policy.EvaluateRequest{
-		Spec: oldResource.Spec,
-	}
-
+	policyRequest := policy.EvaluateRequest{Spec: oldResource.Spec}
 	log.Debug("Re-evaluating policy for rehydration", "resource_id", resourceID)
 	policyResponse, err := s.policy.Evaluate(ctx, policyRequest)
 	if err != nil {
@@ -216,6 +332,7 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, resourceID, ne
 		return nil, NewPolicyInternalError("policy response missing selected provider")
 	}
 
+	// Extract approvalStatus and providerName from policy response
 	approvalStatus := policyResponse.Status
 	providerName := policyResponse.SelectedProvider
 
@@ -223,13 +340,19 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, resourceID, ne
 	newPath := fmt.Sprintf("resources/%s", newResourceID)
 	newResource := model.Resource{
 		ID:                    newResourceID,
+		RunID:                 newRunID,
 		CatalogItemInstanceId: oldResource.CatalogItemInstanceId,
+		Name:                  oldResource.Name,
 		Spec:                  oldResource.Spec,
+		RequiresResources:     append([]string(nil), oldResource.RequiresResources...),
+		DagLevel:              oldResource.DagLevel,
+		Status:                types.ResourceStatusPending,
 		Path:                  newPath,
 		ProviderName:          &providerName,
 		ApprovalStatus:        &approvalStatus,
 	}
 
+	// Step 3: Create new resource in DB
 	created, err := s.store.Resource().Create(ctx, newResource)
 	if err != nil {
 		if errors.Is(err, store.ErrResourceIdExist) {
@@ -246,16 +369,9 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, resourceID, ne
 		Spec:         policyResponse.EvaluatedSpec,
 		ProviderName: providerName,
 	}
-
-	log.Debug("Provisioning new resource via SPRM during rehydration",
-		"new_resource_id", newResourceID,
-		"catalog_item_instance_id", oldResource.CatalogItemInstanceId,
-	)
-
-	_, err = s.sprm.CreateResource(ctx, sprmRequest)
-	if err != nil {
-		// Rollback the new DB record
+	if _, err = s.sprm.CreateResource(ctx, sprmRequest); err != nil {
 		log.Error("SPRM provisioning failed during rehydration, rolling back", "new_resource_id", newResourceID, "error", err)
+		// Rollback the new DB record
 		if delErr := s.rollbackResourceDelete(newResourceID); delErr != nil {
 			log.Error("Failed to rollback new resource after SPRM error",
 				"new_resource_id", newResourceID,
@@ -266,19 +382,15 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, resourceID, ne
 		return nil, handleSPRMError(err)
 	}
 
-	// Step 5: Delete old resource from SPRM (deferred - non-blocking)
-	log.Debug("Deleting old resource from SPRM (deferred)",
-		"resource_id", resourceID,
-		"catalog_item_instance_id", oldResource.CatalogItemInstanceId,
-	)
+	// TODO: Delete the old run in reverse DAG order.
 
+	// Step 5: Delete old resource from SPRM (deferred - non-blocking)
 	if err := s.sprm.DeleteResourceDeferred(ctx, resourceID); err != nil {
 		log.Error("SPRM deferred deletion failed during rehydration (non-blocking)",
 			"resource_id", resourceID,
 			"error", err,
 		)
 	}
-
 	// Step 6: Delete old resource from DB
 	if err := s.store.Resource().Delete(ctx, resourceID); err != nil {
 		log.Error("Failed to delete old resource from DB during rehydration (non-blocking)",
@@ -287,14 +399,41 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, resourceID, ne
 		)
 	}
 
-	log.Info("Resource rehydrated successfully",
+	log.Info("Run rehydrated successfully",
+		"old_run_id", runID,
+		"new_run_id", newRunID,
 		"old_resource_id", resourceID,
 		"new_resource_id", newResourceID,
 		"catalog_item_instance_id", oldResource.CatalogItemInstanceId,
 		"provider", providerName,
 		"approval_status", approvalStatus,
 	)
-	return storeModelToResource(created), nil
+
+	res := storeModelToResource(created)
+	return &res, nil
+}
+
+func (s *PlacementService) rollbackProvisioned(resourceIDs []string) {
+	for _, id := range resourceIDs {
+		rbCtx, cancel := context.WithTimeout(context.Background(), resourceRollbackTimeout)
+		if err := s.sprm.DeleteResource(rbCtx, id); err != nil {
+			logging.FromContext(rbCtx).Error("Failed to tear down provisioned resource during create rollback",
+				"resource_id", id,
+				"error", err,
+			)
+		}
+		cancel()
+	}
+}
+
+func (s *PlacementService) rollbackRunDelete(runID string) error {
+	rbCtx, cancel := context.WithTimeout(context.Background(), resourceRollbackTimeout)
+	defer cancel()
+	err := s.store.Resource().DeleteByRunID(rbCtx, runID)
+	if errors.Is(err, store.ErrResourceNotFound) {
+		return nil
+	}
+	return err
 }
 
 func (s *PlacementService) rollbackResourceDelete(id string) error {

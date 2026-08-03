@@ -10,6 +10,7 @@ import (
 	"github.com/dcm-project/control-plane/internal/placement/store"
 	"github.com/dcm-project/control-plane/internal/placement/store/model"
 	"github.com/dcm-project/control-plane/internal/placement/types"
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gorm.io/driver/sqlite"
@@ -82,6 +83,19 @@ func expectStoredResourceMissing(ctx context.Context, dataStore store.Store, id 
 	Expect(errors.Is(err, store.ErrResourceNotFound)).To(BeTrue())
 }
 
+func singleResourceRun(catalogID string, spec map[string]any, resourceID *string) *types.CreateRunRequest {
+	input := types.ResourceInput{
+		Name: "main",
+		Spec: spec,
+		ID:   resourceID,
+	}
+	return &types.CreateRunRequest{
+		CatalogItemInstanceId: catalogID,
+		RunId:                 uuid.New().String(),
+		Resources:             []types.ResourceInput{input},
+	}
+}
+
 var _ = Describe("PlacementService", func() {
 	var (
 		db           *gorm.DB
@@ -112,7 +126,7 @@ var _ = Describe("PlacementService", func() {
 		_ = sqlDB.Close()
 	})
 
-	Describe("CreateResource", func() {
+	Describe("CreateRun", func() {
 		It("creates resource with APPROVED status from policy", func() {
 			mockPolicy.EvaluateFunc = func(_ context.Context, req policy.EvaluateRequest) (*policy.EvaluateResponse, error) {
 				return &policy.EvaluateResponse{
@@ -127,25 +141,53 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"cpu": 2, "memory": "4GB"},
 			}
 
-			result, err := placementSvc.CreateResource(ctx, resource, nil)
+			result, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.Id).NotTo(BeNil())
+			Expect(result.RunId).NotTo(BeEmpty())
+			Expect(result.Resources).To(HaveLen(1))
+			Expect(result.Resources[0].Id).NotTo(BeNil())
 			Expect(result.CatalogItemInstanceId).To(Equal("catalog-123"))
-			Expect(result.Spec).To(HaveKey("cpu"))
-			Expect(result.Spec).To(HaveKey("memory"))
-			Expect(result.ApprovalStatus).NotTo(BeNil())
-			Expect(*result.ApprovalStatus).To(Equal("APPROVED"))
-			Expect(result.ProviderName).NotTo(BeNil())
-			Expect(*result.ProviderName).To(Equal("test-provider"))
+			Expect(result.Resources[0].Spec).To(HaveKey("cpu"))
+			Expect(result.Resources[0].Spec).To(HaveKey("memory"))
+			Expect(result.Resources[0].ApprovalStatus).NotTo(BeNil())
+			Expect(*result.Resources[0].ApprovalStatus).To(Equal("APPROVED"))
+			Expect(result.Resources[0].ProviderName).NotTo(BeNil())
+			Expect(*result.Resources[0].ProviderName).To(Equal("test-provider"))
 
-			stored, err := dataStore.Resource().Get(ctx, *result.Id)
+			stored, err := dataStore.Resource().Get(ctx, *result.Resources[0].Id)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stored.ApprovalStatus).NotTo(BeNil())
 			Expect(*stored.ApprovalStatus).To(Equal("APPROVED"))
 			Expect(stored.ProviderName).NotTo(BeNil())
 			Expect(*stored.ProviderName).To(Equal("test-provider"))
+		})
+
+		It("rejects empty run_id", func() {
+			req := singleResourceRun("catalog-123", map[string]any{"cpu": 1}, nil)
+			req.RunId = ""
+			_, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).To(HaveOccurred())
+			svcErr, ok := err.(*service.ServiceError)
+			Expect(ok).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
+		})
+
+		It("rejects duplicate run_id", func() {
+			runID := uuid.New().String()
+			req1 := singleResourceRun("catalog-123", map[string]any{"cpu": 1}, nil)
+			req1.RunId = runID
+			_, err := placementSvc.CreateRun(ctx, req1)
+			Expect(err).NotTo(HaveOccurred())
+
+			req2 := singleResourceRun("catalog-456", map[string]any{"cpu": 2}, nil)
+			req2.RunId = runID
+			_, err = placementSvc.CreateRun(ctx, req2)
+			Expect(err).To(HaveOccurred())
+			svcErr, ok := err.(*service.ServiceError)
+			Expect(ok).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeConflict))
 		})
 
 		It("creates resource with MODIFIED status from policy", func() {
@@ -167,17 +209,17 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"cpu": 4},
 			}
 
-			result, err := placementSvc.CreateResource(ctx, resource, nil)
+			result, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.Spec).To(HaveKey("cpu"))
-			Expect(result.Spec).NotTo(HaveKey("modified_field")) // Original spec preserved
-			Expect(result.ApprovalStatus).NotTo(BeNil())
-			Expect(*result.ApprovalStatus).To(Equal("MODIFIED"))
-			Expect(*result.ProviderName).To(Equal("modified-provider"))
+			Expect(result.Resources[0].Spec).To(HaveKey("cpu"))
+			Expect(result.Resources[0].Spec).NotTo(HaveKey("modified_field")) // Original spec preserved
+			Expect(result.Resources[0].ApprovalStatus).NotTo(BeNil())
+			Expect(*result.Resources[0].ApprovalStatus).To(Equal("MODIFIED"))
+			Expect(*result.Resources[0].ProviderName).To(Equal("modified-provider"))
 
-			stored, err := dataStore.Resource().Get(ctx, *result.Id)
+			stored, err := dataStore.Resource().Get(ctx, *result.Resources[0].Id)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(stored.ApprovalStatus).NotTo(BeNil())
 			Expect(*stored.ApprovalStatus).To(Equal("MODIFIED"))
@@ -192,11 +234,11 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"cpu": 1},
 			}
 
-			result, err := placementSvc.CreateResource(ctx, resource, &specifiedID)
+			result, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, &specifiedID))
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(*result.Id).To(Equal(specifiedID))
+			Expect(*result.Resources[0].Id).To(Equal(specifiedID))
 		})
 
 		It("returns error when policy validation fails (400)", func() {
@@ -209,7 +251,7 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"invalid": "spec"},
 			}
 
-			result, err := placementSvc.CreateResource(ctx, resource, nil)
+			result, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -229,7 +271,7 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"cpu": 100},
 			}
 
-			result, err := placementSvc.CreateResource(ctx, resource, nil)
+			result, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -249,7 +291,7 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"cpu": 2},
 			}
 
-			result, err := placementSvc.CreateResource(ctx, resource, nil)
+			result, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -269,7 +311,7 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"cpu": 2},
 			}
 
-			result, err := placementSvc.CreateResource(ctx, resource, nil)
+			result, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -289,7 +331,7 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"cpu": 2},
 			}
 
-			result, err := placementSvc.CreateResource(ctx, resource, nil)
+			result, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -315,7 +357,7 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"cpu": 2},
 			}
 
-			result, err := placementSvc.CreateResource(ctx, resource, nil)
+			result, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -336,7 +378,7 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"cpu": 2},
 			}
 
-			result, err := placementSvc.CreateResource(ctx, resource, nil)
+			result, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -356,12 +398,12 @@ var _ = Describe("PlacementService", func() {
 			}
 
 			// Create first resource
-			result1, err := placementSvc.CreateResource(ctx, resource, &resourceID)
+			result1, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, &resourceID))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result1).NotTo(BeNil())
 
 			// Try to create second resource with same ID
-			result2, err := placementSvc.CreateResource(ctx, resource, &resourceID)
+			result2, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, &resourceID))
 			Expect(err).To(HaveOccurred())
 			Expect(result2).To(BeNil())
 			var svcErr *service.ServiceError
@@ -381,7 +423,7 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"cpu": 2},
 			}
 
-			result, err := placementSvc.CreateResource(ctx, resource, nil)
+			result, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -408,7 +450,7 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"cpu": 2},
 			}
 
-			result, err := placementSvc.CreateResource(reqCtx, resource, nil)
+			result, err := placementSvc.CreateRun(reqCtx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -428,7 +470,7 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"cpu": 2},
 			}
 
-			result, err := placementSvc.CreateResource(ctx, resource, nil)
+			result, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -453,7 +495,7 @@ var _ = Describe("PlacementService", func() {
 				Spec:                  map[string]any{"cpu": 2},
 			}
 
-			result, err := placementSvc.CreateResource(ctx, resource, nil)
+			result, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -469,26 +511,61 @@ var _ = Describe("PlacementService", func() {
 		})
 	})
 
-	Describe("DeleteResource", func() {
+	Describe("DeleteRun", func() {
 		It("deletes existing resource", func() {
 			// Create a resource first
 			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-delete",
 				Spec:                  map[string]any{"cpu": 2},
 			}
-			created, err := placementSvc.CreateResource(ctx, resource, nil)
+			created, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 			Expect(err).NotTo(HaveOccurred())
 
 			// Delete the resource
-			err = placementSvc.DeleteResource(ctx, *created.Id)
+			err = placementSvc.DeleteRun(ctx, created.RunId)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify it's deleted
-			expectStoredResourceMissing(ctx, dataStore, *created.Id)
+			expectStoredResourceMissing(ctx, dataStore, *created.Resources[0].Id)
+		})
+
+		It("marks all resources PENDING_DELETION and deletes only the highest dag level", func() {
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-delete-multi",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(created.Resources).To(HaveLen(2))
+
+			var dbID, appID string
+			for _, r := range created.Resources {
+				switch r.Name {
+				case "db":
+					dbID = *r.Id
+					Expect(r.DagLevel).To(Equal(0))
+				case "app":
+					appID = *r.Id
+					Expect(r.DagLevel).To(Equal(1))
+				}
+			}
+
+			err = placementSvc.DeleteRun(ctx, created.RunId)
+			Expect(err).NotTo(HaveOccurred())
+
+			expectStoredResourceMissing(ctx, dataStore, appID)
+
+			remaining, err := dataStore.Resource().Get(ctx, dbID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(remaining.Status).To(Equal(types.ResourceStatusPendingDeletion))
 		})
 
 		It("returns not found error for non-existent resource", func() {
-			err := placementSvc.DeleteResource(ctx, "non-existent-id")
+			err := placementSvc.DeleteRun(ctx, "non-existent-id")
 
 			Expect(err).To(HaveOccurred())
 			var svcErr *service.ServiceError
@@ -503,7 +580,7 @@ var _ = Describe("PlacementService", func() {
 				CatalogItemInstanceId: "catalog-sprm-404",
 				Spec:                  map[string]any{"cpu": 2},
 			}
-			created, err := placementSvc.CreateResource(ctx, resource, nil)
+			created, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 			Expect(err).NotTo(HaveOccurred())
 
 			// Mock SPRM delete to fail with 404
@@ -512,7 +589,7 @@ var _ = Describe("PlacementService", func() {
 			}
 
 			// Try to delete the resource
-			err = placementSvc.DeleteResource(ctx, *created.Id)
+			err = placementSvc.DeleteRun(ctx, created.RunId)
 
 			Expect(err).To(HaveOccurred())
 			var svcErr *service.ServiceError
@@ -521,7 +598,7 @@ var _ = Describe("PlacementService", func() {
 			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
 
 			// Verify resource still exists in DB (SPRM delete failed, so DB delete didn't happen)
-			_ = getStoredResource(ctx, dataStore, *created.Id)
+			_ = getStoredResource(ctx, dataStore, *created.Resources[0].Id)
 		})
 
 		It("returns error when SPRM deletion fails (500)", func() {
@@ -530,7 +607,7 @@ var _ = Describe("PlacementService", func() {
 				CatalogItemInstanceId: "catalog-sprm-500",
 				Spec:                  map[string]any{"cpu": 2},
 			}
-			created, err := placementSvc.CreateResource(ctx, resource, nil)
+			created, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
 			Expect(err).NotTo(HaveOccurred())
 
 			// Mock SPRM delete to fail with 500
@@ -539,7 +616,7 @@ var _ = Describe("PlacementService", func() {
 			}
 
 			// Try to delete the resource
-			err = placementSvc.DeleteResource(ctx, *created.Id)
+			err = placementSvc.DeleteRun(ctx, created.RunId)
 
 			Expect(err).To(HaveOccurred())
 			var svcErr *service.ServiceError
@@ -548,13 +625,14 @@ var _ = Describe("PlacementService", func() {
 			Expect(svcErr.Code).To(Equal(service.ErrCodeSPRMError))
 
 			// Verify resource still exists in DB (SPRM delete failed, so DB delete didn't happen)
-			_ = getStoredResource(ctx, dataStore, *created.Id)
+			_ = getStoredResource(ctx, dataStore, *created.Resources[0].Id)
 		})
 	})
 
 	Describe("RehydrateResource", func() {
 		var (
 			oldResourceID string
+			oldRunID      string
 			catalogID     string
 		)
 
@@ -574,18 +652,21 @@ var _ = Describe("PlacementService", func() {
 				CatalogItemInstanceId: catalogID,
 				Spec:                  map[string]any{"cpu": 2, "memory": "4GB"},
 			}
-			_, err := placementSvc.CreateResource(ctx, resource, &oldResourceID)
+			created, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, &oldResourceID))
 			Expect(err).NotTo(HaveOccurred())
+			oldRunID = created.RunId
 		})
 
-		It("rehydrates a resource successfully", func() {
-			newResourceID := "new-resource-id"
+		It("rehydrates a run successfully", func() {
+			newRunID := "new-run-id"
 
-			result, err := placementSvc.RehydrateResource(ctx, oldResourceID, newResourceID)
+			result, err := placementSvc.RehydrateResource(ctx, oldRunID, newRunID)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(*result.Id).To(Equal(newResourceID))
+			Expect(result.Id).NotTo(BeNil())
+			Expect(*result.Id).NotTo(Equal(oldResourceID))
+			Expect(result.RunId).To(Equal(newRunID))
 			Expect(result.CatalogItemInstanceId).To(Equal(catalogID))
 			Expect(result.Spec).To(HaveKey("cpu"))
 			Expect(result.Spec).To(HaveKey("memory"))
@@ -594,10 +675,10 @@ var _ = Describe("PlacementService", func() {
 
 			// Verify old resource is gone
 			expectStoredResourceMissing(ctx, dataStore, oldResourceID)
-
 			// Verify new resource exists
-			stored := getStoredResource(ctx, dataStore, newResourceID)
+			stored := getStoredResource(ctx, dataStore, *result.Id)
 			Expect(stored.CatalogItemInstanceId).To(Equal(catalogID))
+			Expect(stored.RunID).To(Equal(newRunID))
 		})
 
 		It("re-evaluates policy and assigns new provider", func() {
@@ -609,7 +690,7 @@ var _ = Describe("PlacementService", func() {
 				}, nil
 			}
 
-			result, err := placementSvc.RehydrateResource(ctx, oldResourceID, "new-id-provider")
+			result, err := placementSvc.RehydrateResource(ctx, oldRunID, "new-run-provider")
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(*result.ProviderName).To(Equal("new-provider"))
@@ -634,7 +715,7 @@ var _ = Describe("PlacementService", func() {
 				return &sprm.CreateResourceResponse{ID: req.ID, Status: "provisioning"}, nil
 			}
 
-			result, err := placementSvc.RehydrateResource(ctx, oldResourceID, "new-id-spec")
+			result, err := placementSvc.RehydrateResource(ctx, oldRunID, "new-run-spec")
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(*result.ApprovalStatus).To(Equal("MODIFIED"))
@@ -645,8 +726,8 @@ var _ = Describe("PlacementService", func() {
 			Expect(capturedSPRMSpec).To(HaveKey("policy_added"))
 		})
 
-		It("returns not found when old resource does not exist", func() {
-			result, err := placementSvc.RehydrateResource(ctx, "non-existent", "new-id")
+		It("returns not found when run does not exist", func() {
+			result, err := placementSvc.RehydrateResource(ctx, "non-existent", "new-run")
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -660,7 +741,7 @@ var _ = Describe("PlacementService", func() {
 				return nil, &policy.HTTPError{StatusCode: 406, Body: "rejected"}
 			}
 
-			result, err := placementSvc.RehydrateResource(ctx, oldResourceID, "new-id-406")
+			result, err := placementSvc.RehydrateResource(ctx, oldRunID, "new-run-406")
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -668,7 +749,6 @@ var _ = Describe("PlacementService", func() {
 			Expect(errors.As(err, &svcErr)).To(BeTrue())
 			Expect(svcErr.Code).To(Equal(service.ErrCodePolicyRejected))
 
-			// Old resource unchanged
 			_ = getStoredResource(ctx, dataStore, oldResourceID)
 		})
 
@@ -677,7 +757,7 @@ var _ = Describe("PlacementService", func() {
 				return nil, &policy.HTTPError{StatusCode: 500, Body: "internal error"}
 			}
 
-			result, err := placementSvc.RehydrateResource(ctx, oldResourceID, "new-id-500")
+			result, err := placementSvc.RehydrateResource(ctx, oldRunID, "new-run-500")
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -685,7 +765,6 @@ var _ = Describe("PlacementService", func() {
 			Expect(errors.As(err, &svcErr)).To(BeTrue())
 			Expect(svcErr.Code).To(Equal(service.ErrCodePolicyInternalError))
 
-			// Old resource unchanged
 			_ = getStoredResource(ctx, dataStore, oldResourceID)
 		})
 
@@ -698,7 +777,7 @@ var _ = Describe("PlacementService", func() {
 				}, nil
 			}
 
-			result, err := placementSvc.RehydrateResource(ctx, oldResourceID, "new-id-empty")
+			result, err := placementSvc.RehydrateResource(ctx, oldRunID, "new-run-empty")
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -707,34 +786,12 @@ var _ = Describe("PlacementService", func() {
 			Expect(svcErr.Code).To(Equal(service.ErrCodePolicyInternalError))
 		})
 
-		It("returns conflict when new resource ID already exists", func() {
-			// Create another resource with the ID we want to rehydrate to
-			existingID := "existing-id"
-			resource := &types.Resource{
-				CatalogItemInstanceId: "catalog-existing",
-				Spec:                  map[string]any{"cpu": 1},
-			}
-			_, err := placementSvc.CreateResource(ctx, resource, &existingID)
-			Expect(err).NotTo(HaveOccurred())
-
-			result, err := placementSvc.RehydrateResource(ctx, oldResourceID, existingID)
-
-			Expect(err).To(HaveOccurred())
-			Expect(result).To(BeNil())
-			var svcErr *service.ServiceError
-			Expect(errors.As(err, &svcErr)).To(BeTrue())
-			Expect(svcErr.Code).To(Equal(service.ErrCodeConflict))
-
-			// Old resource unchanged
-			_ = getStoredResource(ctx, dataStore, oldResourceID)
-		})
-
 		It("returns error and rolls back when SPRM creation fails", func() {
 			mockSPRM.CreateResourceFunc = func(_ context.Context, _ sprm.CreateResourceRequest) (*sprm.CreateResourceResponse, error) {
 				return nil, &sprm.HTTPError{StatusCode: 500, Body: "sprm error"}
 			}
 
-			result, err := placementSvc.RehydrateResource(ctx, oldResourceID, "new-id-sprm-fail")
+			result, err := placementSvc.RehydrateResource(ctx, oldRunID, "new-run-sprm-fail")
 
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
@@ -742,11 +799,7 @@ var _ = Describe("PlacementService", func() {
 			Expect(errors.As(err, &svcErr)).To(BeTrue())
 			Expect(svcErr.Code).To(Equal(service.ErrCodeSPRMError))
 
-			// Old resource unchanged
 			_ = getStoredResource(ctx, dataStore, oldResourceID)
-
-			// New resource was rolled back
-			expectStoredResourceMissing(ctx, dataStore, "new-id-sprm-fail")
 		})
 
 		It("succeeds even when SPRM deferred delete fails", func() {
@@ -754,14 +807,13 @@ var _ = Describe("PlacementService", func() {
 				return &sprm.HTTPError{StatusCode: 500, Body: "delete failed"}
 			}
 
-			result, err := placementSvc.RehydrateResource(ctx, oldResourceID, "new-id-deferred-fail")
+			result, err := placementSvc.RehydrateResource(ctx, oldRunID, "new-run-deferred-fail")
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(*result.Id).To(Equal("new-id-deferred-fail"))
+			Expect(result.RunId).To(Equal("new-run-deferred-fail"))
 
-			// New resource exists
-			_ = getStoredResource(ctx, dataStore, "new-id-deferred-fail")
+			_ = getStoredResource(ctx, dataStore, *result.Id)
 		})
 	})
 })
