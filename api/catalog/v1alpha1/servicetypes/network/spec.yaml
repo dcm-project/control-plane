@@ -108,36 +108,22 @@ components:
           example: "10.96.45.12"
         port:
           type: integer
-          description: |
-            Port to dial on address.
-
-            For host-scoped exposure this is the provider-allocated host
-            port (for example a NodePort). Otherwise it is the service
-            port from ports[].
+          description: Port to dial on address.
           minimum: 1
           maximum: 65535
           example: 80
         scope:
           type: string
           description: |
-            Reachability of this endpoint.
-
-            - internal: reachable within the provider network
-            - external: reachable from outside the provider network
-            - host: reachable via a host/node address and allocated port
-          enum:
-            - internal
-            - external
-            - host
+            Reachability of this endpoint: internal or external.
+          pattern: '^(internal|external)$'
           example: internal
         protocol:
           type: string
           description: |
-            Transport protocol for this endpoint.
-            When omitted, consumers may infer it from the matching ports[] entry.
-          enum:
-            - TCP
-            - UDP
+            Transport protocol (TCP or UDP). When omitted, consumers may
+            infer it from the matching ports[] entry.
+          pattern: '^(TCP|UDP)$'
           example: TCP
       additionalProperties: true
 

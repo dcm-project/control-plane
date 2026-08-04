@@ -11,57 +11,18 @@ import (
 	externalRef0 "github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes"
 )
 
-// Defines values for NetworkEndpointProtocol.
-const (
-	NetworkEndpointProtocolTCP NetworkEndpointProtocol = "TCP"
-	NetworkEndpointProtocolUDP NetworkEndpointProtocol = "UDP"
-)
-
-// Valid indicates whether the value is a known member of the NetworkEndpointProtocol enum.
-func (e NetworkEndpointProtocol) Valid() bool {
-	switch e {
-	case NetworkEndpointProtocolTCP:
-		return true
-	case NetworkEndpointProtocolUDP:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for NetworkEndpointScope.
-const (
-	External NetworkEndpointScope = "external"
-	Host     NetworkEndpointScope = "host"
-	Internal NetworkEndpointScope = "internal"
-)
-
-// Valid indicates whether the value is a known member of the NetworkEndpointScope enum.
-func (e NetworkEndpointScope) Valid() bool {
-	switch e {
-	case External:
-		return true
-	case Host:
-		return true
-	case Internal:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for NetworkPortProtocol.
 const (
-	NetworkPortProtocolTCP NetworkPortProtocol = "TCP"
-	NetworkPortProtocolUDP NetworkPortProtocol = "UDP"
+	TCP NetworkPortProtocol = "TCP"
+	UDP NetworkPortProtocol = "UDP"
 )
 
 // Valid indicates whether the value is a known member of the NetworkPortProtocol enum.
 func (e NetworkPortProtocol) Valid() bool {
 	switch e {
-	case NetworkPortProtocolTCP:
+	case TCP:
 		return true
-	case NetworkPortProtocolUDP:
+	case UDP:
 		return true
 	default:
 		return false
@@ -115,35 +76,16 @@ type NetworkEndpoint struct {
 	Name *string `json:"name,omitempty"`
 
 	// Port Port to dial on address.
-	//
-	// For host-scoped exposure this is the provider-allocated host
-	// port (for example a NodePort). Otherwise it is the service
-	// port from ports[].
 	Port int `json:"port"`
 
-	// Protocol Transport protocol for this endpoint.
-	// When omitted, consumers may infer it from the matching ports[] entry.
-	Protocol *NetworkEndpointProtocol `json:"protocol,omitempty"`
+	// Protocol Transport protocol (TCP or UDP). When omitted, consumers may
+	// infer it from the matching ports[] entry.
+	Protocol *string `json:"protocol,omitempty"`
 
-	// Scope Reachability of this endpoint.
-	//
-	// - internal: reachable within the provider network
-	// - external: reachable from outside the provider network
-	// - host: reachable via a host/node address and allocated port
-	Scope                NetworkEndpointScope   `json:"scope"`
+	// Scope Reachability of this endpoint: internal or external.
+	Scope                string                 `json:"scope"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
-
-// NetworkEndpointProtocol Transport protocol for this endpoint.
-// When omitted, consumers may infer it from the matching ports[] entry.
-type NetworkEndpointProtocol string
-
-// NetworkEndpointScope Reachability of this endpoint.
-//
-// - internal: reachable within the provider network
-// - external: reachable from outside the provider network
-// - host: reachable via a host/node address and allocated port
-type NetworkEndpointScope string
 
 // NetworkPort Network service port specification
 type NetworkPort struct {

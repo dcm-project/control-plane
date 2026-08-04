@@ -11,60 +11,21 @@ import (
 	externalRef0 "github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes"
 )
 
-// Defines values for ContainerEndpointProtocol.
-const (
-	TCP ContainerEndpointProtocol = "TCP"
-	UDP ContainerEndpointProtocol = "UDP"
-)
-
-// Valid indicates whether the value is a known member of the ContainerEndpointProtocol enum.
-func (e ContainerEndpointProtocol) Valid() bool {
-	switch e {
-	case TCP:
-		return true
-	case UDP:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ContainerEndpointScope.
-const (
-	ContainerEndpointScopeExternal ContainerEndpointScope = "external"
-	ContainerEndpointScopeHost     ContainerEndpointScope = "host"
-	ContainerEndpointScopeInternal ContainerEndpointScope = "internal"
-)
-
-// Valid indicates whether the value is a known member of the ContainerEndpointScope enum.
-func (e ContainerEndpointScope) Valid() bool {
-	switch e {
-	case ContainerEndpointScopeExternal:
-		return true
-	case ContainerEndpointScopeHost:
-		return true
-	case ContainerEndpointScopeInternal:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for ContainerPortVisibility.
 const (
-	ContainerPortVisibilityExternal ContainerPortVisibility = "external"
-	ContainerPortVisibilityInternal ContainerPortVisibility = "internal"
-	ContainerPortVisibilityNone     ContainerPortVisibility = "none"
+	External ContainerPortVisibility = "external"
+	Internal ContainerPortVisibility = "internal"
+	None     ContainerPortVisibility = "none"
 )
 
 // Valid indicates whether the value is a known member of the ContainerPortVisibility enum.
 func (e ContainerPortVisibility) Valid() bool {
 	switch e {
-	case ContainerPortVisibilityExternal:
+	case External:
 		return true
-	case ContainerPortVisibilityInternal:
+	case Internal:
 		return true
-	case ContainerPortVisibilityNone:
+	case None:
 		return true
 	default:
 		return false
@@ -79,27 +40,14 @@ type ContainerEndpoint struct {
 	// Port Port to dial on address
 	Port int `json:"port"`
 
-	// Protocol Transport protocol (optional)
-	Protocol *ContainerEndpointProtocol `json:"protocol,omitempty"`
+	// Protocol Transport protocol (TCP or UDP). Optional.
+	Protocol *string `json:"protocol,omitempty"`
 
-	// Scope Reachability of this endpoint.
-	//
-	// - internal: reachable within the provider network
-	// - external: reachable from outside the provider network
-	// - host: reachable via a host/node address and allocated port
-	Scope                ContainerEndpointScope `json:"scope"`
+	// Scope Reachability of this endpoint: internal or external.
+	// Aligns with network.ports[].visibility (none yields no endpoint).
+	Scope                string                 `json:"scope"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
-
-// ContainerEndpointProtocol Transport protocol (optional)
-type ContainerEndpointProtocol string
-
-// ContainerEndpointScope Reachability of this endpoint.
-//
-// - internal: reachable within the provider network
-// - external: reachable from outside the provider network
-// - host: reachable via a host/node address and allocated port
-type ContainerEndpointScope string
 
 // ContainerPort Container port specification
 type ContainerPort struct {

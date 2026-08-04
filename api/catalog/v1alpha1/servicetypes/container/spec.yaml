@@ -250,21 +250,13 @@ components:
         scope:
           type: string
           description: |
-            Reachability of this endpoint.
-
-            - internal: reachable within the provider network
-            - external: reachable from outside the provider network
-            - host: reachable via a host/node address and allocated port
-          enum:
-            - internal
-            - external
-            - host
+            Reachability of this endpoint: internal or external.
+            Aligns with network.ports[].visibility (none yields no endpoint).
+          pattern: '^(internal|external)$'
           example: internal
         protocol:
           type: string
-          description: Transport protocol (optional)
-          enum:
-            - TCP
-            - UDP
+          description: Transport protocol (TCP or UDP). Optional.
+          pattern: '^(TCP|UDP)$'
           example: TCP
       additionalProperties: true
