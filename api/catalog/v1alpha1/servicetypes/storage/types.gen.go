@@ -117,7 +117,13 @@ type StorageSpec struct {
 	StatusMessage *string `json:"status_message,omitempty"`
 
 	// UpdateTime Timestamp when the resource was last updated (RFC 3339)
-	UpdateTime           *time.Time             `json:"update_time,omitempty"`
+	UpdateTime *time.Time `json:"update_time,omitempty"`
+
+	// VolumeName Bound volume identifier assigned by the provider
+	// (for example the PersistentVolume name).
+	//
+	// Empty until the volume is bound.
+	VolumeName           *string                `json:"volume_name,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
@@ -226,6 +232,14 @@ func (a *StorageSpec) UnmarshalJSON(b []byte) error {
 		delete(object, "update_time")
 	}
 
+	if raw, found := object["volume_name"]; found {
+		err = json.Unmarshal(raw, &a.VolumeName)
+		if err != nil {
+			return fmt.Errorf("error reading 'volume_name': %w", err)
+		}
+		delete(object, "volume_name")
+	}
+
 	if len(object) != 0 {
 		a.AdditionalProperties = make(map[string]interface{})
 		for fieldName, fieldBuf := range object {
@@ -306,6 +320,13 @@ func (a StorageSpec) MarshalJSON() ([]byte, error) {
 		object["update_time"], err = json.Marshal(a.UpdateTime)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'update_time': %w", err)
+		}
+	}
+
+	if a.VolumeName != nil {
+		object["volume_name"], err = json.Marshal(a.VolumeName)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'volume_name': %w", err)
 		}
 	}
 
