@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/dcm-project/control-plane/internal/catalog/store"
@@ -78,6 +79,11 @@ func validateCELReferenceValue(
 	source, ok := resourcesByName[ref.ResourceName]
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrCELResourceNotFound, ref.ResourceName)
+	}
+
+	consumer := resourcesByName[consumerResourceName]
+	if !slices.Contains(consumer.RequiresResources, ref.ResourceName) {
+		return fmt.Errorf("%w: field %s references %s", ErrCELRequiresResourceMissing, fieldPath, ref.ResourceName)
 	}
 
 	sourceST, err := store.ServiceType().GetByServiceType(ctx, source.ServiceType)

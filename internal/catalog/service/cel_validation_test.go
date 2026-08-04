@@ -170,9 +170,32 @@ var _ = Describe("CEL validation", func() {
 			ensureServiceTypeWithSpec(ctx, str, "db-no-out", "database-no-outputs", map[string]any{
 				"engine": "postgres",
 			})
+			requiresOrdersDb := []string{"ordersDb"}
 			spec := v1alpha1.CatalogItemSpec{
 				Resources: []v1alpha1.CatalogResource{
 					{Name: "ordersDb", ServiceType: "database-no-outputs"},
+					{
+						Name:              "app",
+						ServiceType:       "container",
+						RequiresResources: &requiresOrdersDb,
+						Fields: &[]v1alpha1.FieldConfiguration{
+							{Path: "database_url", Default: "${ordersDb.connectionString}"},
+						},
+					},
+				},
+			}
+			catalogItemID := createCatalogItemWithSpec(spec)
+			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrCELServiceTypeOutputNotFound)).To(BeTrue())
+		})
+
+		It("rejects CEL referencing a resource not listed in requires_resources", func() {
+			spec := v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{Name: "ordersDb", ServiceType: "database", Fields: &[]v1alpha1.FieldConfiguration{
+						{Path: "engine", Default: "postgres"},
+					}},
 					{
 						Name:        "app",
 						ServiceType: "container",
@@ -185,7 +208,7 @@ var _ = Describe("CEL validation", func() {
 			catalogItemID := createCatalogItemWithSpec(spec)
 			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
 			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, service.ErrCELServiceTypeOutputNotFound)).To(BeTrue())
+			Expect(errors.Is(err, service.ErrCELRequiresResourceMissing)).To(BeTrue())
 		})
 
 		It("accepts CEL user_values on editable fields and overrides the default", func() {
@@ -210,6 +233,7 @@ var _ = Describe("CEL validation", func() {
 
 		It("accepts CEL user_values referencing another catalog resource", func() {
 			editable := true
+			requiresDBs := []string{"ordersDb", "myOrdersDb"}
 			spec := v1alpha1.CatalogItemSpec{
 				Resources: []v1alpha1.CatalogResource{
 					{Name: "ordersDb", ServiceType: "database", Fields: &[]v1alpha1.FieldConfiguration{
@@ -219,8 +243,9 @@ var _ = Describe("CEL validation", func() {
 						{Path: "engine", Default: "postgres"},
 					}},
 					{
-						Name:        "app",
-						ServiceType: "container",
+						Name:              "app",
+						ServiceType:       "container",
+						RequiresResources: &requiresDBs,
 						Fields: &[]v1alpha1.FieldConfiguration{
 							{Path: "database_url", Default: "${ordersDb.connectionString}", Editable: &editable},
 						},
