@@ -11,26 +11,95 @@ import (
 	externalRef0 "github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes"
 )
 
-// Defines values for ContainerPortVisibility.
+// Defines values for ContainerEndpointProtocol.
 const (
-	External ContainerPortVisibility = "external"
-	Internal ContainerPortVisibility = "internal"
-	None     ContainerPortVisibility = "none"
+	TCP ContainerEndpointProtocol = "TCP"
+	UDP ContainerEndpointProtocol = "UDP"
 )
 
-// Valid indicates whether the value is a known member of the ContainerPortVisibility enum.
-func (e ContainerPortVisibility) Valid() bool {
+// Valid indicates whether the value is a known member of the ContainerEndpointProtocol enum.
+func (e ContainerEndpointProtocol) Valid() bool {
 	switch e {
-	case External:
+	case TCP:
 		return true
-	case Internal:
-		return true
-	case None:
+	case UDP:
 		return true
 	default:
 		return false
 	}
 }
+
+// Defines values for ContainerEndpointScope.
+const (
+	ContainerEndpointScopeExternal ContainerEndpointScope = "external"
+	ContainerEndpointScopeHost     ContainerEndpointScope = "host"
+	ContainerEndpointScopeInternal ContainerEndpointScope = "internal"
+)
+
+// Valid indicates whether the value is a known member of the ContainerEndpointScope enum.
+func (e ContainerEndpointScope) Valid() bool {
+	switch e {
+	case ContainerEndpointScopeExternal:
+		return true
+	case ContainerEndpointScopeHost:
+		return true
+	case ContainerEndpointScopeInternal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ContainerPortVisibility.
+const (
+	ContainerPortVisibilityExternal ContainerPortVisibility = "external"
+	ContainerPortVisibilityInternal ContainerPortVisibility = "internal"
+	ContainerPortVisibilityNone     ContainerPortVisibility = "none"
+)
+
+// Valid indicates whether the value is a known member of the ContainerPortVisibility enum.
+func (e ContainerPortVisibility) Valid() bool {
+	switch e {
+	case ContainerPortVisibilityExternal:
+		return true
+	case ContainerPortVisibilityInternal:
+		return true
+	case ContainerPortVisibilityNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// ContainerEndpoint Provider-agnostic connection endpoint (response-only).
+type ContainerEndpoint struct {
+	// Address IP address or hostname to dial
+	Address string `json:"address"`
+
+	// Port Port to dial on address
+	Port int `json:"port"`
+
+	// Protocol Transport protocol (optional)
+	Protocol *ContainerEndpointProtocol `json:"protocol,omitempty"`
+
+	// Scope Reachability of this endpoint.
+	//
+	// - internal: reachable within the provider network
+	// - external: reachable from outside the provider network
+	// - host: reachable via a host/node address and allocated port
+	Scope                ContainerEndpointScope `json:"scope"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
+// ContainerEndpointProtocol Transport protocol (optional)
+type ContainerEndpointProtocol string
+
+// ContainerEndpointScope Reachability of this endpoint.
+//
+// - internal: reachable within the provider network
+// - external: reachable from outside the provider network
+// - host: reachable via a host/node address and allocated port
+type ContainerEndpointScope string
 
 // ContainerPort Container port specification
 type ContainerPort struct {
@@ -71,6 +140,12 @@ type ContainerResources struct {
 type ContainerSpec struct {
 	// CreateTime Timestamp when the resource was created (RFC 3339)
 	CreateTime *time.Time `json:"create_time,omitempty"`
+
+	// Endpoints Resolved connection endpoints (response-only).
+	// Each entry is dialable via address + port; scope indicates
+	// reachability. Omitted when no ports are exposed
+	// (all visibility=none).
+	Endpoints *[]ContainerEndpoint `json:"endpoints,omitempty"`
 
 	// Id Unique identifier for the resource.
 	Id *string `json:"id,omitempty"`
@@ -183,6 +258,113 @@ type Process struct {
 	// Env Environment variables
 	Env                  *[]EnvVar              `json:"env,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
+// Getter for additional properties for ContainerEndpoint. Returns the specified
+// element and whether it was found
+func (a ContainerEndpoint) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for ContainerEndpoint
+func (a *ContainerEndpoint) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for ContainerEndpoint to handle AdditionalProperties
+func (a *ContainerEndpoint) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["address"]; found {
+		err = json.Unmarshal(raw, &a.Address)
+		if err != nil {
+			return fmt.Errorf("error reading 'address': %w", err)
+		}
+		delete(object, "address")
+	}
+
+	if raw, found := object["port"]; found {
+		err = json.Unmarshal(raw, &a.Port)
+		if err != nil {
+			return fmt.Errorf("error reading 'port': %w", err)
+		}
+		delete(object, "port")
+	}
+
+	if raw, found := object["protocol"]; found {
+		err = json.Unmarshal(raw, &a.Protocol)
+		if err != nil {
+			return fmt.Errorf("error reading 'protocol': %w", err)
+		}
+		delete(object, "protocol")
+	}
+
+	if raw, found := object["scope"]; found {
+		err = json.Unmarshal(raw, &a.Scope)
+		if err != nil {
+			return fmt.Errorf("error reading 'scope': %w", err)
+		}
+		delete(object, "scope")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for ContainerEndpoint to handle AdditionalProperties
+func (a ContainerEndpoint) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	object["address"], err = json.Marshal(a.Address)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'address': %w", err)
+	}
+
+	object["port"], err = json.Marshal(a.Port)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'port': %w", err)
+	}
+
+	if a.Protocol != nil {
+		object["protocol"], err = json.Marshal(a.Protocol)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'protocol': %w", err)
+		}
+	}
+
+	object["scope"], err = json.Marshal(a.Scope)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'scope': %w", err)
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
 }
 
 // Getter for additional properties for ContainerPort. Returns the specified
@@ -376,6 +558,14 @@ func (a *ContainerSpec) UnmarshalJSON(b []byte) error {
 		delete(object, "create_time")
 	}
 
+	if raw, found := object["endpoints"]; found {
+		err = json.Unmarshal(raw, &a.Endpoints)
+		if err != nil {
+			return fmt.Errorf("error reading 'endpoints': %w", err)
+		}
+		delete(object, "endpoints")
+	}
+
 	if raw, found := object["id"]; found {
 		err = json.Unmarshal(raw, &a.Id)
 		if err != nil {
@@ -495,6 +685,13 @@ func (a ContainerSpec) MarshalJSON() ([]byte, error) {
 		object["create_time"], err = json.Marshal(a.CreateTime)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'create_time': %w", err)
+		}
+	}
+
+	if a.Endpoints != nil {
+		object["endpoints"], err = json.Marshal(a.Endpoints)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'endpoints': %w", err)
 		}
 	}
 
