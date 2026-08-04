@@ -98,6 +98,9 @@ type ServiceMetadata struct {
 	// Name Resource name identifier.
 	// Must be unique within the namespace.
 	Name string `json:"name"`
+
+	// Namespace Namespace where the resource was provisioned.
+	Namespace *string `json:"namespace,omitempty"`
 }
 
 // ServiceType Service type identifier.

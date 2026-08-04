@@ -52,6 +52,13 @@ components:
           maxLength: 63
           example: my-dev-vm
 
+        namespace:
+          type: string
+          description: |
+            Namespace where the resource was provisioned.
+          readOnly: true
+          example: production
+
         labels:
           type: object
           description: |
