@@ -83,6 +83,12 @@ type VMSpec struct {
 	// Access VM access configuration
 	Access *Access `json:"access,omitempty"`
 
+	// ConnectionDetails SSH connection URI (response-only).
+	// Format: ssh://<username>@<hostname>:<port>
+	// Reachability only; auth uses access.ssh_public_key.
+	// Empty until the VM is reachable over SSH.
+	ConnectionDetails *string `json:"connection_details,omitempty"`
+
 	// CreateTime Timestamp when the resource was created (RFC 3339)
 	CreateTime *time.Time `json:"create_time,omitempty"`
 
@@ -92,6 +98,10 @@ type VMSpec struct {
 
 	// Id Unique identifier for the resource.
 	Id *string `json:"id,omitempty"`
+
+	// Ip Primary IP address assigned to the virtual machine.
+	// Populated after the VM is running.
+	Ip *string `json:"ip,omitempty"`
 
 	// Memory Memory configuration (RAM)
 	Memory Memory `json:"memory"`
@@ -521,6 +531,14 @@ func (a *VMSpec) UnmarshalJSON(b []byte) error {
 		delete(object, "access")
 	}
 
+	if raw, found := object["connection_details"]; found {
+		err = json.Unmarshal(raw, &a.ConnectionDetails)
+		if err != nil {
+			return fmt.Errorf("error reading 'connection_details': %w", err)
+		}
+		delete(object, "connection_details")
+	}
+
 	if raw, found := object["create_time"]; found {
 		err = json.Unmarshal(raw, &a.CreateTime)
 		if err != nil {
@@ -543,6 +561,14 @@ func (a *VMSpec) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("error reading 'id': %w", err)
 		}
 		delete(object, "id")
+	}
+
+	if raw, found := object["ip"]; found {
+		err = json.Unmarshal(raw, &a.Ip)
+		if err != nil {
+			return fmt.Errorf("error reading 'ip': %w", err)
+		}
+		delete(object, "ip")
 	}
 
 	if raw, found := object["memory"]; found {
@@ -651,6 +677,13 @@ func (a VMSpec) MarshalJSON() ([]byte, error) {
 		}
 	}
 
+	if a.ConnectionDetails != nil {
+		object["connection_details"], err = json.Marshal(a.ConnectionDetails)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'connection_details': %w", err)
+		}
+	}
+
 	if a.CreateTime != nil {
 		object["create_time"], err = json.Marshal(a.CreateTime)
 		if err != nil {
@@ -667,6 +700,13 @@ func (a VMSpec) MarshalJSON() ([]byte, error) {
 		object["id"], err = json.Marshal(a.Id)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'id': %w", err)
+		}
+	}
+
+	if a.Ip != nil {
+		object["ip"], err = json.Marshal(a.Ip)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'ip': %w", err)
 		}
 	}
 

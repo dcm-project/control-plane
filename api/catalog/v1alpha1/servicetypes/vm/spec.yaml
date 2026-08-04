@@ -52,6 +52,25 @@ components:
             access:
               $ref: '#/components/schemas/Access'
 
+            ip:
+              type: string
+              description: |
+                Primary IP address assigned to the virtual machine.
+                Populated after the VM is running.
+              readOnly: true
+              example: "10.244.0.12"
+
+            connection_details:
+              type: string
+              description: |
+                SSH connection URI (response-only).
+                Format: ssh://<username>@<hostname>:<port>
+                Reachability only; auth uses access.ssh_public_key.
+                Empty until the VM is reachable over SSH.
+              pattern: '^ssh://[^/@]+@[^:/]+:[0-9]+$'
+              readOnly: true
+              example: "ssh://fedora@10.244.0.12:22"
+
           additionalProperties: true
 
     Vcpu:
