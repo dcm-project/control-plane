@@ -59,6 +59,16 @@ components:
             resources:
               $ref: '#/components/schemas/DatabaseResources'
 
+            connection_details:
+              type: string
+              description: |
+                Database connection URI (response-only).
+                Format: <scheme>://<username>:<password>@<hostname>:<port>/<database>
+                Empty until the database is running.
+              pattern: '^[a-z][a-z0-9+.-]*://[^/@]+:[^/@]+@[^:/]+:[0-9]+/.+$'
+              readOnly: true
+              example: "postgresql://app:s3cret@pg-db-rw.databases.svc:5432/app"
+
           additionalProperties: true
 
     DatabaseResources:
