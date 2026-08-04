@@ -308,8 +308,11 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 	if len(resources) == 0 {
 		return nil, NewNotFoundError(fmt.Sprintf("run %s not found", runID))
 	}
+	if len(resources) != 1 {
+		return nil, NewValidationError(fmt.Sprintf("rehydrate currently supports only single-resource runs, got %d resources", len(resources)))
+	}
 
-	// Step 1: Retrieve the old resource (first resource in the run)
+	// Step 1: Retrieve the old resource
 	oldResource := resources[0]
 	resourceID := oldResource.ID
 	// Generate UUID for the replacement resource

@@ -736,6 +736,29 @@ var _ = Describe("PlacementService", func() {
 			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
 		})
 
+		It("returns validation error when run has multiple resources", func() {
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-rehydrate-multi",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(created.Resources).To(HaveLen(2))
+
+			result, err := placementSvc.RehydrateResource(ctx, created.RunId, "new-run-multi")
+
+			Expect(err).To(HaveOccurred())
+			Expect(result).To(BeNil())
+			var svcErr *service.ServiceError
+			Expect(errors.As(err, &svcErr)).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
+			Expect(svcErr.Message).To(ContainSubstring("single-resource"))
+		})
+
 		It("returns error when policy rejects re-evaluation (406)", func() {
 			mockPolicy.EvaluateFunc = func(_ context.Context, _ policy.EvaluateRequest) (*policy.EvaluateResponse, error) {
 				return nil, &policy.HTTPError{StatusCode: 406, Body: "rejected"}
