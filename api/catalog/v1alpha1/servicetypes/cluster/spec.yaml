@@ -47,6 +47,33 @@ components:
             nodes:
               $ref: '#/components/schemas/Nodes'
 
+            api_endpoint:
+              type: string
+              description: |
+                Kubernetes API server endpoint for the provisioned cluster.
+                Empty until the cluster is ready.
+              readOnly: true
+              example: "https://api.dev-cluster-01.example.com:6443"
+
+            console_url:
+              type: string
+              description: |
+                Web console URL for the provisioned cluster.
+                Empty until the cluster is ready.
+              readOnly: true
+              example: "https://console.dev-cluster-01.example.com"
+
+            kubeconfig:
+              type: string
+              description: |
+                Base64-encoded kubeconfig granting admin access to the
+                provisioned cluster.
+
+                Empty while the cluster is provisioning or has failed.
+                Populated when the cluster reaches a ready state.
+              readOnly: true
+              example: ""
+
           additionalProperties: true
 
     Nodes:
