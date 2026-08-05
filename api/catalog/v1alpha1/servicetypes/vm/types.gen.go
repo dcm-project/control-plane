@@ -83,12 +83,6 @@ type VMSpec struct {
 	// Access VM access configuration
 	Access *Access `json:"access,omitempty"`
 
-	// ConnectionDetails SSH connection URI (response-only).
-	// Format: ssh://<username>@<hostname>:<port>
-	// Reachability only; auth uses access.ssh_public_key.
-	// Empty until the VM is reachable over SSH.
-	ConnectionDetails *string `json:"connection_details,omitempty"`
-
 	// CreateTime Timestamp when the resource was created (RFC 3339)
 	CreateTime *time.Time `json:"create_time,omitempty"`
 
@@ -531,14 +525,6 @@ func (a *VMSpec) UnmarshalJSON(b []byte) error {
 		delete(object, "access")
 	}
 
-	if raw, found := object["connection_details"]; found {
-		err = json.Unmarshal(raw, &a.ConnectionDetails)
-		if err != nil {
-			return fmt.Errorf("error reading 'connection_details': %w", err)
-		}
-		delete(object, "connection_details")
-	}
-
 	if raw, found := object["create_time"]; found {
 		err = json.Unmarshal(raw, &a.CreateTime)
 		if err != nil {
@@ -674,13 +660,6 @@ func (a VMSpec) MarshalJSON() ([]byte, error) {
 		object["access"], err = json.Marshal(a.Access)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'access': %w", err)
-		}
-	}
-
-	if a.ConnectionDetails != nil {
-		object["connection_details"], err = json.Marshal(a.ConnectionDetails)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'connection_details': %w", err)
 		}
 	}
 
