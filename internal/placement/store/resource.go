@@ -15,14 +15,15 @@ var (
 	ErrResourceIdExist  = errors.New("resource with id already exists")
 )
 
-// ResourceListOptions contains optional fields for listing requests.
+// ResourceListOptions contains optional fields for listing runs.
 type ResourceListOptions struct {
 	ProviderName *string
 	PageSize     int
 	PageToken    *string
 }
 
-// ResourceListResult contains the result of a List operation.
+// ResourceListResult contains resources for a page of runs (complete sets per run_id).
+// PageSize is the number of runs; Resources may contain more rows than PageSize.
 type ResourceListResult struct {
 	Resources     model.ResourceList
 	NextPageToken *string
@@ -30,7 +31,7 @@ type ResourceListResult struct {
 
 // Resource defines the repository interface for Resource operations
 type Resource interface {
-	List(ctx context.Context, opts *ResourceListOptions) (*ResourceListResult, error)
+	ListRun(ctx context.Context, opts *ResourceListOptions) (*ResourceListResult, error)
 	Create(ctx context.Context, request model.Resource) (*model.Resource, error)
 	CreateBatch(ctx context.Context, resources []model.Resource) ([]model.Resource, error)
 	Delete(ctx context.Context, id string) error
@@ -52,10 +53,9 @@ func NewResource(db *gorm.DB) Resource {
 	return &ResourceStore{db: db}
 }
 
-func (s *ResourceStore) List(ctx context.Context, opts *ResourceListOptions) (*ResourceListResult, error) {
-	var requests model.ResourceList
-	query := s.db.WithContext(ctx)
-
+// ListRun paginates by distinct run_id, then loads the full resource set for each
+// run on the page. PageSize is the number of runs, not resource rows.
+func (s *ResourceStore) ListRun(ctx context.Context, opts *ResourceListOptions) (*ResourceListResult, error) {
 	// Default page size
 	pageSize := 100
 	if opts != nil && opts.PageSize > 0 {
@@ -68,35 +68,47 @@ func (s *ResourceStore) List(ctx context.Context, opts *ResourceListOptions) (*R
 		offset = decodePageToken(opts.PageToken)
 	}
 
+	query := s.db.WithContext(ctx).Model(&model.Resource{})
+
 	// Apply filters
-	if opts != nil {
-		if opts.ProviderName != nil && *opts.ProviderName != "" {
-			query = query.Where("provider_name = ?", *opts.ProviderName)
-		}
+	if opts != nil && opts.ProviderName != nil && *opts.ProviderName != "" {
+		query = query.Where("provider_name = ?", *opts.ProviderName)
 	}
 
-	// Apply consistent ordering for pagination
-	query = query.Order("create_time ASC, id ASC")
-
-	// Query with limit+1 to detect if there are more results
-	query = query.Limit(pageSize + 1).Offset(offset)
-
-	if err := query.Find(&requests).Error; err != nil {
+	// Page distinct run_ids (limit+1 to detect if there are more results).
+	var runIDs []string
+	if err := query.
+		// Session: allows reuse of the original query when loading resources
+		Session(&gorm.Session{}).
+		Distinct("run_id").
+		Order("run_id ASC").
+		Limit(pageSize+1).
+		Offset(offset).
+		// Pluck: select run_id column into []string
+		Pluck("run_id", &runIDs).Error; err != nil {
 		return nil, err
 	}
 
-	// Build result with next page token if needed
-	result := &ResourceListResult{
-		Resources:     requests,
-		NextPageToken: generateNextPageToken(len(requests), pageSize, offset),
+	// Build next page token before trimming to page size
+	nextToken := generateNextPageToken(len(runIDs), pageSize, offset)
+	if len(runIDs) > pageSize {
+		runIDs = runIDs[:pageSize]
 	}
 
-	// Trim to requested page size if we got limit+1 results
-	if len(requests) > pageSize {
-		result.Resources = requests[:pageSize]
+	var resources model.ResourceList
+	if len(runIDs) > 0 {
+		if err := query.
+			Where("run_id IN ?", runIDs).
+			Order("run_id ASC, dag_level ASC, name ASC, id ASC").
+			Find(&resources).Error; err != nil {
+			return nil, err
+		}
 	}
 
-	return result, nil
+	return &ResourceListResult{
+		Resources:     resources,
+		NextPageToken: nextToken,
+	}, nil
 }
 
 func (s *ResourceStore) Create(ctx context.Context, request model.Resource) (*model.Resource, error) {

@@ -213,115 +213,130 @@ var _ = Describe("Resource Store", func() {
 		})
 	})
 
-	Describe("List", func() {
+	Describe("ListRun", func() {
+		var (
+			providerA = "provider-a"
+			providerB = "provider-b"
+			approval  = "APPROVED"
+		)
+
+		createResource := func(runID, name, provider, catalogID string) {
+			_, err := requestStore.Create(ctx, model.Resource{
+				ID:                    uuid.New().String(),
+				RunID:                 runID,
+				Name:                  name,
+				CatalogItemInstanceId: catalogID,
+				Spec:                  map[string]any{},
+				ProviderName:          &provider,
+				ApprovalStatus:        &approval,
+				Path:                  "resources/" + name,
+			})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
 		BeforeEach(func() {
-			provider1 := "provider-a"
-			provider2 := "provider-b"
-			approval := "APPROVED"
-			// Create test data
-			requests := []model.Resource{
-				{ID: uuid.New().String(), ProviderName: &provider1, ApprovalStatus: &approval, CatalogItemInstanceId: "cat-1", Spec: map[string]any{}, Path: "resources/1"},
-				{ID: uuid.New().String(), ProviderName: &provider2, ApprovalStatus: &approval, CatalogItemInstanceId: "cat-2", Spec: map[string]any{}, Path: "resources/2"},
-				{ID: uuid.New().String(), ProviderName: &provider1, ApprovalStatus: &approval, CatalogItemInstanceId: "cat-3", Spec: map[string]any{}, Path: "resources/3"},
-			}
-			for _, r := range requests {
-				_, err := requestStore.Create(ctx, r)
-				Expect(err).NotTo(HaveOccurred())
-			}
+			// run-1: 2 resources (would span a page_size=2 resource list alone)
+			createResource("run-1", "db", providerA, "cat-1")
+			createResource("run-1", "app", providerA, "cat-1")
+			// run-2: 1 resource, different provider
+			createResource("run-2", "main", providerB, "cat-2")
+			// run-3: 2 resources
+			createResource("run-3", "db", providerA, "cat-3")
+			createResource("run-3", "app", providerA, "cat-3")
 		})
 
-		It("returns all requests when opts is nil", func() {
-			result, err := requestStore.List(ctx, nil)
-
+		It("paginates by run_id and returns complete resource sets", func() {
+			page1, err := requestStore.ListRun(ctx, &store.ResourceListOptions{PageSize: 2})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Resources).To(HaveLen(3))
-			Expect(result.NextPageToken).To(BeNil())
+			Expect(page1.NextPageToken).NotTo(BeNil())
+			// run-1 (2 resources) + run-2 (1)
+			Expect(page1.Resources).To(HaveLen(3))
+			Expect(page1.Resources[0].RunID).To(Equal("run-1"))
+			Expect(page1.Resources[1].RunID).To(Equal("run-1"))
+			Expect(page1.Resources[2].RunID).To(Equal("run-2"))
+
+			page2, err := requestStore.ListRun(ctx, &store.ResourceListOptions{
+				PageSize:  2,
+				PageToken: page1.NextPageToken,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(page2.NextPageToken).To(BeNil())
+			Expect(page2.Resources).To(HaveLen(2))
+			Expect(page2.Resources[0].RunID).To(Equal("run-3"))
+		})
+
+		It("does not split a multi-resource run across pages", func() {
+			// PageSize=1 must return both resources of run-1 together
+			page1, err := requestStore.ListRun(ctx, &store.ResourceListOptions{PageSize: 1})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(page1.Resources).To(HaveLen(2))
+			Expect(page1.Resources[0].RunID).To(Equal("run-1"))
+			Expect(page1.Resources[1].RunID).To(Equal("run-1"))
+			Expect(page1.NextPageToken).NotTo(BeNil())
 		})
 
 		It("filters by provider name", func() {
-			providerName := "provider-a"
-			opts := &store.ResourceListOptions{
-				ProviderName: &providerName,
-			}
-
-			result, err := requestStore.List(ctx, opts)
-
+			page, err := requestStore.ListRun(ctx, &store.ResourceListOptions{
+				ProviderName: &providerB,
+			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Resources).To(HaveLen(2))
-			for _, r := range result.Resources {
-				Expect(*r.ProviderName).To(Equal("provider-a"))
-			}
+			Expect(page.Resources).To(HaveLen(1))
+			Expect(page.Resources[0].RunID).To(Equal("run-2"))
+			Expect(*page.Resources[0].ProviderName).To(Equal(providerB))
+			Expect(page.NextPageToken).To(BeNil())
 		})
 
-		It("supports pagination with page size", func() {
-			opts := &store.ResourceListOptions{
-				PageSize: 2,
-			}
+		It("excludes other providers' resources within a mixed-provider run", func() {
+			createResource("run-mixed", "db", providerA, "cat-mixed")
+			createResource("run-mixed", "app", providerB, "cat-mixed")
 
-			result, err := requestStore.List(ctx, opts)
-
+			page, err := requestStore.ListRun(ctx, &store.ResourceListOptions{
+				ProviderName: &providerB,
+			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Resources).To(HaveLen(2))
-			Expect(result.NextPageToken).NotTo(BeNil())
-		})
-
-		It("supports pagination with page token", func() {
-			// Get first page
-			opts1 := &store.ResourceListOptions{
-				PageSize: 2,
+			Expect(page.Resources).To(HaveLen(2))
+			for _, r := range page.Resources {
+				Expect(*r.ProviderName).To(Equal(providerB))
 			}
-			result1, err := requestStore.List(ctx, opts1)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result1.NextPageToken).NotTo(BeNil())
-
-			// Get second page
-			opts2 := &store.ResourceListOptions{
-				PageSize:  2,
-				PageToken: result1.NextPageToken,
-			}
-			result2, err := requestStore.List(ctx, opts2)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result2.Resources).To(HaveLen(1))
-			Expect(result2.NextPageToken).To(BeNil())
+			Expect(page.Resources[0].RunID).To(Equal("run-2"))
+			Expect(page.Resources[1].RunID).To(Equal("run-mixed"))
+			Expect(page.Resources[1].Name).To(Equal("app"))
 		})
 
 		It("defaults PageSize when zero or negative", func() {
 			// PageSize=0 should fallback to default (100) and not error
-			pageZero, err := requestStore.List(ctx, &store.ResourceListOptions{
+			pageZero, err := requestStore.ListRun(ctx, &store.ResourceListOptions{
 				PageSize: 0,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// We only created 3 items, so all should be returned with the default page size
-			Expect(pageZero.Resources).To(HaveLen(3))
+			Expect(pageZero.Resources).To(HaveLen(5))
 			Expect(pageZero.NextPageToken).To(BeNil())
 
 			// Negative PageSize should also fallback to default (100)
-			pageNegative, err := requestStore.List(ctx, &store.ResourceListOptions{
+			pageNegative, err := requestStore.ListRun(ctx, &store.ResourceListOptions{
 				PageSize: -1,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(pageNegative.Resources).To(HaveLen(3))
+			Expect(pageNegative.Resources).To(HaveLen(5))
 			Expect(pageNegative.NextPageToken).To(BeNil())
 		})
 
 		It("treats malformed PageToken as starting from offset 0", func() {
 			// Malformed, non-base64 token should be treated as offset 0
 			pageToken := "!!not-base64!!"
-			page, err := requestStore.List(ctx, &store.ResourceListOptions{
+			page, err := requestStore.ListRun(ctx, &store.ResourceListOptions{
 				PageToken: &pageToken,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(page.Resources).To(HaveLen(3))
-			// Entire result set should be visible from offset 0
+			Expect(page.Resources).To(HaveLen(5))
 
 			// Well-formed base64 that does not decode to an integer should also be treated as offset 0
 			malformedToken := base64.StdEncoding.EncodeToString([]byte("not-an-int"))
-			page, err = requestStore.List(ctx, &store.ResourceListOptions{
+			page, err = requestStore.ListRun(ctx, &store.ResourceListOptions{
 				PageToken: &malformedToken,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(page.Resources).To(HaveLen(3))
+			Expect(page.Resources).To(HaveLen(5))
 		})
 	})
 

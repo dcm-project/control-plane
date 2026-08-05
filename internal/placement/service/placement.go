@@ -186,11 +186,10 @@ func (s *PlacementService) GetRun(ctx context.Context, runID string) (*types.Run
 }
 
 // ListRun lists runs (resources grouped by run_id).
-// TODO: Paginate by distinct run_id (then load full resource sets per run).
-// Paginating resource rows first can split a multi-resource run across pages.
+// Pagination is by distinct run_id.
 func (s *PlacementService) ListRun(ctx context.Context, opts *store.ResourceListOptions) (*types.ListRunResult, error) {
 	log := logging.FromContext(ctx)
-	result, err := s.store.Resource().List(ctx, opts)
+	result, err := s.store.Resource().ListRun(ctx, opts)
 	if err != nil {
 		log.Error("Failed to list runs", "error", err)
 		return nil, NewInternalError(fmt.Sprintf("failed to list runs: %v", err))

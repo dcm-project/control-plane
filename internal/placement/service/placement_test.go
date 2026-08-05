@@ -433,7 +433,7 @@ var _ = Describe("PlacementService", func() {
 			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
 
 			// Verify resource was NOT persisted in DB (rollback worked)
-			resources, err := dataStore.Resource().List(ctx, &store.ResourceListOptions{})
+			resources, err := dataStore.Resource().ListRun(ctx, &store.ResourceListOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resources.Resources).To(BeEmpty())
 		})
@@ -455,7 +455,7 @@ var _ = Describe("PlacementService", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(BeNil())
 
-			resources, err := dataStore.Resource().List(ctx, &store.ResourceListOptions{})
+			resources, err := dataStore.Resource().ListRun(ctx, &store.ResourceListOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resources.Resources).To(BeEmpty())
 		})
@@ -480,7 +480,7 @@ var _ = Describe("PlacementService", func() {
 			Expect(svcErr.Code).To(Equal(service.ErrCodeSPRMError))
 
 			// Verify resource was NOT persisted in DB (rollback worked)
-			resources, err := dataStore.Resource().List(ctx, &store.ResourceListOptions{})
+			resources, err := dataStore.Resource().ListRun(ctx, &store.ResourceListOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resources.Resources).To(BeEmpty())
 		})
@@ -505,7 +505,7 @@ var _ = Describe("PlacementService", func() {
 			Expect(svcErr.Code).To(Equal(service.ErrCodeProviderError))
 
 			// Verify resource was NOT persisted in DB (rollback worked)
-			resources, err := dataStore.Resource().List(ctx, &store.ResourceListOptions{})
+			resources, err := dataStore.Resource().ListRun(ctx, &store.ResourceListOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resources.Resources).To(BeEmpty())
 		})
@@ -837,6 +837,50 @@ var _ = Describe("PlacementService", func() {
 			Expect(result.RunId).To(Equal("new-run-deferred-fail"))
 
 			_ = getStoredResource(ctx, dataStore, *result.Id)
+		})
+	})
+
+	Describe("ListRun", func() {
+		It("paginates by run and keeps multi-resource runs intact", func() {
+			_, err := placementSvc.CreateRun(ctx, &types.CreateRunRequest{
+				CatalogItemInstanceId: "cat-list-1",
+				RunId:                 "list-run-1",
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"size": "small"}},
+					{Name: "app", Spec: map[string]any{"image": "nginx"}, RequiresResources: []string{"db"}},
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = placementSvc.CreateRun(ctx, &types.CreateRunRequest{
+				CatalogItemInstanceId: "cat-list-2",
+				RunId:                 "list-run-2",
+				Resources:             []types.ResourceInput{{Name: "main", Spec: map[string]any{"cpu": 1}}},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = placementSvc.CreateRun(ctx, &types.CreateRunRequest{
+				CatalogItemInstanceId: "cat-list-3",
+				RunId:                 "list-run-3",
+				Resources:             []types.ResourceInput{{Name: "main", Spec: map[string]any{"cpu": 2}}},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			page1, err := placementSvc.ListRun(ctx, &store.ResourceListOptions{PageSize: 2})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(page1.Runs).To(HaveLen(2))
+			Expect(page1.NextPageToken).NotTo(BeNil())
+			Expect(page1.Runs[0].RunId).To(Equal("list-run-1"))
+			Expect(page1.Runs[0].Resources).To(HaveLen(2))
+
+			page2, err := placementSvc.ListRun(ctx, &store.ResourceListOptions{
+				PageSize:  2,
+				PageToken: page1.NextPageToken,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(page2.Runs).To(HaveLen(1))
+			Expect(page2.Runs[0].RunId).To(Equal("list-run-3"))
+			Expect(page2.NextPageToken).To(BeNil())
 		})
 	})
 })
