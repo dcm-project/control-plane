@@ -384,48 +384,6 @@ var _ = Describe("InstanceService", func() {
 			Expect(statusUpdateErr).NotTo(HaveOccurred())
 		})
 
-		It("does not let the provider's own synchronous response regress a newer status already applied mid-dispatch (BAC-5)", func() {
-			// Same mid-dispatch event as BAC-1, but the provider's own HTTP response
-			// reports a stale status ("PROVISIONING") relative to the async event
-			// that already landed ("RUNNING"). The final record must keep the newer,
-			// real status, not whatever the synchronous response says.
-			statusUpdateErrCh := make(chan error, 1)
-			mockProviderStaleResponse := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				instanceID := r.URL.Query().Get("id")
-				statusUpdateErrCh <- dataStore.ServiceTypeInstance().UpdateStatus(ctx, instanceID, "RUNNING", "provisioning started")
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				_ = json.NewEncoder(w).Encode(map[string]string{
-					"id":     instanceID,
-					"status": "PROVISIONING",
-				})
-			}))
-			defer mockProviderStaleResponse.Close()
-
-			providerStaleResponse := model.Provider{
-				ID:           uuid.New().String(),
-				Name:         "provider-stale-response",
-				ServiceType:  "vm",
-				Endpoint:     mockProviderStaleResponse.URL,
-				HealthStatus: model.HealthStatusReady,
-			}
-			Expect(db.Create(&providerStaleResponse).Error).NotTo(HaveOccurred())
-
-			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "provider-stale-response",
-				Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
-			}
-
-			result, err := instanceService.CreateInstance(ctx, req, nil)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(<-statusUpdateErrCh).NotTo(HaveOccurred())
-
-			fetched, err := instanceService.GetInstance(ctx, *result.Id, false)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(fetched.Status).NotTo(BeNil())
-			Expect(*fetched.Status).To(Equal("RUNNING"))
-		})
-
 		It("does not leave an orphaned instance visible after a provider failure (BAC-2)", func() {
 			mockProviderFailing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)

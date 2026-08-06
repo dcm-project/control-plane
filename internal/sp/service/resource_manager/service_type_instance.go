@@ -103,8 +103,7 @@ func (s *InstanceService) CreateInstance(ctx context.Context, request *resource_
 	}
 
 	// Send request to provider endpoint with the resolved ID
-	providerResponse, err := s.createInstanceWithProvider(ctx, provider.Endpoint, request, instanceID)
-	if err != nil {
+	if _, err := s.createInstanceWithProvider(ctx, provider.Endpoint, request, instanceID); err != nil {
 		log.Error("Provider provisioning failed", "instance_id", *instanceID, "provider_name", providerName, "error", err)
 		if delErr := s.store.ServiceTypeInstance().HardDelete(ctx, *instanceID); delErr != nil {
 			log.Error("Failed to roll back placeholder instance after provider failure", "instance_id", *instanceID, "error", delErr)
@@ -112,27 +111,10 @@ func (s *InstanceService) CreateInstance(ctx context.Context, request *resource_
 		return nil, service.NewProviderError(fmt.Sprintf("Error from Provider (%s): %v", providerName, err))
 	}
 
-	// Apply the provider's response status, but only if a real status event
-	// hasn't already moved this instance past the PENDING placeholder - a
-	// newer, real status must win over this synchronous response, which may
-	// already be stale by the time it arrives (this is the same class of
-	// hazard this fix closes, one step later in the flow).
-	applied, err := s.store.ServiceTypeInstance().UpdateStatusIfPending(ctx, *instanceID, rmstore.StatusPending, providerResponse.Status, "")
-	switch {
-	case err != nil:
-		// The row already exists, so a later real status event self-heals it -
-		// this isn't a full "lost create" like the bug this replaces.
-		log.Warn("Failed to apply post-dispatch status update; a later status event will self-heal", "instance_id", *instanceID, "error", err)
-	case applied:
-		created.Status = providerResponse.Status
-	default:
-		if refreshed, getErr := s.store.ServiceTypeInstance().Get(ctx, *instanceID, false); getErr == nil {
-			created = refreshed
-		} else {
-			log.Warn("Failed to re-fetch instance after a newer status event pre-empted the provider response", "instance_id", *instanceID, "error", getErr)
-		}
-	}
-
+	// The row stays PENDING here - StatusConsumer owns every status transition
+	// from this point on. The provider's synchronous response isn't persisted:
+	// it's immediately superseded by StatusConsumer's async update in practice,
+	// and nothing downstream reads it off the create response.
 	log.Info("Instance created successfully",
 		"instance_id", created.ID,
 		"provider_name", providerName,
