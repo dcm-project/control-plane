@@ -82,32 +82,61 @@ func (s *InstanceService) CreateInstance(ctx context.Context, request *resource_
 		return nil, service.NewValidationError("spec.service_type must not be empty")
 	}
 
-	// Send request to provider endpoint with the resolved ID
-	providerResponse, err := s.createInstanceWithProvider(ctx, provider.Endpoint, request, instanceID)
-	if err != nil {
-		log.Error("Provider provisioning failed", "instance_id", *instanceID, "provider_name", providerName, "error", err)
-		return nil, service.NewProviderError(fmt.Sprintf("Error from Provider (%s): %v", providerName, err))
-	}
-
-	// Create instance in database
+	// Persist a placeholder row *before* dispatching to the provider. This closes
+	// the race where a status event for this instance (e.g. from StatusConsumer)
+	// arrives while the create request is still in flight: the row already
+	// exists, so the update applies instead of being silently and permanently
+	// discarded as ErrInstanceNotFound (see enhancements/sp-resource-manager and
+	// sp-resource-status-reader design docs).
 	instance := model.ServiceTypeInstance{
 		ID:           *instanceID,
 		ProviderName: providerName,
 		ServiceType:  serviceType,
-		Status:       providerResponse.Status,
+		Status:       rmstore.StatusPending,
 		Spec:         request.Spec,
 	}
 
 	created, err := s.store.ServiceTypeInstance().Create(ctx, instance)
 	if err != nil {
 		log.Error("Failed to create instance in store", "instance_id", *instanceID, "error", err)
-		return nil, service.NewInternalError(fmt.Sprintf("failed to create database record for instance %s: %v", providerResponse.ID, err))
+		return nil, service.NewInternalError(fmt.Sprintf("failed to create database record for instance %s: %v", *instanceID, err))
+	}
+
+	// Send request to provider endpoint with the resolved ID
+	providerResponse, err := s.createInstanceWithProvider(ctx, provider.Endpoint, request, instanceID)
+	if err != nil {
+		log.Error("Provider provisioning failed", "instance_id", *instanceID, "provider_name", providerName, "error", err)
+		if delErr := s.store.ServiceTypeInstance().HardDelete(ctx, *instanceID); delErr != nil {
+			log.Error("Failed to roll back placeholder instance after provider failure", "instance_id", *instanceID, "error", delErr)
+		}
+		return nil, service.NewProviderError(fmt.Sprintf("Error from Provider (%s): %v", providerName, err))
+	}
+
+	// Apply the provider's response status, but only if a real status event
+	// hasn't already moved this instance past the PENDING placeholder - a
+	// newer, real status must win over this synchronous response, which may
+	// already be stale by the time it arrives (this is the same class of
+	// hazard this fix closes, one step later in the flow).
+	applied, err := s.store.ServiceTypeInstance().UpdateStatusIfPending(ctx, *instanceID, rmstore.StatusPending, providerResponse.Status, "")
+	switch {
+	case err != nil:
+		// The row already exists, so a later real status event self-heals it -
+		// this isn't a full "lost create" like the bug this replaces.
+		log.Warn("Failed to apply post-dispatch status update; a later status event will self-heal", "instance_id", *instanceID, "error", err)
+	case applied:
+		created.Status = providerResponse.Status
+	default:
+		if refreshed, getErr := s.store.ServiceTypeInstance().Get(ctx, *instanceID, false); getErr == nil {
+			created = refreshed
+		} else {
+			log.Warn("Failed to re-fetch instance after a newer status event pre-empted the provider response", "instance_id", *instanceID, "error", getErr)
+		}
 	}
 
 	log.Info("Instance created successfully",
 		"instance_id", created.ID,
 		"provider_name", providerName,
-		"status", providerResponse.Status,
+		"status", created.Status,
 	)
 	return ModelToAPI(created), nil
 }

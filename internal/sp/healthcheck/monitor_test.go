@@ -151,6 +151,10 @@ func (m *mockInstanceStore) UpdateStatus(_ context.Context, _ string, _ string, 
 	return nil
 }
 
+func (m *mockInstanceStore) UpdateStatusIfPending(_ context.Context, _ string, _ string, _ string, _ string) (bool, error) {
+	return false, nil
+}
+
 func (m *mockInstanceStore) MarkForDeletion(_ context.Context, _ string) error { return nil }
 
 func (m *mockInstanceStore) ListPendingDeletions(_ context.Context) ([]model.ServiceTypeInstance, error) {

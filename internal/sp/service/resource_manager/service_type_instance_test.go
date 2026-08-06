@@ -13,6 +13,7 @@ import (
 	rmsvc "github.com/dcm-project/control-plane/internal/sp/service/resource_manager"
 	"github.com/dcm-project/control-plane/internal/sp/store"
 	"github.com/dcm-project/control-plane/internal/sp/store/model"
+	"github.com/dcm-project/control-plane/internal/sp/testutil"
 	"github.com/go-resty/resty/v2"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -69,7 +70,7 @@ var _ = Describe("InstanceService", func() {
 		}
 		Expect(db.Create(&provider).Error).NotTo(HaveOccurred())
 
-		dataStore = store.NewStore(db)
+		dataStore = store.NewStore(db, store.WithServiceTypeInstanceRetry(testutil.FastServiceTypeInstanceRetry()...))
 		instanceService = rmsvc.NewInstanceService(dataStore, resty.New().
 			SetTimeout(5*time.Second).
 			SetRetryCount(0))
@@ -342,18 +343,17 @@ var _ = Describe("InstanceService", func() {
 			Expect(providerCalled).To(BeFalse())
 		})
 
-		It("returns internal error with instance ID when DB insert fails", func() {
-			var instanceID string
-			var providerCallCount int
-			mockProviderWithID := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				providerCallCount++
-				instanceID = uuid.New().String()
-
-				if providerCallCount == 1 {
-					sqlDB, _ := db.DB()
-					_ = sqlDB.Close()
-				}
-
+		It("applies a status update that arrives while the create request is still in flight to the provider (BAC-1)", func() {
+			// The mock provider's handler is the exact dispatch point: while the
+			// synchronous create call to the provider is still outstanding, simulate
+			// a status event for this same instance arriving via the real production
+			// code path (StatusConsumer.handleMessage calls this same store method).
+			// The handler runs on httptest's own goroutine, so the result must cross
+			// back to the test over a channel rather than a shared variable.
+			statusUpdateErrCh := make(chan error, 1)
+			mockProviderMidDispatch := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				instanceID := r.URL.Query().Get("id")
+				statusUpdateErrCh <- dataStore.ServiceTypeInstance().UpdateStatus(ctx, instanceID, "RUNNING", "provisioning started")
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				_ = json.NewEncoder(w).Encode(map[string]string{
@@ -361,19 +361,112 @@ var _ = Describe("InstanceService", func() {
 					"status": "PROVISIONING",
 				})
 			}))
-			defer mockProviderWithID.Close()
+			defer mockProviderMidDispatch.Close()
 
-			providerWithID := model.Provider{
+			providerMidDispatch := model.Provider{
 				ID:           uuid.New().String(),
-				Name:         "provider-db-fail",
+				Name:         "provider-mid-dispatch",
 				ServiceType:  "vm",
-				Endpoint:     mockProviderWithID.URL,
+				Endpoint:     mockProviderMidDispatch.URL,
 				HealthStatus: model.HealthStatusReady,
 			}
-			Expect(db.Create(&providerWithID).Error).NotTo(HaveOccurred())
+			Expect(db.Create(&providerMidDispatch).Error).NotTo(HaveOccurred())
 
 			req := &resource_manager.ServiceTypeInstance{
-				ProviderName: "provider-db-fail",
+				ProviderName: "provider-mid-dispatch",
+				Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
+			}
+
+			_, err := instanceService.CreateInstance(ctx, req, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			statusUpdateErr := <-statusUpdateErrCh
+			Expect(statusUpdateErr).NotTo(HaveOccurred())
+		})
+
+		It("does not let the provider's own synchronous response regress a newer status already applied mid-dispatch (BAC-5)", func() {
+			// Same mid-dispatch event as BAC-1, but the provider's own HTTP response
+			// reports a stale status ("PROVISIONING") relative to the async event
+			// that already landed ("RUNNING"). The final record must keep the newer,
+			// real status, not whatever the synchronous response says.
+			statusUpdateErrCh := make(chan error, 1)
+			mockProviderStaleResponse := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				instanceID := r.URL.Query().Get("id")
+				statusUpdateErrCh <- dataStore.ServiceTypeInstance().UpdateStatus(ctx, instanceID, "RUNNING", "provisioning started")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(map[string]string{
+					"id":     instanceID,
+					"status": "PROVISIONING",
+				})
+			}))
+			defer mockProviderStaleResponse.Close()
+
+			providerStaleResponse := model.Provider{
+				ID:           uuid.New().String(),
+				Name:         "provider-stale-response",
+				ServiceType:  "vm",
+				Endpoint:     mockProviderStaleResponse.URL,
+				HealthStatus: model.HealthStatusReady,
+			}
+			Expect(db.Create(&providerStaleResponse).Error).NotTo(HaveOccurred())
+
+			req := &resource_manager.ServiceTypeInstance{
+				ProviderName: "provider-stale-response",
+				Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
+			}
+
+			result, err := instanceService.CreateInstance(ctx, req, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(<-statusUpdateErrCh).NotTo(HaveOccurred())
+
+			fetched, err := instanceService.GetInstance(ctx, *result.Id, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(fetched.Status).NotTo(BeNil())
+			Expect(*fetched.Status).To(Equal("RUNNING"))
+		})
+
+		It("does not leave an orphaned instance visible after a provider failure (BAC-2)", func() {
+			mockProviderFailing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error": "boom"}`))
+			}))
+			defer mockProviderFailing.Close()
+
+			providerFailing := model.Provider{
+				ID:           uuid.New().String(),
+				Name:         "provider-failing",
+				ServiceType:  "vm",
+				Endpoint:     mockProviderFailing.URL,
+				HealthStatus: model.HealthStatusReady,
+			}
+			Expect(db.Create(&providerFailing).Error).NotTo(HaveOccurred())
+
+			specifiedID := uuid.New().String()
+			req := &resource_manager.ServiceTypeInstance{
+				ProviderName: "provider-failing",
+				Spec:         map[string]interface{}{"cpu": 1, "service_type": "vm"},
+			}
+
+			_, err := instanceService.CreateInstance(ctx, req, &specifiedID)
+			Expect(err).To(HaveOccurred())
+
+			_, err = instanceService.GetInstance(ctx, specifiedID, false)
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(err).To(BeAssignableToTypeOf(svcErr))
+			errors.As(err, &svcErr)
+			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
+		})
+
+		It("returns internal error naming the instance id and never contacts the provider when the DB persist fails (BAC-4)", func() {
+			// Drop only the service_type_instances table so the provider lookup
+			// (a separate table) still succeeds, and the failure is isolated to the
+			// initial persist step - before the provider is ever dispatched to.
+			Expect(db.Migrator().DropTable(&model.ServiceTypeInstance{})).To(Succeed())
+
+			req := &resource_manager.ServiceTypeInstance{
+				ProviderName: "test-provider",
 				Spec:         map[string]interface{}{"cpu": 2, "service_type": "vm"},
 			}
 
@@ -385,7 +478,8 @@ var _ = Describe("InstanceService", func() {
 			errors.As(err, &svcErr)
 			Expect(svcErr.Code).To(Equal(service.ErrCodeInternal))
 			Expect(svcErr.Message).To(ContainSubstring("failed to create database record"))
-			Expect(svcErr.Message).To(ContainSubstring(instanceID))
+			Expect(svcErr.Message).To(MatchRegexp(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`))
+			Expect(providerCalled).To(BeFalse())
 		})
 	})
 

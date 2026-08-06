@@ -38,6 +38,7 @@ type ServiceTypeInstance interface { //nolint:interfacebloat
 	Get(ctx context.Context, id string, showDeleted bool) (*model.ServiceTypeInstance, error)
 	ExistsByID(ctx context.Context, id string) (bool, error)
 	UpdateStatus(ctx context.Context, instanceID string, status string, statusMessage string) error
+	UpdateStatusIfPending(ctx context.Context, instanceID string, pendingStatus string, status string, statusMessage string) (bool, error)
 	MarkForDeletion(ctx context.Context, id string) error
 	ListPendingDeletions(ctx context.Context) ([]model.ServiceTypeInstance, error)
 	IncrementDeletionRetry(ctx context.Context, id string) error
@@ -174,6 +175,25 @@ func (s *ServiceTypeInstanceStore) UpdateStatus(ctx context.Context, instanceID 
 	return nil
 }
 
+// UpdateStatusIfPending applies status/statusMessage only if the instance's
+// current status still equals pendingStatus. It reports applied=false (with
+// no error) if the row has already moved past that placeholder - e.g. a real
+// status event landed first - so callers can defer to that newer status
+// instead of overwriting it.
+func (s *ServiceTypeInstanceStore) UpdateStatusIfPending(ctx context.Context, instanceID string, pendingStatus string, status string, statusMessage string) (bool, error) {
+	result := s.db.WithContext(ctx).
+		Model(&model.ServiceTypeInstance{}).
+		Where("id = ? AND status = ?", instanceID, pendingStatus).
+		Updates(model.ServiceTypeInstance{
+			Status:        status,
+			StatusMessage: statusMessage,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
 func (s *ServiceTypeInstanceStore) ExistsByID(ctx context.Context, id string) (bool, error) {
 	var instance model.ServiceTypeInstance
 	err := s.db.WithContext(ctx).Select("id").Where("id = ?", id).Take(&instance).Error
@@ -191,6 +211,14 @@ const (
 	DeletionStatusFailed          = "FAILED"
 	DeletionStatusPendingProvider = "PENDING_PROVIDER"
 )
+
+// StatusPending is the placeholder status an instance record is created with
+// before its create request is dispatched to the provider. Persisting this
+// row first (rather than after a successful dispatch) closes the window
+// where a status event for the instance could arrive before any record of
+// it exists - see enhancements/sp-resource-manager and
+// sp-resource-status-reader design docs.
+const StatusPending = "PENDING"
 
 func (s *ServiceTypeInstanceStore) MarkForDeletion(ctx context.Context, id string) error {
 	now := time.Now()
