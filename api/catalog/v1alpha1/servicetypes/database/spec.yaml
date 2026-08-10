@@ -59,6 +59,15 @@ components:
             resources:
               $ref: '#/components/schemas/DatabaseResources'
 
+            replicas:
+              type: integer
+              description: Number of database replicas
+              minimum: 1
+              example: 3
+
+            network:
+              $ref: '#/components/schemas/DatabaseNetwork'
+
           additionalProperties: true
 
     DatabaseResources:
@@ -70,18 +79,67 @@ components:
         - storage
       properties:
         cpu:
-          type: integer
-          description: CPU cores
-          minimum: 1
-          example: 4
+          $ref: "#/components/schemas/DatabaseCpu"
         memory:
-          type: string
-          description: Memory with unit suffix
-          pattern: '^[0-9]+(MB|GB|TB)$'
-          example: 16GB
+          $ref: "#/components/schemas/DatabaseMemory"
         storage:
           type: string
           description: Storage size with unit suffix
           pattern: '^[0-9]+(MB|GB|TB)$'
           example: 100GB
+      additionalProperties: true
+
+    DatabaseCpu:
+      type: object
+      description: Database CPU constraints
+      required:
+        - min
+        - max
+      properties:
+        min:
+          type: string
+          description: Minimum guaranteed CPU in whole cores or millicores
+          pattern: '^[1-9][0-9]*m?$'
+          example: "500m"
+        max:
+          type: string
+          description: Maximum allowed CPU in whole cores or millicores
+          pattern: '^[1-9][0-9]*m?$'
+          example: "2000m"
+      additionalProperties: true
+
+    DatabaseMemory:
+      type: object
+      description: Database memory constraints
+      required:
+        - min
+        - max
+      properties:
+        min:
+          type: string
+          description: Minimum guaranteed memory with unit suffix
+          pattern: '^[0-9]+(MB|GB|TB)$'
+          example: "512MB"
+        max:
+          type: string
+          description: Maximum allowed memory with unit suffix
+          pattern: '^[0-9]+(MB|GB|TB)$'
+          example: "2GB"
+      additionalProperties: true
+
+    DatabaseNetwork:
+      type: object
+      description: Network configuration for the database
+      properties:
+        port:
+          type: integer
+          description: Port number for the database to listen on
+          minimum: 1
+          maximum: 65536
+        visibility:
+          type: string
+          desciption: Database visibility
+          enum:
+            - internal
+            - external
       additionalProperties: true
