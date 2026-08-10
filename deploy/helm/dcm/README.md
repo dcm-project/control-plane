@@ -69,9 +69,12 @@ Manages clusters via Red Hat Advanced Cluster Management.
 PULL_SECRET=$(oc get secret pull-secret -n openshift-config -o jsonpath='{.data.\.dockerconfigjson}')
 ```
 
-**Cluster access**: When `kubeconfig` is omitted, the chart creates a ServiceAccount with
-RBAC for HyperShift, Hive, and core Secret APIs (in-cluster auth on the hub). To use an
-external kubeconfig instead, pass raw kubeconfig content via `kubeconfig`.
+**Cluster access**: When both `kubeconfig` and `kubeconfigRef` are omitted, the chart creates
+a ServiceAccount with RBAC for HyperShift, Hive, KubeVirt, Agent and core Secret APIs (in-cluster auth on the
+hub). To use an external kubeconfig instead, provide it via one of:
+
+- `kubeconfig`: raw kubeconfig content (stored in a chart-managed Secret)
+- `kubeconfigRef`: name of a pre-existing Secret **in the release namespace** with key `kubeconfig`
 
 ```bash
 # In-cluster mode (SA + RBAC created by chart):
@@ -81,13 +84,21 @@ helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set acmClusterServiceProvider.baseDomain=example.com \
   --set acmClusterServiceProvider.pullSecret="$PULL_SECRET"
 
-# External kubeconfig mode:
+# External kubeconfig mode (inline):
 helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set acmClusterServiceProvider.enabled=true \
   --set acmClusterServiceProvider.namespace=default \
   --set acmClusterServiceProvider.baseDomain=example.com \
   --set acmClusterServiceProvider.pullSecret="$PULL_SECRET" \
   --set-file acmClusterServiceProvider.kubeconfig=/path/to/kubeconfig
+
+# External kubeconfig mode (pre-existing Secret):
+helm upgrade dcm deploy/helm/dcm --reuse-values \
+  --set acmClusterServiceProvider.enabled=true \
+  --set acmClusterServiceProvider.namespace=default \
+  --set acmClusterServiceProvider.baseDomain=example.com \
+  --set acmClusterServiceProvider.pullSecret="$PULL_SECRET" \
+  --set acmClusterServiceProvider.kubeconfigRef=my-kubeconfig-secret
 ```
 
 ### Three-Tier Demo Service Provider

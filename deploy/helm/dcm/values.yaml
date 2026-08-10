@@ -82,7 +82,9 @@ acmClusterServiceProvider:
                      # (secretKeyRef is same-namespace only; the Secret must use stringData)
   defaultInfraEnv: ""
   agentNamespace: ""
-  kubeconfig: ""     # raw kubeconfig content; omit for in-cluster SA auth with auto-created RBAC
+  kubeconfig: ""        # raw kubeconfig content; omit for in-cluster SA auth with auto-created RBAC
+  kubeconfigRef: ""     # name of an existing Secret in the *release namespace* with key "kubeconfig"
+                        # (use instead of kubeconfig to avoid inlining sensitive data in values)
 
 threeTierDemoServiceProvider:
   enabled: false
