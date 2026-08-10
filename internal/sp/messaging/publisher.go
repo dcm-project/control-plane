@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
@@ -53,15 +54,15 @@ func (p *Publisher) EnsureStream(ctx context.Context) error {
 }
 
 func (p *Publisher) PublishCreate(ctx context.Context, subject string, payload CreatePayload) error {
-	return p.publish(ctx, subject, CETypeCreateRequest, payload)
+	return p.publish(ctx, subject, CETypeCreateRequest, payload.ResourceID, payload)
 }
 
 func (p *Publisher) PublishDelete(ctx context.Context, subject string, payload DeletePayload) error {
-	return p.publish(ctx, subject, CETypeDeleteRequest, payload)
+	return p.publish(ctx, subject, CETypeDeleteRequest, payload.ResourceID, payload)
 }
 
 func (p *Publisher) PublishCancel(ctx context.Context, subject string, payload CancelPayload) error {
-	return p.publish(ctx, subject, CETypeCancelRequest, payload)
+	return p.publish(ctx, subject, CETypeCancelRequest, payload.ResourceID, payload)
 }
 
 // publish marshals the CloudEvent envelope and publishes it with a bounded
@@ -69,8 +70,9 @@ func (p *Publisher) PublishCancel(ctx context.Context, subject string, payload C
 // header, so a retried publish (by this backoff loop, or by a caller like
 // the pending sweep re-publishing after a timeout) that reaches JetStream
 // twice within the dedup window is deduplicated server-side rather than
-// producing a duplicate create/delete/cancel request to the agent.
-func (p *Publisher) publish(ctx context.Context, subject, ceType string, payload any) error {
+// producing a duplicate create/delete/cancel request to the agent. Also
+// logs the outcome once, centrally, for every call site.
+func (p *Publisher) publish(ctx context.Context, subject, ceType, instanceID string, payload any) error {
 	ceID := uuid.New().String()
 	envelope := map[string]any{
 		"specversion": CESpecVersion,
@@ -80,8 +82,11 @@ func (p *Publisher) publish(ctx context.Context, subject, ceType string, payload
 		"id":          ceID,
 		"data":        payload,
 	}
+	log := slog.With("instance_id", instanceID, "subject", subject, "event_type", ceType, "ce_id", ceID)
+
 	data, err := json.Marshal(envelope)
 	if err != nil {
+		log.Error("failed to marshal event, not publishing", "error", err)
 		return err
 	}
 
@@ -90,5 +95,10 @@ func (p *Publisher) publish(ctx context.Context, subject, ceType string, payload
 		return struct{}{}, pubErr
 	}
 	_, err = backoff.Retry(ctx, operation, defaultPublishRetryOptions()...)
-	return err
+	if err != nil {
+		log.Error("event publish failed", "error", err)
+		return err
+	}
+	log.Info("event published")
+	return nil
 }

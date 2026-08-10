@@ -165,7 +165,7 @@ func (c *ResponseConsumer) handleMessage(msg jetstream.Msg) {
 	// agent_name is required on every response CE payload; never fall back
 	// to "trust it anyway" for a missing value.
 	if data.AgentName == "" {
-		slog.Error("event missing agent_name, acking to discard", "resource_id", data.ResourceID)
+		slog.Error("event missing agent_name, acking to discard", "instance_id", data.ResourceID)
 		_ = msg.Ack()
 		return
 	}
@@ -202,7 +202,7 @@ func (c *ResponseConsumer) handleMessage(msg jetstream.Msg) {
 		newStatus = model.StatusCancelled
 		fromStatuses = []string{model.StatusQueued}
 	default:
-		slog.Warn("unknown event type, acking", "type", ce.Type)
+		slog.Warn("unknown event type, acking", "event_type", ce.Type)
 		_ = msg.Ack()
 		return
 	}
@@ -210,7 +210,7 @@ func (c *ResponseConsumer) handleMessage(msg jetstream.Msg) {
 	stiStore := c.store.ServiceTypeInstance()
 	applied, err := stiStore.UpdateStatusFrom(ctx, data.ResourceID, fromStatuses, data.AgentName, newStatus, "")
 	if err != nil {
-		slog.Error("failed to update status, nacking", "resource_id", data.ResourceID, "error", err)
+		slog.Error("failed to update status, nacking", "instance_id", data.ResourceID, "event_type", ce.Type, "agent_name", data.AgentName, "error", err)
 		_ = msg.NakWithDelay(5 * time.Second)
 		return
 	}
@@ -219,7 +219,9 @@ func (c *ResponseConsumer) handleMessage(msg jetstream.Msg) {
 		// reintroduce a TOCTOU window purely for logging; include agent_name
 		// so operators can cross-reference it against the DB instead.
 		slog.Info("stale or duplicate status event, instance already moved on, agent mismatch, or not found, acking",
-			"resource_id", data.ResourceID, "event_type", ce.Type, "agent_name", data.AgentName)
+			"instance_id", data.ResourceID, "event_type", ce.Type, "agent_name", data.AgentName)
+	} else {
+		slog.Info("status transition applied", "instance_id", data.ResourceID, "event_type", ce.Type, "agent_name", data.AgentName, "status", newStatus)
 	}
 
 	_ = msg.Ack()
@@ -234,14 +236,15 @@ func (c *ResponseConsumer) handleRequestQueued(ctx context.Context, data eventDa
 	if err := c.store.ServiceTypeInstance().MarkQueued(ctx, data.ResourceID, data.AgentName); err != nil {
 		if errors.Is(err, rmstore.ErrInstanceNotFound) {
 			slog.Warn("instance not found, status mismatch, or agent mismatch for request-queued, acking to discard poison message",
-				"resource_id", data.ResourceID, "agent_name", data.AgentName)
+				"instance_id", data.ResourceID, "event_type", messaging.CETypeRequestQueued, "agent_name", data.AgentName)
 			_ = msg.Ack()
 			return
 		}
-		slog.Error("failed to mark instance queued, nacking", "resource_id", data.ResourceID, "error", err)
+		slog.Error("failed to mark instance queued, nacking", "instance_id", data.ResourceID, "event_type", messaging.CETypeRequestQueued, "agent_name", data.AgentName, "error", err)
 		_ = msg.NakWithDelay(5 * time.Second)
 		return
 	}
+	slog.Info("status transition applied", "instance_id", data.ResourceID, "event_type", messaging.CETypeRequestQueued, "agent_name", data.AgentName, "status", model.StatusQueued)
 	_ = msg.Ack()
 }
 
@@ -258,11 +261,11 @@ func (c *ResponseConsumer) handleDeletionAcknowledged(ctx context.Context, data 
 	instance, err := stiStore.Get(ctx, data.ResourceID, true)
 	if err != nil {
 		if errors.Is(err, rmstore.ErrInstanceNotFound) {
-			slog.Info("deletion-acknowledged: instance already gone, acking", "resource_id", data.ResourceID)
+			slog.Info("deletion-acknowledged: instance already gone, acking", "instance_id", data.ResourceID, "event_type", messaging.CETypeDeletionAcknowledged, "agent_name", data.AgentName)
 			_ = msg.Ack()
 			return
 		}
-		slog.Error("deletion-acknowledged: failed to look up instance, nacking", "resource_id", data.ResourceID, "error", err)
+		slog.Error("deletion-acknowledged: failed to look up instance, nacking", "instance_id", data.ResourceID, "event_type", messaging.CETypeDeletionAcknowledged, "agent_name", data.AgentName, "error", err)
 		_ = msg.NakWithDelay(5 * time.Second)
 		return
 	}
@@ -274,12 +277,14 @@ func (c *ResponseConsumer) handleDeletionAcknowledged(ctx context.Context, data 
 		// its best-effort MarkForDeletion enrollment also set SCHEDULED.
 		if err := stiStore.HardDeleteFromAgent(ctx, data.ResourceID, data.AgentName); err != nil {
 			if !errors.Is(err, rmstore.ErrInstanceNotFound) {
-				slog.Error("deletion-acknowledged: failed to hard-delete instance, nacking", "resource_id", data.ResourceID, "error", err)
+				slog.Error("deletion-acknowledged: failed to hard-delete instance, nacking", "instance_id", data.ResourceID, "event_type", messaging.CETypeDeletionAcknowledged, "agent_name", data.AgentName, "error", err)
 				_ = msg.NakWithDelay(5 * time.Second)
 				return
 			}
 			slog.Info("deletion-acknowledged: instance already gone or agent mismatch, acking",
-				"resource_id", data.ResourceID, "agent_name", data.AgentName)
+				"instance_id", data.ResourceID, "event_type", messaging.CETypeDeletionAcknowledged, "agent_name", data.AgentName)
+		} else {
+			slog.Info("deletion-acknowledged: instance hard-deleted", "instance_id", data.ResourceID, "event_type", messaging.CETypeDeletionAcknowledged, "agent_name", data.AgentName, "status", "DELETED")
 		}
 	case instance.Status == model.StatusPendingDeletion,
 		instance.DeletionStatus != nil && *instance.DeletionStatus == rmstore.DeletionStatusScheduled:
@@ -290,16 +295,18 @@ func (c *ResponseConsumer) handleDeletionAcknowledged(ctx context.Context, data 
 		if err := stiStore.MarkDeletionCompleteFromAgent(ctx, data.ResourceID, data.AgentName); err != nil {
 			if errors.Is(err, rmstore.ErrInstanceNotFound) {
 				slog.Info("deletion-acknowledged: instance already gone or agent mismatch, acking",
-					"resource_id", data.ResourceID, "agent_name", data.AgentName)
+					"instance_id", data.ResourceID, "event_type", messaging.CETypeDeletionAcknowledged, "agent_name", data.AgentName)
 			} else {
-				slog.Error("deletion-acknowledged: failed to mark deferred deletion complete, nacking", "resource_id", data.ResourceID, "error", err)
+				slog.Error("deletion-acknowledged: failed to mark deferred deletion complete, nacking", "instance_id", data.ResourceID, "event_type", messaging.CETypeDeletionAcknowledged, "agent_name", data.AgentName, "error", err)
 				_ = msg.NakWithDelay(5 * time.Second)
 				return
 			}
+		} else {
+			slog.Info("deletion-acknowledged: deferred deletion marked complete", "instance_id", data.ResourceID, "event_type", messaging.CETypeDeletionAcknowledged, "agent_name", data.AgentName, "status", "DELETED")
 		}
 	default:
 		slog.Info("deletion-acknowledged: deletion already finalized or instance was never deleting, ignoring stale/duplicate ack",
-			"resource_id", data.ResourceID, "status", instance.Status, "deletion_status", instance.DeletionStatus)
+			"instance_id", data.ResourceID, "event_type", messaging.CETypeDeletionAcknowledged, "agent_name", data.AgentName, "status", instance.Status, "deletion_status", instance.DeletionStatus)
 	}
 	_ = msg.Ack()
 }
@@ -318,21 +325,22 @@ func (c *ResponseConsumer) handleCancelRejected(ctx context.Context, data eventD
 	cancellableStatuses := []string{model.StatusQueued, model.StatusCancelled}
 	applied, err := stiStore.UpdateStatusFrom(ctx, data.ResourceID, cancellableStatuses, data.AgentName, model.StatusPendingDeletion, "")
 	if err != nil {
-		slog.Error("cancel-rejected: failed to update status, nacking", "resource_id", data.ResourceID, "error", err)
+		slog.Error("cancel-rejected: failed to update status, nacking", "instance_id", data.ResourceID, "event_type", messaging.CETypeCancelRejected, "agent_name", data.AgentName, "error", err)
 		_ = msg.NakWithDelay(5 * time.Second)
 		return
 	}
 	if !applied {
 		slog.Info("cancel-rejected: instance already moved to a terminal state or agent mismatch, skipping redundant delete",
-			"resource_id", data.ResourceID, "agent_name", data.AgentName)
+			"instance_id", data.ResourceID, "event_type", messaging.CETypeCancelRejected, "agent_name", data.AgentName)
 		_ = msg.Ack()
 		return
 	}
+	slog.Info("status transition applied", "instance_id", data.ResourceID, "event_type", messaging.CETypeCancelRejected, "agent_name", data.AgentName, "status", model.StatusPendingDeletion)
 
 	// Enroll in cleanup's retry/timeout tracking, not just the best-effort
 	// republish below: otherwise a failed republish is never retried.
 	if err := stiStore.MarkForDeletion(ctx, data.ResourceID); err != nil {
-		slog.Error("cancel-rejected: failed to enroll instance in deletion retry tracking", "resource_id", data.ResourceID, "error", err)
+		slog.Error("cancel-rejected: failed to enroll instance in deletion retry tracking", "instance_id", data.ResourceID, "event_type", messaging.CETypeCancelRejected, "agent_name", data.AgentName, "error", err)
 	}
 
 	instance, err := stiStore.Get(ctx, data.ResourceID, true)
@@ -344,7 +352,7 @@ func (c *ResponseConsumer) handleCancelRejected(ctx context.Context, data eventD
 				ServiceType: instance.ServiceType,
 			}
 			if pubErr := c.publisher.PublishDelete(ctx, subject, payload); pubErr != nil {
-				slog.Warn("cancel-rejected: publish delete failed, sweep will retry", "resource_id", data.ResourceID, "error", pubErr)
+				slog.Warn("cancel-rejected: publish delete failed, sweep will retry", "instance_id", data.ResourceID, "error", pubErr)
 			}
 		}
 	}

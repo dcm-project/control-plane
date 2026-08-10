@@ -1,8 +1,10 @@
 package pending_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -38,6 +40,27 @@ func limitToSingleConn(d *gorm.DB) {
 	sqlDB, err := d.DB()
 	Expect(err).NotTo(HaveOccurred())
 	sqlDB.SetMaxOpenConns(1)
+}
+
+// syncBuffer wraps bytes.Buffer with a mutex: the sweep writes logs from
+// its own background goroutine while a test concurrently polls the
+// buffer's contents via Eventually, which a plain bytes.Buffer doesn't
+// support safely.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // fakeReevaluator records ReEvaluateWithExclude invocations so tests can
@@ -290,6 +313,35 @@ var _ = Describe("Queued Sweep", func() {
 			Expect(db.First(&updated, "id = ?", instance.ID).Error).NotTo(HaveOccurred())
 			return updated.Status
 		}, time.Second, 10*time.Millisecond).Should(Equal("cancelled"))
+	})
+
+	It("logs the transition when a queued instance times out and is cancelled", func() {
+		pastTime := time.Now().Add(-2 * time.Minute)
+		agentName := "test-agent"
+		instance := model.ServiceTypeInstance{
+			ID:               uuid.New().String(),
+			ServiceType:      "vm",
+			Status:           "queued",
+			InstanceName:     "queued-sweep-log",
+			Spec:             map[string]any{"cpu": 2},
+			AgentName:        &agentName,
+			PendingStartedAt: &pastTime,
+		}
+		Expect(db.Create(&instance).Error).NotTo(HaveOccurred())
+
+		var buf syncBuffer
+		prevLogger := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+		defer slog.SetDefault(prevLogger)
+
+		sweep.Start(ctx)
+
+		Eventually(buf.String, time.Second, 10*time.Millisecond).Should(SatisfyAll(
+			ContainSubstring("timed out waiting for agent acknowledgement"),
+			ContainSubstring("instance_id="+instance.ID),
+			ContainSubstring("status=cancelled"),
+			ContainSubstring("agent_name="+agentName),
+		))
 	})
 
 	It("skips deletion requests", func() {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sync"
 	"time"
 
 	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
@@ -134,6 +135,27 @@ var _ = Describe("ResponseConsumer", func() {
 		}, 2*time.Second, 20*time.Millisecond).Should(Equal("provisioning"))
 	})
 
+	It("logs the status transition on a successful creation-acknowledged", func() {
+		instance := createPendingInstance(ctx, db)
+
+		var buf syncBuffer
+		prevLogger := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+		defer slog.SetDefault(prevLogger)
+
+		Expect(rc.Start(ctx)).To(Succeed())
+
+		publishAgentEvent(js, "dcm.agent.creation-acknowledged", instance.ID, testAgentName)
+
+		Eventually(buf.String, 2*time.Second, 20*time.Millisecond).Should(SatisfyAll(
+			ContainSubstring("status transition applied"),
+			ContainSubstring("instance_id="+instance.ID),
+			ContainSubstring("event_type=dcm.agent.creation-acknowledged"),
+			ContainSubstring("agent_name="+testAgentName),
+			ContainSubstring("status=provisioning"),
+		))
+	})
+
 	// A late creation-acknowledged from a superseded agent must not apply
 	// even though the instance is still "pending" - a status a genuine ack
 	// from the new agent could also legitimately arrive during.
@@ -154,7 +176,7 @@ var _ = Describe("ResponseConsumer", func() {
 	It("includes agent_name in the log line when a creation-acknowledged is rejected for an agent mismatch", func() {
 		instance := createPendingInstance(ctx, db)
 
-		var buf bytes.Buffer
+		var buf syncBuffer
 		prevLogger := slog.Default()
 		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
 		defer slog.SetDefault(prevLogger)
@@ -216,6 +238,27 @@ var _ = Describe("ResponseConsumer", func() {
 		Expect(*updated.PendingStartedAt).To(BeTemporally(">", staleTime))
 	})
 
+	It("logs the status transition on a successful request-queued", func() {
+		instance := createPendingInstance(ctx, db)
+
+		var buf syncBuffer
+		prevLogger := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+		defer slog.SetDefault(prevLogger)
+
+		Expect(rc.Start(ctx)).To(Succeed())
+
+		publishAgentEvent(js, "dcm.agent.request-queued", instance.ID, testAgentName)
+
+		Eventually(buf.String, 2*time.Second, 20*time.Millisecond).Should(SatisfyAll(
+			ContainSubstring("status transition applied"),
+			ContainSubstring("instance_id="+instance.ID),
+			ContainSubstring("event_type=dcm.agent.request-queued"),
+			ContainSubstring("agent_name="+testAgentName),
+			ContainSubstring("status=queued"),
+		))
+	})
+
 	// A stale request-queued from a superseded agent must not mark the
 	// instance queued or reset its pending timer.
 	It("ignores a request-queued from a superseded agent even though status still matches (identity check)", func() {
@@ -248,6 +291,28 @@ var _ = Describe("ResponseConsumer", func() {
 		Eventually(func() error {
 			return db.First(&model.ServiceTypeInstance{}, "id = ?", instance.ID).Error
 		}, 2*time.Second, 100*time.Millisecond).Should(MatchError(gorm.ErrRecordNotFound))
+	})
+
+	It("logs the hard-delete with event_type on a successful deletion-acknowledged (non-deferred)", func() {
+		instance := createPendingInstance(ctx, db)
+		Expect(db.Model(&instance).Update("status", "deleting").Error).NotTo(HaveOccurred())
+
+		var buf syncBuffer
+		prevLogger := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+		defer slog.SetDefault(prevLogger)
+
+		Expect(rc.Start(ctx)).To(Succeed())
+
+		publishAgentEvent(js, "dcm.agent.deletion-acknowledged", instance.ID, testAgentName)
+
+		Eventually(buf.String, 2*time.Second, 20*time.Millisecond).Should(SatisfyAll(
+			ContainSubstring("instance hard-deleted"),
+			ContainSubstring("instance_id="+instance.ID),
+			ContainSubstring("event_type=dcm.agent.deletion-acknowledged"),
+			ContainSubstring("agent_name="+testAgentName),
+			ContainSubstring("status=DELETED"),
+		))
 	})
 
 	// A stale deletion-acknowledged from a superseded agent must not
@@ -291,6 +356,28 @@ var _ = Describe("ResponseConsumer", func() {
 		// The row must still exist (soft-delete tombstone), unlike the
 		// non-deferred case above.
 		Expect(db.First(&model.ServiceTypeInstance{}, "id = ?", instance.ID).Error).NotTo(HaveOccurred())
+	})
+
+	It("logs the soft-complete with event_type on a successful deferred deletion-acknowledged", func() {
+		instance := createPendingInstance(ctx, db)
+		Expect(db.Model(&instance).Update("deletion_status", "SCHEDULED").Error).NotTo(HaveOccurred())
+
+		var buf syncBuffer
+		prevLogger := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+		defer slog.SetDefault(prevLogger)
+
+		Expect(rc.Start(ctx)).To(Succeed())
+
+		publishAgentEvent(js, "dcm.agent.deletion-acknowledged", instance.ID, testAgentName)
+
+		Eventually(buf.String, 2*time.Second, 20*time.Millisecond).Should(SatisfyAll(
+			ContainSubstring("deferred deletion marked complete"),
+			ContainSubstring("instance_id="+instance.ID),
+			ContainSubstring("event_type=dcm.agent.deletion-acknowledged"),
+			ContainSubstring("agent_name="+testAgentName),
+			ContainSubstring("status=DELETED"),
+		))
 	})
 
 	// Same mismatch treatment, for the deferred (soft-complete) branch.
@@ -406,6 +493,28 @@ var _ = Describe("ResponseConsumer", func() {
 		// republish above fails or the ack never arrives.
 		Expect(updated.DeletionStatus).NotTo(BeNil())
 		Expect(*updated.DeletionStatus).To(Equal("SCHEDULED"))
+	})
+
+	It("logs the status transition on a successful cancel-rejected", func() {
+		instance := createPendingInstance(ctx, db)
+		Expect(db.Model(&instance).Update("status", model.StatusQueued).Error).NotTo(HaveOccurred())
+
+		var buf syncBuffer
+		prevLogger := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+		defer slog.SetDefault(prevLogger)
+
+		Expect(rc.Start(ctx)).To(Succeed())
+
+		publishAgentEvent(js, "dcm.agent.cancel-rejected", instance.ID, testAgentName)
+
+		Eventually(buf.String, 2*time.Second, 20*time.Millisecond).Should(SatisfyAll(
+			ContainSubstring("status transition applied"),
+			ContainSubstring("instance_id="+instance.ID),
+			ContainSubstring("event_type=dcm.agent.cancel-rejected"),
+			ContainSubstring("agent_name="+testAgentName),
+			ContainSubstring("status=pending_deletion"),
+		))
 	})
 
 	It("does not clobber a terminal state on cancel-rejected (CAS guard)", func() {
@@ -570,6 +679,27 @@ var _ = Describe("ResponseConsumer", func() {
 		}, 300*time.Millisecond, 20*time.Millisecond).Should(Equal("cancelled"))
 	})
 })
+
+// syncBuffer wraps bytes.Buffer with a mutex: the consumer writes logs from
+// its own background goroutine while these tests concurrently poll the
+// buffer's contents via Eventually, which a plain bytes.Buffer doesn't
+// support safely.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 // currentStatus polls an instance's current status for use with
 // Eventually/Consistently, instead of a fixed time.Sleep before one read.

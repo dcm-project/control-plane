@@ -253,6 +253,12 @@ func (s *Sweep) cancelQueuedInstance(ctx context.Context, inst *model.ServiceTyp
 		log.Debug("sweep: queued instance already moved by response consumer or another sweep")
 		return
 	}
+	agentName := ""
+	if inst.AgentName != nil {
+		agentName = *inst.AgentName
+	}
+	log.Info("sweep: queued instance timed out waiting for agent acknowledgement, cancelling",
+		"status", model.StatusCancelled, "agent_name", agentName, "retry_count", inst.RetryCount+1)
 
 	s.notifyAgentOfCancel(ctx, inst)
 

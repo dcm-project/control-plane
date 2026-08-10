@@ -1,9 +1,11 @@
 package messaging_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/dcm-project/control-plane/internal/sp/messaging"
@@ -239,6 +241,48 @@ var _ = Describe("Publisher", func() {
 				ResourceID: "res-fail", ServiceType: "vm", Spec: map[string]any{},
 			})
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Describe("Logging", func() {
+		It("logs the published event on success with instance_id, subject, event_type and ce_id", func() {
+			var buf bytes.Buffer
+			prevLogger := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+			defer slog.SetDefault(prevLogger)
+
+			agentTopic := "dcm.agent.prod-eu-west-1"
+			payload := messaging.CreatePayload{ResourceID: "res-log-1", ServiceType: "vm", Spec: map[string]any{}}
+
+			Expect(publisher.PublishCreate(ctx, agentTopic, payload)).To(Succeed())
+
+			Expect(buf.String()).To(SatisfyAll(
+				ContainSubstring("event published"),
+				ContainSubstring("instance_id=res-log-1"),
+				ContainSubstring("subject="+agentTopic),
+				ContainSubstring("event_type=dcm.request.create"),
+				ContainSubstring("ce_id="),
+			))
+		})
+
+		It("logs the publish failure once retries are exhausted", func() {
+			var buf bytes.Buffer
+			prevLogger := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+			defer slog.SetDefault(prevLogger)
+
+			flaky := &flakyJetStream{JetStream: js, failures: 99}
+			failingPublisher := messaging.NewPublisher(flaky)
+
+			err := failingPublisher.PublishCreate(ctx, "dcm.agent.always-fails", messaging.CreatePayload{
+				ResourceID: "res-log-fail", ServiceType: "vm", Spec: map[string]any{},
+			})
+			Expect(err).To(HaveOccurred())
+
+			Expect(buf.String()).To(SatisfyAll(
+				ContainSubstring("event publish failed"),
+				ContainSubstring("instance_id=res-log-fail"),
+			))
 		})
 	})
 
