@@ -57,6 +57,15 @@ rules:
   - apiGroups: ["hive.openshift.io"]
     resources: ["clusterimagesets"]
     verbs: ["get", "list"]
+  - apiGroups: ["hypershift.openshift.io"]
+    resources: ["hostedclusters"]
+    verbs: ["get", "list"]
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachineinstances"]
+    verbs: ["list"]
+  - apiGroups: ["agent-install.openshift.io"]
+    resources: ["agents"]
+    verbs: ["list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
