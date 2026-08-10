@@ -77,7 +77,7 @@ acmClusterServiceProvider:
   namespace: default
   baseDomain: ""
   pullSecret: ""     # base64-encoded .dockerconfigjson (required unless pullSecretRef is set)
-  pullSecretRef: ""  # name of an existing Secret with key "pull-secret" containing base64 .dockerconfigjson
+  pullSecretRef: ""  # name of an existing Secret whose stringData["pull-secret"] holds base64-encoded .dockerconfigjson
   defaultInfraEnv: ""
   agentNamespace: ""
   kubeconfig: ""     # raw kubeconfig content; omit for in-cluster SA auth with auto-created RBAC

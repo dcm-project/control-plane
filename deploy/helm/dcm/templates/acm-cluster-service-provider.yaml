@@ -1,6 +1,6 @@
 {{- if .Values.acmClusterServiceProvider.enabled }}
 {{- if not (or .Values.acmClusterServiceProvider.pullSecret .Values.acmClusterServiceProvider.pullSecretRef) }}
-  {{- fail "acmClusterServiceProvider.pullSecret or acmClusterServiceProvider.pullSecretRef is required (base64-encoded .dockerconfigjson)" }}
+  {{- fail "acmClusterServiceProvider.pullSecret or acmClusterServiceProvider.pullSecretRef is required (base64-encoded .dockerconfigjson); the referenced Secret must store the value via stringData so the SP receives it base64-encoded" }}
 {{- end }}
 {{- if not .Values.acmClusterServiceProvider.kubeconfig }}
 apiVersion: v1
@@ -93,7 +93,7 @@ metadata:
   labels:
     {{- include "dcm.labels" . | nindent 4 }}
 type: Opaque
-data:
+stringData:
   pull-secret: {{ .Values.acmClusterServiceProvider.pullSecret | quote }}
 ---
 {{- end }}
