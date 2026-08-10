@@ -59,8 +59,10 @@ Manages clusters via Red Hat Advanced Cluster Management.
 
 **Pull secret** (required): Provide a base64-encoded `.dockerconfigjson` via one of:
 
-- `pullSecret`: inline value (stored in a chart-managed Secret)
-- `pullSecretRef`: name of a pre-existing Secret with key `pull-secret`
+- `pullSecret`: inline value (stored in a chart-managed Secret via `stringData`)
+- `pullSecretRef`: name of a pre-existing Secret **in the release namespace** with a
+  `stringData` key `pull-secret` whose value is the base64-encoded `.dockerconfigjson` string
+  (`secretKeyRef` is same-namespace only)
 
 ```bash
 # Encode your pull secret
