@@ -57,11 +57,35 @@ helm upgrade dcm deploy/helm/dcm --reuse-values \
 
 Manages clusters via Red Hat Advanced Cluster Management.
 
+**Pull secret** (required): Provide a base64-encoded `.dockerconfigjson` via one of:
+
+- `pullSecret`: inline value (stored in a chart-managed Secret)
+- `pullSecretRef`: name of a pre-existing Secret with key `pull-secret`
+
 ```bash
+# Encode your pull secret
+PULL_SECRET=$(oc get secret pull-secret -n openshift-config -o jsonpath='{.data.\.dockerconfigjson}')
+```
+
+**Cluster access**: When `kubeconfig` is omitted, the chart creates a ServiceAccount with
+RBAC for HyperShift, Hive, and core Secret APIs (in-cluster auth on the hub). To use an
+external kubeconfig instead, pass raw kubeconfig content via `kubeconfig`.
+
+```bash
+# In-cluster mode (SA + RBAC created by chart):
 helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set acmClusterServiceProvider.enabled=true \
   --set acmClusterServiceProvider.namespace=default \
-  --set acmClusterServiceProvider.baseDomain=example.com
+  --set acmClusterServiceProvider.baseDomain=example.com \
+  --set acmClusterServiceProvider.pullSecret="$PULL_SECRET"
+
+# External kubeconfig mode:
+helm upgrade dcm deploy/helm/dcm --reuse-values \
+  --set acmClusterServiceProvider.enabled=true \
+  --set acmClusterServiceProvider.namespace=default \
+  --set acmClusterServiceProvider.baseDomain=example.com \
+  --set acmClusterServiceProvider.pullSecret="$PULL_SECRET" \
+  --set-file acmClusterServiceProvider.kubeconfig=/path/to/kubeconfig
 ```
 
 ### Three-Tier Demo Service Provider

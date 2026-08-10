@@ -22,6 +22,13 @@ Fullname helper.
 {{- end }}
 
 {{/*
+Cluster-scoped resource name (includes namespace to avoid collisions).
+*/}}
+{{- define "dcm.clusterResourceName" -}}
+{{- printf "%s-%s" (include "dcm.fullname" .) .Release.Namespace | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
 Common labels.
 */}}
 {{- define "dcm.labels" -}}
