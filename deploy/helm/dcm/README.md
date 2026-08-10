@@ -64,6 +64,8 @@ Manages clusters via Red Hat Advanced Cluster Management.
   `stringData` key `pull-secret` whose value is the base64-encoded `.dockerconfigjson` string
   (`secretKeyRef` is same-namespace only)
 
+> If both are set, `pullSecret` takes precedence and `pullSecretRef` is ignored.
+
 ```bash
 # Encode your pull secret
 PULL_SECRET=$(oc get secret pull-secret -n openshift-config -o jsonpath='{.data.\.dockerconfigjson}')
