@@ -59,7 +59,7 @@ components:
             resources:
               $ref: '#/components/schemas/DatabaseResources'
 
-            connection_details:
+            connection_string:
               type: string
               description: |
                 Database connection URI (response-only).
