@@ -1,3 +1,4 @@
+// Package config provides configuration loading for the dcm-gitops process.
 package config
 
 import (
