@@ -1,3 +1,4 @@
+// Package app implements the dcm-gitops controller process.
 package app
 
 import (
