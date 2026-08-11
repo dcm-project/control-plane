@@ -53,7 +53,7 @@ func (s *GitRepositoryStore) List(ctx context.Context, opts *GitRepositoryListOp
 	var repos model.GitRepositoryList
 	query := s.db.WithContext(ctx)
 
-	pageSize := 50
+	pageSize := 100
 	if opts != nil && opts.PageSize > 0 {
 		pageSize = opts.PageSize
 	}
@@ -121,7 +121,7 @@ func (s *GitRepositoryStore) Create(ctx context.Context, repo model.GitRepositor
 
 func (s *GitRepositoryStore) Update(ctx context.Context, repo model.GitRepository) (*model.GitRepository, error) {
 	result := s.db.WithContext(ctx).Model(&repo).
-		Select("display_name", "url", "branch", "path", "interval_seconds", "max_retries", "backoff_seconds").
+		Select("display_name", "url", "branch", "path", "interval_seconds").
 		Clauses(clause.Returning{}).
 		Updates(&repo)
 	if result.Error != nil {
@@ -146,14 +146,17 @@ func (s *GitRepositoryStore) Delete(ctx context.Context, id string) error {
 
 func (s *GitRepositoryStore) UpdateSyncStatus(ctx context.Context, id, syncState, statusMessage, lastSyncedCommit string) error {
 	now := time.Now().UTC()
+	updates := map[string]any{
+		"sync_state":     syncState,
+		"status_message": statusMessage,
+		"last_sync_time": &now,
+	}
+	if lastSyncedCommit != "" {
+		updates["last_synced_commit"] = lastSyncedCommit
+	}
 	result := s.db.WithContext(ctx).Model(&model.GitRepository{}).
 		Where("id = ?", id).
-		Updates(map[string]any{
-			"sync_state":         syncState,
-			"status_message":     statusMessage,
-			"last_synced_commit": lastSyncedCommit,
-			"last_sync_time":     &now,
-		})
+		Updates(updates)
 	if result.Error != nil {
 		return result.Error
 	}

@@ -14,8 +14,6 @@ type GitRepository struct {
 	Branch           string     `gorm:"column:branch;not null;default:main"`
 	Path             string     `gorm:"column:path;not null;default:."`
 	IntervalSeconds  int        `gorm:"column:interval_seconds;not null;default:60"`
-	MaxRetries       int        `gorm:"column:max_retries;not null;default:3"`
-	BackoffSeconds   int        `gorm:"column:backoff_seconds;not null;default:30"`
 	SyncState        string     `gorm:"column:sync_state;not null;default:PENDING"`
 	LastSyncedCommit string     `gorm:"column:last_synced_commit"`
 	StatusMessage    string     `gorm:"column:status_message"`

@@ -1,5 +1,4 @@
-// Package app implements the dcm-gitops controller process.
-package app
+package config
 
 import (
 	"fmt"
@@ -31,6 +30,9 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{}
 	if err := envconfig.Process("", cfg); err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
+	}
+	if cfg.PollInterval < 1 {
+		return nil, fmt.Errorf("POLL_INTERVAL must be >= 1 second, got %d", cfg.PollInterval)
 	}
 	return cfg, nil
 }

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path/filepath"
+	"strings"
 
 	v1alpha1 "github.com/dcm-project/control-plane/api/gitops/v1alpha1"
 	"github.com/dcm-project/control-plane/internal/gitops/store"
@@ -16,8 +18,6 @@ import (
 const (
 	minIntervalSeconds = 10
 	maxIntervalSeconds = 86400
-	maxRetries         = 100
-	maxBackoffSeconds  = 3600
 )
 
 var (
@@ -123,8 +123,21 @@ func validateGitRepository(req v1alpha1.GitRepository) error {
 	if req.Spec.Url == "" {
 		return fmt.Errorf("%w: spec.url is required", ErrInvalidArgument)
 	}
-	if u, err := url.Parse(req.Spec.Url); err != nil || u.Scheme == "" || u.Host == "" {
+	u, err := url.Parse(req.Spec.Url)
+	if err != nil || u.Scheme == "" || u.Host == "" {
 		return fmt.Errorf("%w: spec.url must be a valid URL with scheme and host", ErrInvalidArgument)
+	}
+	switch u.Scheme {
+	case "https", "http", "ssh":
+	default:
+		return fmt.Errorf("%w: spec.url scheme must be https, http, or ssh", ErrInvalidArgument)
+	}
+	if u.Port() != "" {
+		return fmt.Errorf("%w: spec.url must not include a port", ErrInvalidArgument)
+	}
+	host := u.Hostname()
+	if host == "localhost" || strings.HasPrefix(host, "127.") || host == "::1" || host == "0.0.0.0" || host == "metadata.google.internal" || host == "169.254.169.254" {
+		return fmt.Errorf("%w: spec.url must not reference localhost or link-local addresses", ErrInvalidArgument)
 	}
 	if req.Spec.IntervalSeconds != nil {
 		v := int(*req.Spec.IntervalSeconds)
@@ -132,13 +145,13 @@ func validateGitRepository(req v1alpha1.GitRepository) error {
 			return fmt.Errorf("%w: spec.interval_seconds must be between %d and %d", ErrInvalidArgument, minIntervalSeconds, maxIntervalSeconds)
 		}
 	}
-	if req.Spec.Reconciliation != nil && req.Spec.Reconciliation.RetryPolicy != nil {
-		rp := req.Spec.Reconciliation.RetryPolicy
-		if rp.MaxRetries != nil && (int(*rp.MaxRetries) < 0 || int(*rp.MaxRetries) > maxRetries) {
-			return fmt.Errorf("%w: spec.reconciliation.retry_policy.max_retries must be between 0 and %d", ErrInvalidArgument, maxRetries)
+	if req.Spec.Path != nil {
+		p := filepath.Clean(*req.Spec.Path)
+		if filepath.IsAbs(p) {
+			return fmt.Errorf("%w: spec.path must be a relative path", ErrInvalidArgument)
 		}
-		if rp.BackoffSeconds != nil && (int(*rp.BackoffSeconds) < 1 || int(*rp.BackoffSeconds) > maxBackoffSeconds) {
-			return fmt.Errorf("%w: spec.reconciliation.retry_policy.backoff_seconds must be between 1 and %d", ErrInvalidArgument, maxBackoffSeconds)
+		if p == ".." || strings.HasPrefix(p, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("%w: spec.path must not escape the repository root", ErrInvalidArgument)
 		}
 	}
 	return nil
@@ -179,23 +192,6 @@ func modelToAPI(m *model.GitRepository) v1alpha1.GitRepository {
 	interval := int32(m.IntervalSeconds)
 	repo.Spec.IntervalSeconds = &interval
 
-	maxRetries := int32(m.MaxRetries)
-	backoff := int32(m.BackoffSeconds)
-	repo.Spec.Reconciliation = &struct {
-		RetryPolicy *struct {
-			BackoffSeconds *int32 `json:"backoff_seconds,omitempty"`
-			MaxRetries     *int32 `json:"max_retries,omitempty"`
-		} `json:"retry_policy,omitempty"`
-	}{
-		RetryPolicy: &struct {
-			BackoffSeconds *int32 `json:"backoff_seconds,omitempty"`
-			MaxRetries     *int32 `json:"max_retries,omitempty"`
-		}{
-			MaxRetries:     &maxRetries,
-			BackoffSeconds: &backoff,
-		},
-	}
-
 	return repo
 }
 
@@ -223,8 +219,6 @@ func apiToModel(id string, req v1alpha1.GitRepository) model.GitRepository {
 		Branch:          "main",
 		Path:            ".",
 		IntervalSeconds: 60,
-		MaxRetries:      3,
-		BackoffSeconds:  30,
 		SyncState:       "PENDING",
 	}
 
@@ -237,15 +231,6 @@ func apiToModel(id string, req v1alpha1.GitRepository) model.GitRepository {
 	if req.Spec.IntervalSeconds != nil {
 		m.IntervalSeconds = int(*req.Spec.IntervalSeconds)
 	}
-	if req.Spec.Reconciliation != nil && req.Spec.Reconciliation.RetryPolicy != nil {
-		if req.Spec.Reconciliation.RetryPolicy.MaxRetries != nil {
-			m.MaxRetries = int(*req.Spec.Reconciliation.RetryPolicy.MaxRetries)
-		}
-		if req.Spec.Reconciliation.RetryPolicy.BackoffSeconds != nil {
-			m.BackoffSeconds = int(*req.Spec.Reconciliation.RetryPolicy.BackoffSeconds)
-		}
-	}
-
 	return m
 }
 
