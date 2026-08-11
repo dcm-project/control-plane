@@ -68,6 +68,23 @@ func ParseCatalogItemInstances(dir, specPath string) ParseResult {
 
 	fullPath := filepath.Join(dir, specPath)
 
+	// Verify the resolved path stays within the repo directory.
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		result.Errors = append(result.Errors, ParseError{File: dir, Err: fmt.Errorf("resolve repo dir: %w", err)})
+		return result
+	}
+	absFull, err := filepath.Abs(fullPath)
+	if err != nil {
+		result.Errors = append(result.Errors, ParseError{File: fullPath, Err: fmt.Errorf("resolve spec path: %w", err)})
+		return result
+	}
+	rel, err := filepath.Rel(absDir, absFull)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		result.Errors = append(result.Errors, ParseError{File: specPath, Err: fmt.Errorf("spec.path escapes repository root")})
+		return result
+	}
+
 	entries, err := os.ReadDir(fullPath)
 	if err != nil {
 		result.Errors = append(result.Errors, ParseError{File: fullPath, Err: err})

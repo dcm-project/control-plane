@@ -14,17 +14,19 @@ import (
 
 // Reconciler handles the reconciliation of a single GitRepository.
 type Reconciler struct {
-	gitopsStore store.Store
-	catalogSvc  catalogservice.CatalogItemInstanceService
-	gitClient   GitOperations
+	gitopsStore    store.Store
+	catalogSvc     catalogservice.CatalogItemInstanceService
+	catalogItemSvc catalogservice.CatalogItemService
+	gitClient      GitOperations
 }
 
 // NewReconciler creates a new Reconciler.
-func NewReconciler(gitopsStore store.Store, catalogSvc catalogservice.CatalogItemInstanceService, gitClient GitOperations) *Reconciler {
+func NewReconciler(gitopsStore store.Store, catalogSvc catalogservice.CatalogItemInstanceService, catalogItemSvc catalogservice.CatalogItemService, gitClient GitOperations) *Reconciler {
 	return &Reconciler{
-		gitopsStore: gitopsStore,
-		catalogSvc:  catalogSvc,
-		gitClient:   gitClient,
+		gitopsStore:    gitopsStore,
+		catalogSvc:     catalogSvc,
+		catalogItemSvc: catalogItemSvc,
+		gitClient:      gitClient,
 	}
 }
 
@@ -67,8 +69,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, repo model.GitRepository) er
 		return fmt.Errorf("all %d YAML files failed to parse", len(parseResult.Errors))
 	}
 
-	// 4. Get existing git-managed instances for this repo
-	existingInstances, err := r.listManagedInstances(ctx, repo.ID)
+	// 4. Get existing git-managed instance IDs for this repo
+	managedIDs, err := r.gitopsStore.ManagedInstance().ListByRepo(ctx, repo.ID)
 	if err != nil {
 		r.setError(ctx, repo.ID, fmt.Sprintf("failed to list managed instances: %s", err.Error()))
 		return fmt.Errorf("list managed instances: %w", err)
@@ -80,27 +82,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, repo model.GitRepository) er
 		desiredByName[d.Name] = d
 	}
 
-	existingByName := make(map[string]string, len(existingInstances)) // name -> id
-	for _, inst := range existingInstances {
-		if inst.Uid == nil {
-			slog.WarnContext(ctx, "Skipping instance with nil UID", "id", repo.ID, "display_name", inst.DisplayName)
-			continue
-		}
-		existingByName[inst.DisplayName] = *inst.Uid
+	existingByID := make(map[string]struct{}, len(managedIDs))
+	for _, id := range managedIDs {
+		existingByID[id] = struct{}{}
 	}
 
 	var toCreate []DesiredInstance
 	for name, desired := range desiredByName {
-		if _, exists := existingByName[name]; !exists {
+		if _, exists := existingByID[name]; !exists {
 			toCreate = append(toCreate, desired)
 		}
 	}
 
 	var toDelete []string // IDs to delete
-	for name, id := range existingByName {
-		if _, exists := desiredByName[name]; !exists {
+	for id := range existingByID {
+		if _, exists := desiredByName[id]; !exists {
 			toDelete = append(toDelete, id)
-			slog.InfoContext(ctx, "Will delete instance removed from Git", "id", repo.ID, "instance_name", name, "instance_id", id)
+			slog.InfoContext(ctx, "Will delete instance removed from Git", "id", repo.ID, "instance_id", id)
 		}
 	}
 
@@ -120,6 +118,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, repo model.GitRepository) er
 		if err := r.createInstance(ctx, repo.ID, latestCommit, desired); err != nil {
 			slog.ErrorContext(ctx, "Failed to create instance", "id", repo.ID, "instance_name", desired.Name, "error", err)
 			reconcileErrors = append(reconcileErrors, fmt.Sprintf("create %s: %s", desired.Name, err.Error()))
+			continue
+		}
+		if err := r.gitopsStore.ManagedInstance().Add(ctx, repo.ID, desired.Name); err != nil {
+			slog.ErrorContext(ctx, "Failed to record managed instance", "id", repo.ID, "instance_name", desired.Name, "error", err)
+			reconcileErrors = append(reconcileErrors, fmt.Sprintf("record %s: %s", desired.Name, err.Error()))
 		}
 	}
 
@@ -129,6 +132,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, repo model.GitRepository) er
 		if err := r.catalogSvc.Delete(ctx, instanceID); err != nil {
 			slog.ErrorContext(ctx, "Failed to delete instance", "id", repo.ID, "instance_id", instanceID, "error", err)
 			reconcileErrors = append(reconcileErrors, fmt.Sprintf("delete %s: %s", instanceID, err.Error()))
+			continue
+		}
+		if err := r.gitopsStore.ManagedInstance().Remove(ctx, repo.ID, instanceID); err != nil {
+			slog.ErrorContext(ctx, "Failed to remove managed instance record", "id", repo.ID, "instance_id", instanceID, "error", err)
+			reconcileErrors = append(reconcileErrors, fmt.Sprintf("unrecord %s: %s", instanceID, err.Error()))
 		}
 	}
 
@@ -144,19 +152,47 @@ func (r *Reconciler) Reconcile(ctx context.Context, repo model.GitRepository) er
 	return nil
 }
 
-func (r *Reconciler) createInstance(ctx context.Context, _, _ string, desired DesiredInstance) error {
+func (r *Reconciler) createInstance(ctx context.Context, repoID, latestCommit string, desired DesiredInstance) error {
 	apiVersion := desired.ApiVersion
 	if apiVersion == "" {
 		apiVersion = "v1alpha1"
 	}
 
-	userValues := make([]catalogv1alpha1.UserValue, len(desired.UserValues))
-	for i, uv := range desired.UserValues {
-		userValues[i] = catalogv1alpha1.UserValue{
+	// Look up catalog item to get all resource names
+	catalogItem, err := r.catalogItemSvc.Get(ctx, desired.CatalogItemID)
+	if err != nil {
+		return fmt.Errorf("get catalog item %s: %w", desired.CatalogItemID, err)
+	}
+
+	// Merge gitops labels with user-defined labels from YAML metadata
+	mergedLabels := map[string]string{
+		"gitops.dcm.io/repository": repoID,
+		"gitops.dcm.io/commit":     latestCommit,
+	}
+	for k, v := range desired.Labels {
+		mergedLabels[k] = v
+	}
+	labelValue := map[string]interface{}{
+		"labels": mergedLabels,
+	}
+
+	// Inject labels for every resource in the catalog item
+	var userValues []catalogv1alpha1.UserValue
+	for _, resource := range catalogItem.Spec.Resources {
+		userValues = append(userValues, catalogv1alpha1.UserValue{
+			Resource: resource.Name,
+			Path:     "metadata",
+			Value:    labelValue,
+		})
+	}
+
+	// Append the user's original values
+	for _, uv := range desired.UserValues {
+		userValues = append(userValues, catalogv1alpha1.UserValue{
 			Resource: uv.Resource,
 			Path:     uv.Path,
 			Value:    uv.Value,
-		}
+		})
 	}
 
 	req := &catalogservice.CreateCatalogItemInstanceRequest{
@@ -170,21 +206,8 @@ func (r *Reconciler) createInstance(ctx context.Context, _, _ string, desired De
 	// Use the desired instance name as the ID
 	req.ID = &desired.Name
 
-	_, err := r.catalogSvc.Create(ctx, req)
+	_, err = r.catalogSvc.Create(ctx, req)
 	return err
-}
-
-func (r *Reconciler) listManagedInstances(ctx context.Context, _ string) ([]catalogv1alpha1.CatalogItemInstance, error) {
-	// List all instances and filter by gitops labels.
-	// A future optimization can add label-based filtering to the store.
-	result, err := r.catalogSvc.List(ctx, catalogservice.CatalogItemInstanceListOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO: filter by gitops labels once CatalogItemInstance supports labels.
-	// For now, return all instances — the reconciler will match by name.
-	return result.CatalogItemInstances, nil
 }
 
 func (r *Reconciler) setSynced(ctx context.Context, repoID, commit string) {

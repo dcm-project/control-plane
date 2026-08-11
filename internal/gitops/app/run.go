@@ -14,6 +14,7 @@ import (
 	catalogplacement "github.com/dcm-project/control-plane/internal/catalog/placement"
 	catalogservice "github.com/dcm-project/control-plane/internal/catalog/service"
 	catalogstore "github.com/dcm-project/control-plane/internal/catalog/store"
+	"github.com/dcm-project/control-plane/internal/gitops/config"
 	"github.com/dcm-project/control-plane/internal/gitops/controller"
 	gitopsstore "github.com/dcm-project/control-plane/internal/gitops/store"
 	gitopsmodel "github.com/dcm-project/control-plane/internal/gitops/store/model"
@@ -34,7 +35,7 @@ import (
 
 // Run starts the dcm-gitops controller process.
 func Run() int {
-	cfg, err := LoadConfig()
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		slog.Error("Failed to load configuration", "error", err)
 		return 1
@@ -63,7 +64,7 @@ func Run() int {
 	}()
 
 	// Migrate gitops schema
-	if err := db.AutoMigrate(&gitopsmodel.GitRepository{}); err != nil {
+	if err := db.AutoMigrate(&gitopsmodel.GitRepository{}, &gitopsmodel.ManagedInstance{}); err != nil {
 		slog.Error("Failed to migrate gitops schema", "error", err)
 		return 1
 	}
@@ -99,7 +100,7 @@ func Run() int {
 
 	// Create git client and reconciler
 	gitClient := controller.NewGitClient(cfg.GitWorkDir)
-	reconciler := controller.NewReconciler(gitopsDataStore, catalogSvc.CatalogItemInstance(), gitClient)
+	reconciler := controller.NewReconciler(gitopsDataStore, catalogSvc.CatalogItemInstance(), catalogSvc.CatalogItem(), gitClient)
 
 	// Create and start controller
 	pollInterval := time.Duration(cfg.PollInterval) * time.Second
@@ -118,7 +119,7 @@ func Run() int {
 	return 0
 }
 
-func openDB(cfg *Config) (*gorm.DB, error) {
+func openDB(cfg *config.Config) (*gorm.DB, error) {
 	var dialector gorm.Dialector
 	switch cfg.Database.Type {
 	case "pgsql":

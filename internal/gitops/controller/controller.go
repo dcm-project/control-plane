@@ -3,11 +3,13 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/dcm-project/control-plane/internal/gitops/store"
+	gitopsmodel "github.com/dcm-project/control-plane/internal/gitops/store/model"
 )
 
 // Controller manages per-GitRepository reconciliation goroutines.
@@ -25,7 +27,11 @@ type Controller struct {
 
 // NewController creates a new Controller.
 // pollInterval controls how often the controller reloads the list of GitRepositories from the DB.
+// It panics if pollInterval is not positive, since time.NewTicker requires a positive duration.
 func NewController(reconciler *Reconciler, gitopsStore store.Store, pollInterval time.Duration) *Controller {
+	if pollInterval <= 0 {
+		panic(fmt.Sprintf("gitops controller: pollInterval must be positive, got %s", pollInterval))
+	}
 	return &Controller{
 		reconciler:   reconciler,
 		store:        gitopsStore,
@@ -92,16 +98,20 @@ func (c *Controller) reconcileAll(ctx context.Context) {
 			}
 		}
 
-		mu := c.repoLock(repo.ID)
-		if !mu.TryLock() {
-			slog.DebugContext(ctx, "Skipping repo, reconciliation already in progress", "repo_id", repo.ID)
-			continue
-		}
+		c.reconcileOne(ctx, repo)
+	}
+}
 
-		if err := c.reconciler.Reconcile(ctx, repo); err != nil {
-			slog.ErrorContext(ctx, "Reconciliation failed", "repo_id", repo.ID, "error", err)
-		}
-		mu.Unlock()
+func (c *Controller) reconcileOne(ctx context.Context, repo gitopsmodel.GitRepository) {
+	mu := c.repoLock(repo.ID)
+	if !mu.TryLock() {
+		slog.DebugContext(ctx, "Skipping repo, reconciliation already in progress", "repo_id", repo.ID)
+		return
+	}
+	defer mu.Unlock()
+
+	if err := c.reconciler.Reconcile(ctx, repo); err != nil {
+		slog.ErrorContext(ctx, "Reconciliation failed", "repo_id", repo.ID, "error", err)
 	}
 }
 

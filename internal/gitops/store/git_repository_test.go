@@ -23,7 +23,7 @@ var _ = Describe("GitRepositoryStore", func() {
 		var err error
 		db, err = gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(db.AutoMigrate(&model.GitRepository{})).To(Succeed())
+		Expect(db.AutoMigrate(&model.GitRepository{}, &model.ManagedInstance{})).To(Succeed())
 		dataStore = store.NewStore(db)
 		ctx = context.Background()
 	})
@@ -213,8 +213,6 @@ var _ = Describe("GitRepositoryStore", func() {
 				Branch:          "develop",
 				Path:            "apps/",
 				IntervalSeconds: 30,
-				MaxRetries:      5,
-				BackoffSeconds:  10,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated.DisplayName).To(Equal("Updated"))

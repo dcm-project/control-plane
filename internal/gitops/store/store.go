@@ -6,17 +6,20 @@ import "gorm.io/gorm"
 type Store interface {
 	Close() error
 	GitRepository() GitRepository
+	ManagedInstance() ManagedInstance
 }
 
 type DataStore struct {
-	db            *gorm.DB
-	gitRepository GitRepository
+	db              *gorm.DB
+	gitRepository   GitRepository
+	managedInstance ManagedInstance
 }
 
 func NewStore(db *gorm.DB) Store {
 	return &DataStore{
-		db:            db,
-		gitRepository: NewGitRepository(db),
+		db:              db,
+		gitRepository:   NewGitRepository(db),
+		managedInstance: NewManagedInstance(db),
 	}
 }
 
@@ -30,4 +33,8 @@ func (s *DataStore) Close() error {
 
 func (s *DataStore) GitRepository() GitRepository {
 	return s.gitRepository
+}
+
+func (s *DataStore) ManagedInstance() ManagedInstance {
+	return s.managedInstance
 }
