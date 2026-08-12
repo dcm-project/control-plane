@@ -1016,5 +1016,50 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			Expect(getErr).ToNot(HaveOccurred())
 			Expect(result).ToNot(BeNil())
 		})
+
+		// Delete must distinguish PM failure kinds via mapPlacementError,
+		// like create/rehydrate, instead of a generic sentinel.
+		It("should return ErrPlacementManagerPolicyRejected when PM delete returns 406", func() {
+			instanceID := "delete-policy-fail"
+			seedCatalogItemInstance(ctx, str, instanceID)
+
+			mockPM.deleteFunc = func(_ context.Context, _ string) error {
+				return &placement.PlacementError{StatusCode: 406, Body: "policy rejected"}
+			}
+
+			err := svc.CatalogItemInstance().Delete(ctx, instanceID)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrPlacementManagerPolicyRejected)).To(BeTrue())
+
+			result, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
+			Expect(getErr).ToNot(HaveOccurred())
+			Expect(result).ToNot(BeNil())
+		})
+
+		It("should return ErrPlacementManagerProviderError when PM delete returns 422", func() {
+			instanceID := "delete-provider-fail"
+			seedCatalogItemInstance(ctx, str, instanceID)
+
+			mockPM.deleteFunc = func(_ context.Context, _ string) error {
+				return &placement.PlacementError{StatusCode: 422, Body: "provider error"}
+			}
+
+			err := svc.CatalogItemInstance().Delete(ctx, instanceID)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrPlacementManagerProviderError)).To(BeTrue())
+		})
+
+		It("should return ErrPlacementManagerPolicyDependency when PM delete returns 424", func() {
+			instanceID := "delete-dependency-fail"
+			seedCatalogItemInstance(ctx, str, instanceID)
+
+			mockPM.deleteFunc = func(_ context.Context, _ string) error {
+				return &placement.PlacementError{StatusCode: 424, Body: "policy dependency"}
+			}
+
+			err := svc.CatalogItemInstance().Delete(ctx, instanceID)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrPlacementManagerPolicyDependency)).To(BeTrue())
+		})
 	})
 })

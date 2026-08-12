@@ -57,6 +57,16 @@ services:
       NATS_URL: "nats://nats:4222"
       AUTH_DISABLED: "true"
       DCM_ADMIN_SUBJECT: "test-admin-sub"
+      # Tuned down from the 2m/10s production defaults so the self-heal
+      # subsystem test doesn't have to wait minutes for a real sweep cycle.
+      AGENT_PENDING_REQUEST_TIMEOUT: "5s"
+      AGENT_SWEEP_INTERVAL: "2s"
+      # Tuned down from the default of 3 so the retries-exhausted test
+      # (single agent, no fallback) reaches "failed" in ~10-15s instead of
+      # ~25-30s. Verified this doesn't change the outcome of the existing
+      # two-agent self-heal tests: they resolve on their first retry
+      # attempt, well under either limit.
+      AGENT_PENDING_REQUEST_MAX_RETRIES: "1"
     ports:
       - "8080:8080"
     depends_on:

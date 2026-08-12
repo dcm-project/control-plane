@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	placementagent "github.com/dcm-project/control-plane/internal/placement/agent"
 	"github.com/dcm-project/control-plane/internal/placement/logging"
 	"github.com/dcm-project/control-plane/internal/placement/policy"
 	"github.com/dcm-project/control-plane/internal/placement/sprm"
@@ -22,17 +23,30 @@ const resourceRollbackTimeout = 10 * time.Second
 
 // PlacementService handles business logic for placement request management.
 type PlacementService struct {
-	store  store.Store
-	policy policy.Client
-	sprm   sprm.Client
+	store       store.Store
+	policy      policy.Client
+	sprm        sprm.Client
+	agentClient placementagent.Client
 }
 
 // NewPlacementService creates a new PlacementService with the given store, policy client, and SPRM client.
-func NewPlacementService(store store.Store, policyClient policy.Client, sprmClient sprm.Client) *PlacementService {
-	return &PlacementService{
+func NewPlacementService(store store.Store, policyClient policy.Client, sprmClient sprm.Client, opts ...func(*PlacementService)) *PlacementService {
+	ps := &PlacementService{
 		store:  store,
 		policy: policyClient,
 		sprm:   sprmClient,
+	}
+	for _, opt := range opts {
+		opt(ps)
+	}
+	return ps
+}
+
+// WithAgentClient sets the agent client used to list ready agents for
+// policy evaluation.
+func WithAgentClient(client placementagent.Client) func(*PlacementService) {
+	return func(ps *PlacementService) {
+		ps.agentClient = client
 	}
 }
 
@@ -63,6 +77,12 @@ func (s *PlacementService) CreateRun(ctx context.Context, req *types.CreateRunRe
 		evaluatedSpec map[string]any
 	}
 
+	availableAgents, err := s.listAvailableAgents(ctx)
+	if err != nil {
+		log.Error("Failed to list available agents", "error", err)
+		return nil, err
+	}
+
 	// step 3: evaluate policy for each resource
 	prepared := make([]preparedResource, 0, len(req.Resources))
 	for _, resource := range req.Resources {
@@ -72,25 +92,28 @@ func (s *PlacementService) CreateRun(ctx context.Context, req *types.CreateRunRe
 		path := fmt.Sprintf("resources/%s", resourceID)
 
 		// Evaluate spec with policy engine
-		policyRequest := policy.EvaluateRequest{Spec: resource.Spec}
+		policyRequest := policy.EvaluateRequest{
+			Spec:            resource.Spec,
+			AvailableAgents: availableAgents,
+		}
 		log.Debug("Evaluating policy", "run_id", runID, "resource_id", resourceID, "name", resource.Name)
 		policyResponse, err := s.policy.Evaluate(ctx, policyRequest)
 		if err != nil {
 			log.Error("Policy evaluation failed", "run_id", runID, "resource_id", resourceID, "error", err)
 			return nil, handlePolicyError(err)
 		}
-		if policyResponse.SelectedProvider == "" {
-			log.Error("Policy response missing selected provider",
+		if policyResponse.SelectedAgent == "" {
+			log.Error("Policy response missing selected agent",
 				"run_id", runID,
 				"resource_id", resourceID,
 				"status", policyResponse.Status,
 			)
-			return nil, NewPolicyInternalError("policy response missing selected provider")
+			return nil, NewPolicyInternalError("policy response missing selected agent")
 		}
 
-		// Extract approvalStatus and providerName from policy response
+		// Extract approvalStatus and agentName from policy response
 		approval := policyResponse.Status
-		provider := policyResponse.SelectedProvider
+		agentName := policyResponse.SelectedAgent
 
 		prepared = append(prepared, preparedResource{
 			resource: model.Resource{
@@ -103,7 +126,7 @@ func (s *PlacementService) CreateRun(ctx context.Context, req *types.CreateRunRe
 				DagLevel:              resourceNameDagLevelMap[resource.Name],
 				Status:                types.ResourceStatusPending,
 				Path:                  path,
-				ProviderName:          &provider,
+				AgentName:             &agentName,
 				ApprovalStatus:        &approval,
 			},
 			evaluatedSpec: policyResponse.EvaluatedSpec,
@@ -133,9 +156,9 @@ func (s *PlacementService) CreateRun(ctx context.Context, req *types.CreateRunRe
 			continue
 		}
 		sprmRequest := sprm.CreateResourceRequest{
-			ID:           p.resource.ID,
-			Spec:         p.evaluatedSpec,
-			ProviderName: *p.resource.ProviderName,
+			ID:        p.resource.ID,
+			Spec:      p.evaluatedSpec,
+			AgentName: *p.resource.AgentName,
 		}
 		log.Debug("Provisioning resource via SPRM",
 			"run_id", runID,
@@ -318,7 +341,16 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 	newResourceID := uuid.New().String()
 
 	// Step 2: Re-evaluate the original spec through policy
-	policyRequest := policy.EvaluateRequest{Spec: oldResource.Spec}
+	availableAgents, err := s.listAvailableAgents(ctx)
+	if err != nil {
+		log.Error("Failed to list available agents for rehydration", "error", err)
+		return nil, err
+	}
+	policyRequest := policy.EvaluateRequest{
+		Spec:            oldResource.Spec,
+		AvailableAgents: availableAgents,
+	}
+
 	log.Debug("Re-evaluating policy for rehydration", "resource_id", resourceID)
 	policyResponse, err := s.policy.Evaluate(ctx, policyRequest)
 	if err != nil {
@@ -326,17 +358,16 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 		return nil, handlePolicyError(err)
 	}
 
-	if policyResponse.SelectedProvider == "" {
-		log.Error("Policy response missing selected provider during rehydration",
+	if policyResponse.SelectedAgent == "" {
+		log.Error("Policy response missing selected agent during rehydration",
 			"resource_id", resourceID,
 			"status", policyResponse.Status,
 		)
-		return nil, NewPolicyInternalError("policy response missing selected provider")
+		return nil, NewPolicyInternalError("policy response missing selected agent")
 	}
 
-	// Extract approvalStatus and providerName from policy response
+	// Extract approvalStatus from policy response
 	approvalStatus := policyResponse.Status
-	providerName := policyResponse.SelectedProvider
 
 	// Step 3: Create new resource in DB
 	newPath := fmt.Sprintf("resources/%s", newResourceID)
@@ -350,8 +381,8 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 		DagLevel:              oldResource.DagLevel,
 		Status:                types.ResourceStatusPending,
 		Path:                  newPath,
-		ProviderName:          &providerName,
 		ApprovalStatus:        &approvalStatus,
+		AgentName:             &policyResponse.SelectedAgent,
 	}
 
 	// Step 3: Create new resource in DB
@@ -367,9 +398,9 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 
 	// Step 4: Provision new resource in SPRM
 	sprmRequest := sprm.CreateResourceRequest{
-		ID:           newResourceID,
-		Spec:         policyResponse.EvaluatedSpec,
-		ProviderName: providerName,
+		ID:        newResourceID,
+		Spec:      policyResponse.EvaluatedSpec,
+		AgentName: policyResponse.SelectedAgent,
 	}
 	if _, err = s.sprm.CreateResource(ctx, sprmRequest); err != nil {
 		log.Error("SPRM provisioning failed during rehydration, rolling back", "new_resource_id", newResourceID, "error", err)
@@ -407,7 +438,7 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 		"old_resource_id", resourceID,
 		"new_resource_id", newResourceID,
 		"catalog_item_instance_id", oldResource.CatalogItemInstanceId,
-		"provider", providerName,
+		"agent", policyResponse.SelectedAgent,
 		"approval_status", approvalStatus,
 	)
 
@@ -442,6 +473,174 @@ func (s *PlacementService) rollbackResourceDelete(id string) error {
 	rbCtx, cancel := context.WithTimeout(context.Background(), resourceRollbackTimeout)
 	defer cancel()
 	return s.store.Resource().Delete(rbCtx, id)
+}
+
+// ReEvaluateWithExclude re-evaluates placement for an existing resource,
+// excluding the given agents (typically an agent that just failed or timed
+// out), and re-provisions the resource against the newly selected agent.
+// This is the core of the self-healing loop invoked by the pending/queued
+// sweep: it does not create a new resource, it re-points the existing one.
+//
+// It also proactively reassigns any run-sibling still pointed at an
+// excluded agent, best-effort, instead of leaving it to wait for its own
+// independent sweep timeout.
+func (s *PlacementService) ReEvaluateWithExclude(ctx context.Context, resourceID string, excludeAgents []string) error {
+	log := logging.FromContext(ctx)
+
+	resource, err := s.store.Resource().Get(ctx, resourceID)
+	if err != nil {
+		if errors.Is(err, store.ErrResourceNotFound) {
+			return NewNotFoundError(fmt.Sprintf("resource %s not found", resourceID))
+		}
+		return NewInternalError(fmt.Sprintf("failed to get resource: %v", err))
+	}
+
+	availableAgents, err := s.listAvailableAgents(ctx)
+	if err != nil {
+		log.Error("Failed to list available agents for re-evaluation", "error", err)
+		return err
+	}
+
+	// The agent this resource was on when the caller (the pending/queued
+	// sweep) decided to reassign it: see reassignOne's expectedCurrentAgent
+	// doc for why this must be the caller's observation, not a fresh read.
+	var expectedCurrentAgent string
+	if resource.AgentName != nil {
+		expectedCurrentAgent = *resource.AgentName
+	}
+
+	newAgent, err := s.reassignOne(ctx, resourceID, resource.Spec, expectedCurrentAgent, excludeAgents, availableAgents)
+	if err != nil {
+		return err
+	}
+	log.Info("Resource re-evaluated and reassigned", "resource_id", resourceID, "new_agent", newAgent)
+
+	s.reassignExcludedSiblings(ctx, resource, excludeAgents, availableAgents)
+
+	return nil
+}
+
+// reassignOne evaluates policy for a single resource excluding
+// excludeAgents and, on success, reassigns it in SPRM and persists the new
+// agent_name. Shared by ReEvaluateWithExclude for the primary resource and
+// by reassignExcludedSiblings for its run-siblings.
+//
+// expectedCurrentAgent is the agent this resource was observed on by the
+// caller (primary: the resource's own record; sibling: the sibling's own
+// record) at decision time. It's passed through to SPRM/SP unchanged so the
+// eventual CAS there guards against the exact race this function runs
+// concurrently with: another healer reassigning the same resource/instance
+// between this function's policy evaluation and its own reassignment call.
+func (s *PlacementService) reassignOne(ctx context.Context, resourceID string, spec map[string]any, expectedCurrentAgent string, excludeAgents []string, availableAgents []policy.AgentInfo) (string, error) {
+	log := logging.FromContext(ctx)
+
+	policyResponse, err := s.policy.Evaluate(ctx, policy.EvaluateRequest{
+		Spec:            spec,
+		ExcludeAgents:   excludeAgents,
+		AvailableAgents: availableAgents,
+	})
+	if err != nil {
+		log.Error("Re-evaluation failed", "resource_id", resourceID, "error", err)
+		return "", handlePolicyError(err)
+	}
+
+	if policyResponse.SelectedAgent == "" {
+		return "", NewPolicyInternalError("re-evaluation found no available agent")
+	}
+
+	// Defensive re-check: nothing stops a misbehaving policy from returning
+	// an excluded agent anyway, which would reassign the instance right
+	// back to the agent it was just excluded to avoid.
+	for _, excluded := range excludeAgents {
+		if policyResponse.SelectedAgent == excluded {
+			return "", NewPolicyInternalError(fmt.Sprintf("re-evaluation selected excluded agent %q", excluded))
+		}
+	}
+
+	if err := s.sprm.ReassignResource(ctx, resourceID, policyResponse.SelectedAgent, expectedCurrentAgent); err != nil {
+		log.Error("Failed to reassign resource to new agent", "resource_id", resourceID, "new_agent", policyResponse.SelectedAgent, "error", err)
+		return "", handleSPRMError(err)
+	}
+
+	// Propagated rather than swallowed: leaving this silent would let
+	// Resource.agent_name go stale, and retrying is safe since this is
+	// idempotent (ReassignAndReset is a CAS).
+	if err := s.store.Resource().UpdateAgentName(ctx, resourceID, policyResponse.SelectedAgent); err != nil {
+		log.Error("Failed to update resource agent_name after re-evaluation", "resource_id", resourceID, "error", err)
+		return "", NewInternalError(fmt.Sprintf("failed to update resource agent_name: %v", err))
+	}
+
+	return policyResponse.SelectedAgent, nil
+}
+
+// reassignExcludedSiblings proactively reassigns run-siblings of resource
+// that are still pointed at an excluded agent. Best-effort: a sibling
+// failure is logged and skipped, never propagated to the caller, since the
+// primary resource's own reassignment (already done by the time this runs)
+// is what the self-heal loop depends on for its retry decision.
+//
+// reassignOne's underlying CAS (ReassignAndReset) only accepts
+// pending/cancelled instances, so a sibling that's actively
+// provisioning/running is automatically left alone. A queued sibling is
+// also left alone here — its cancel-then-heal transition is handled by
+// sweepQueued on its own timeout, which this deliberately doesn't
+// replicate to keep this change bounded.
+func (s *PlacementService) reassignExcludedSiblings(ctx context.Context, resource *model.Resource, excludeAgents []string, availableAgents []policy.AgentInfo) {
+	log := logging.FromContext(ctx)
+
+	// Goes through the public GetRun rather than the store directly: it's
+	// the same run-scoped fetch either way (resource is already a known
+	// member of this RunID, so GetRun's zero-resources NotFoundError can't
+	// trigger here), and this is what the reviewer explicitly asked for.
+	run, err := s.GetRun(ctx, resource.RunID)
+	if err != nil {
+		log.Error("Failed to get run for proactive sibling reassignment", "run_id", resource.RunID, "error", err)
+		return
+	}
+
+	for _, sibling := range run.Resources {
+		siblingID := ""
+		if sibling.Id != nil {
+			siblingID = *sibling.Id
+		}
+		if siblingID == resource.ID || sibling.AgentName == nil || !slices.Contains(excludeAgents, *sibling.AgentName) {
+			continue
+		}
+		newAgent, err := s.reassignOne(ctx, siblingID, sibling.Spec, *sibling.AgentName, excludeAgents, availableAgents)
+		if err != nil {
+			log.Warn("Best-effort sibling reassignment failed, will retry on its own sweep timeout",
+				"resource_id", siblingID, "run_id", resource.RunID, "error", err)
+			continue
+		}
+		log.Info("Run-sibling proactively reassigned", "resource_id", siblingID, "run_id", resource.RunID, "new_agent", newAgent)
+	}
+}
+
+// listAvailableAgents returns the current ready agents for policy evaluation,
+// or nil if no agent client is configured. A listing failure is returned as a
+// hard error rather than degrading to an empty slice: ConstraintContext and
+// EvaluatePolicies treat an empty AvailableAgents as "skip membership/
+// environment validation", so silently falling back there would turn an
+// operational error into a fail-open placement decision.
+func (s *PlacementService) listAvailableAgents(ctx context.Context) ([]policy.AgentInfo, error) {
+	if s.agentClient == nil {
+		return nil, nil
+	}
+	agents, err := s.agentClient.ListReadyAgents(ctx)
+	if err != nil {
+		return nil, NewInternalError(fmt.Sprintf("failed to list available agents: %v", err))
+	}
+	return toPolicyAgentInfo(agents), nil
+}
+
+// toPolicyAgentInfo maps the placement/agent package's Info to the parallel
+// policy.AgentInfo used by policy.EvaluateRequest.
+func toPolicyAgentInfo(agents []placementagent.Info) []policy.AgentInfo {
+	out := make([]policy.AgentInfo, len(agents))
+	for i, a := range agents {
+		out[i] = policy.AgentInfo{Name: a.Name, Environment: a.Environment, ServiceTypes: a.ServiceTypes, Cost: a.Cost}
+	}
+	return out
 }
 
 func getOrGenerateStringId(id *string) string {

@@ -94,13 +94,27 @@ func mapPlacementServiceError(err error) error {
 		status = http.StatusNotAcceptable
 	case service.ErrCodeConflict, service.ErrCodePolicyConflict:
 		status = http.StatusConflict
-	case service.ErrCodeProviderError:
+	case service.ErrCodeProvisioningError:
 		status = http.StatusUnprocessableEntity
 	case service.ErrCodeNotFound:
 		status = http.StatusNotFound
 	case service.ErrCodePolicyError, service.ErrCodePolicyInternalError:
 		status = http.StatusFailedDependency
+	case service.ErrCodeUnavailable:
+		status = http.StatusServiceUnavailable
 	}
 
-	return &PlacementError{StatusCode: status, Body: svcErr.Message}
+	// 5xx bodies may carry internal error detail from downstream services -
+	// log server-side and return a generic message to the API caller.
+	body := svcErr.Message
+	if status >= http.StatusInternalServerError {
+		slog.Error("placement local client error", "status", status, "detail", svcErr.Message)
+		if status == http.StatusServiceUnavailable {
+			body = "service temporarily unavailable"
+		} else {
+			body = "internal server error"
+		}
+	}
+
+	return &PlacementError{StatusCode: status, Body: body}
 }

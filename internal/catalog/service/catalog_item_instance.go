@@ -271,7 +271,10 @@ func (s *catalogItemInstanceService) Delete(ctx context.Context, id string) erro
 	s.logger.DebugContext(ctx, "Calling placement manager to delete run", "id", id, "run_id", instance.RunID)
 	if err := s.pmClient.DeleteRun(ctx, instance.RunID); err != nil {
 		s.logger.ErrorContext(ctx, "Placement manager delete failed", "id", id, "error", err)
-		return fmt.Errorf("%w: %s", ErrPlacementManagerDeleteFailed, err.Error())
+		// mapPlacementError, not a direct wrap: distinguishes
+		// policy-rejected/provider-error/policy-dependency (406/422/424)
+		// from a generic placement failure, matching create/rehydrate.
+		return mapPlacementError(err, ErrPlacementManagerDeleteFailed)
 	}
 
 	err = s.store.CatalogItemInstance().Delete(ctx, id)

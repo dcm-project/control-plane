@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	cloudevents "github.com/cloudevents/sdk-go/v2/event"
@@ -179,7 +180,13 @@ func (c *StatusConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) {
 		return
 	}
 
-	if err := c.store.ServiceTypeInstance().UpdateStatus(ctx, payload.Id, payload.Status, payload.Message); err != nil {
+	// This event's status string comes from an external CloudEvent producer
+	// we don't control, so it's normalized to the lowercase convention used
+	// throughout the rest of the status lifecycle before it crosses into our
+	// store, rather than trusting upstream casing (see internal/sp/store/model/status.go).
+	normalizedStatus := strings.ToLower(strings.TrimSpace(payload.Status))
+
+	if err := c.store.ServiceTypeInstance().UpdateStatus(ctx, payload.Id, normalizedStatus, payload.Message); err != nil {
 		if errors.Is(err, rmstore.ErrInstanceNotFound) {
 			slog.Warn("No instance found, skipping status update", "instance_id", payload.Id)
 			_ = msg.Ack()
@@ -190,6 +197,6 @@ func (c *StatusConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) {
 		return
 	}
 
-	slog.Info("Instance status updated", "instance_id", payload.Id, "status", payload.Status)
+	slog.Info("Instance status updated", "instance_id", payload.Id, "status", normalizedStatus)
 	_ = msg.Ack()
 }

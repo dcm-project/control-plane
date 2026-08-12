@@ -8,6 +8,7 @@ import (
 	"time"
 
 	cloudevents "github.com/cloudevents/sdk-go/v2/event"
+	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
 	"github.com/dcm-project/control-plane/internal/sp/consumer"
 	"github.com/dcm-project/control-plane/internal/sp/store"
 	"github.com/dcm-project/control-plane/internal/sp/store/model"
@@ -54,7 +55,7 @@ var _ = Describe("StatusConsumer", func() {
 		sqlDB, err := db.DB()
 		Expect(err).NotTo(HaveOccurred())
 		sqlDB.SetMaxOpenConns(1)
-		Expect(db.AutoMigrate(&model.ServiceTypeInstance{})).To(Succeed())
+		Expect(db.AutoMigrate(&agentmodel.Agent{}, &model.ServiceTypeInstance{})).To(Succeed())
 		dataStore = store.NewStore(db)
 
 		// Use the NATS test server URL from suite_test.go
@@ -115,8 +116,7 @@ var _ = Describe("StatusConsumer", func() {
 	createInstance := func(instanceID string) {
 		instance := model.ServiceTypeInstance{
 			ID:           instanceID,
-			ProviderName: "test-provider",
-			Status:       "PROVISIONING",
+			Status:       "provisioning",
 			InstanceName: "test-instance",
 			Spec:         map[string]any{"cpu": "2"},
 		}
@@ -134,7 +134,23 @@ var _ = Describe("StatusConsumer", func() {
 			var inst model.ServiceTypeInstance
 			db.Where("id = ?", instanceID).First(&inst)
 			return inst.Status
-		}, 2*time.Second, 100*time.Millisecond).Should(Equal("RUNNING"))
+		}, 2*time.Second, 100*time.Millisecond).Should(Equal("running"))
+	})
+
+	It("normalizes mixed-case status casing from external producers to lowercase", func() {
+		// The external provider CloudEvent producer is not under our control and
+		// may send any casing; the DB's status column must stay consistently
+		// lowercase regardless (see internal/sp/store/model/status.go).
+		instanceID := uuid.New().String()
+		createInstance(instanceID)
+
+		publishStatusEvent("kubevirt-sp", "vm", instanceID, "Running", "VM is running")
+
+		Eventually(func() string {
+			var inst model.ServiceTypeInstance
+			db.Where("id = ?", instanceID).First(&inst)
+			return inst.Status
+		}, 2*time.Second, 100*time.Millisecond).Should(Equal("running"))
 	})
 
 	It("updates status message along with status", func() {
@@ -148,6 +164,19 @@ var _ = Describe("StatusConsumer", func() {
 			db.Where("id = ?", instanceID).First(&inst)
 			return inst.StatusMessage
 		}, 2*time.Second, 100*time.Millisecond).Should(Equal("VM crashed unexpectedly"))
+	})
+
+	It("stores the status from a FAILED event as lowercase", func() {
+		instanceID := uuid.New().String()
+		createInstance(instanceID)
+
+		publishStatusEvent("kubevirt-sp", "vm", instanceID, "FAILED", "VM crashed unexpectedly")
+
+		Eventually(func() string {
+			var inst model.ServiceTypeInstance
+			db.Where("id = ?", instanceID).First(&inst)
+			return inst.Status
+		}, 2*time.Second, 100*time.Millisecond).Should(Equal("failed"))
 	})
 
 	It("handles events for non-existent instances gracefully", func() {
@@ -175,7 +204,7 @@ var _ = Describe("StatusConsumer", func() {
 			var inst model.ServiceTypeInstance
 			db.Where("id = ?", instanceID).First(&inst)
 			return inst.Status
-		}, 2*time.Second, 100*time.Millisecond).Should(Equal("PROVISIONING"))
+		}, 2*time.Second, 100*time.Millisecond).Should(Equal("provisioning"))
 
 		time.Sleep(200 * time.Millisecond)
 
@@ -185,7 +214,7 @@ var _ = Describe("StatusConsumer", func() {
 			var inst model.ServiceTypeInstance
 			db.Where("id = ?", instanceID).First(&inst)
 			return inst.Status
-		}, 2*time.Second, 100*time.Millisecond).Should(Equal("RUNNING"))
+		}, 2*time.Second, 100*time.Millisecond).Should(Equal("running"))
 	})
 
 	It("Check succeeds while connected", func() {

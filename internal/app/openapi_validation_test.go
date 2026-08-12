@@ -66,12 +66,6 @@ var _ = Describe("OpenAPI request validation", func() {
 		})
 	})
 
-	Describe("SP provider routes", func() {
-		It("rejects malformed JSON on POST /providers", func() {
-			expectInvalidJSONRejected(validators, "/api/v1alpha1/providers")
-		})
-	})
-
 	Describe("SP resource manager routes", func() {
 		It("rejects malformed JSON on POST /service-type-instances", func() {
 			expectInvalidJSONRejected(validators, "/api/v1alpha1/service-type-instances")

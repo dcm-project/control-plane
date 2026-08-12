@@ -12,6 +12,11 @@ import (
 	"syscall"
 	"time"
 
+	agentserver "github.com/dcm-project/control-plane/internal/agent/api/server"
+	agenthandlers "github.com/dcm-project/control-plane/internal/agent/handlers/v1alpha1"
+	agenthealthcheck "github.com/dcm-project/control-plane/internal/agent/healthcheck"
+	agentservice "github.com/dcm-project/control-plane/internal/agent/service"
+	agentstore "github.com/dcm-project/control-plane/internal/agent/store/agent"
 	"github.com/dcm-project/control-plane/internal/auth"
 	authservice "github.com/dcm-project/control-plane/internal/auth/service"
 	authstore "github.com/dcm-project/control-plane/internal/auth/store"
@@ -21,6 +26,7 @@ import (
 	catalogplacement "github.com/dcm-project/control-plane/internal/catalog/placement"
 	catalogservice "github.com/dcm-project/control-plane/internal/catalog/service"
 	catalogstore "github.com/dcm-project/control-plane/internal/catalog/store"
+	placementagent "github.com/dcm-project/control-plane/internal/placement/agent"
 	placementlogging "github.com/dcm-project/control-plane/internal/placement/logging"
 	placementpolicy "github.com/dcm-project/control-plane/internal/placement/policy"
 	placementservice "github.com/dcm-project/control-plane/internal/placement/service"
@@ -32,25 +38,24 @@ import (
 	policyopa "github.com/dcm-project/control-plane/internal/policy/opa"
 	policyservice "github.com/dcm-project/control-plane/internal/policy/service"
 	policystore "github.com/dcm-project/control-plane/internal/policy/store"
-	spproviderserver "github.com/dcm-project/control-plane/internal/sp/api/provider"
 	sprmserver "github.com/dcm-project/control-plane/internal/sp/api/resource_manager"
 	spcleanup "github.com/dcm-project/control-plane/internal/sp/cleanup"
 	spconfig "github.com/dcm-project/control-plane/internal/sp/config"
 	spconsumer "github.com/dcm-project/control-plane/internal/sp/consumer"
-	spproviderhandler "github.com/dcm-project/control-plane/internal/sp/handlers/provider"
 	sprmhandler "github.com/dcm-project/control-plane/internal/sp/handlers/resource_manager"
-	sphealthcheck "github.com/dcm-project/control-plane/internal/sp/healthcheck"
 	splogging "github.com/dcm-project/control-plane/internal/sp/logging"
-	spprovidersvc "github.com/dcm-project/control-plane/internal/sp/service/provider"
+	"github.com/dcm-project/control-plane/internal/sp/messaging"
+	sppending "github.com/dcm-project/control-plane/internal/sp/pending"
 	sprmsvc "github.com/dcm-project/control-plane/internal/sp/service/resource_manager"
 	spstore "github.com/dcm-project/control-plane/internal/sp/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 const gracefulShutdownTimeout = 5 * time.Second
 
-// Run starts the control-plane monolith.
 func Run() int {
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -87,6 +92,10 @@ func Run() int {
 	placementDataStore := placementstore.NewStore(db)
 	spDataStore := spstore.NewStore(db)
 
+	agentSt := agentstore.NewAgent(db)
+	agentSvc := agentservice.NewAgentService(agentSt, cfg.Agent.ConsumerLagThreshold)
+	agentClient := placementagent.NewServiceClient(agentSt)
+
 	opaEngine := policyopa.NewEngine()
 	policyService := policyservice.NewPolicyService(policyDataStore, opaEngine)
 	evaluationService := policyservice.NewEvaluationService(policyDataStore.Policy(), opaEngine)
@@ -95,45 +104,10 @@ func Run() int {
 		return 1
 	}
 
-	spProviderService := spprovidersvc.NewProviderService(spDataStore)
-	spInstanceService := sprmsvc.NewInstanceService(spDataStore, nil)
-
-	policyClient := placementpolicy.NewServiceClient(evaluationService)
-	sprmClient := placementsprm.NewServiceClient(spInstanceService)
-
-	placementService := placementservice.NewPlacementService(placementDataStore, policyClient, sprmClient)
-	pmClient, err := buildPlacementClient(cfg, placementService, logger)
-	if err != nil {
-		slog.Error("Failed to initialize placement client", "error", err)
-		return 1
-	}
-
-	seedCfg := catalogconfig.SeedConfig{
-		RegionDefault: cfg.Seed.RegionDefault,
-		RegionEnum:    cfg.Seed.RegionEnum,
-	}
-	catalogSvc, err := catalogservice.NewService(catalogDataStore, pmClient, seedCfg, logger)
-	if err != nil {
-		slog.Error("Failed to create catalog service", "error", err)
-		return 1
-	}
-
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	if err := authSvc.Seed(ctx); err != nil {
-		slog.Error("Failed to seed auth database", "error", err)
-		return 1
-	}
-
-	seedCtx := auth.WithActorInfo(ctx, auth.ActorInfo{
-		ActorType: "system",
-	})
-	if err := catalogSvc.Seed(seedCtx); err != nil {
-		slog.Error("Failed to seed catalog database", "error", err)
-		return 1
-	}
-
+	var publisher *messaging.Publisher
 	checkers := []Checker{NewPostgresChecker(db)}
 
 	if !cfg.NATS.Disabled {
@@ -151,23 +125,81 @@ func Run() int {
 		}
 		defer statusConsumer.Stop()
 		checkers = append(checkers, NewNATSChecker(statusConsumer))
+
+		agentNc, err := nats.Connect(cfg.NATS.URL, nats.MaxReconnects(-1))
+		if err != nil {
+			slog.Error("Failed to connect to NATS for agent response consumer", "error", err)
+			return 1
+		}
+		defer agentNc.Close()
+		agentJS, err := jetstream.New(agentNc)
+		if err != nil {
+			slog.Error("Failed to create JetStream for agent response consumer", "error", err)
+			return 1
+		}
+
+		publisher = messaging.NewPublisher(agentJS)
+
+		if err := publisher.EnsureStream(ctx); err != nil {
+			slog.Error("Failed to ensure agent request stream", "error", err)
+			return 1
+		}
+
+		responseConsumer := spconsumer.NewResponseConsumer(agentJS, spDataStore, agentSt, cfg.Agent.ResponseMaxDeliver, cfg.Agent.ResponseAckWait)
+		if err := responseConsumer.Start(ctx); err != nil {
+			slog.Error("Failed to start agent response consumer", "error", err)
+			return 1
+		}
+		defer responseConsumer.Stop()
 	}
 
-	healthMonitor := sphealthcheck.NewMonitor(
-		spDataStore.Provider(),
-		spDataStore.ServiceTypeInstance(),
-		&spconfig.HealthCheckConfig{
-			Interval:               cfg.SP.HealthCheckInterval,
-			Timeout:                cfg.SP.HealthCheckTimeout,
-			MaxConsecutiveFailures: cfg.SP.HealthCheckMaxConsecutiveFailures,
-			BaseBackoffInterval:    cfg.SP.HealthCheckBaseBackoffInterval,
-			MaxBackoffInterval:     cfg.SP.HealthCheckMaxBackoffInterval,
-		},
-	)
-	healthMonitor.Start(ctx)
-	defer healthMonitor.Stop()
+	spInstanceService := sprmsvc.NewInstanceService(spDataStore, publisher, agentSt)
 
-	cleanupScheduler := spcleanup.NewScheduler(spDataStore, spInstanceService, &spconfig.CleanupConfig{
+	policyClient := placementpolicy.NewServiceClient(evaluationService)
+	sprmClient := placementsprm.NewServiceClient(spInstanceService)
+
+	placementService := placementservice.NewPlacementService(
+		placementDataStore, policyClient, sprmClient,
+		placementservice.WithAgentClient(agentClient),
+	)
+	pmClient, err := buildPlacementClient(cfg, placementService, logger)
+	if err != nil {
+		slog.Error("Failed to initialize placement client", "error", err)
+		return 1
+	}
+
+	seedCfg := catalogconfig.SeedConfig{
+		RegionDefault: cfg.Seed.RegionDefault,
+		RegionEnum:    cfg.Seed.RegionEnum,
+	}
+	catalogSvc, err := catalogservice.NewService(catalogDataStore, pmClient, seedCfg, logger)
+	if err != nil {
+		slog.Error("Failed to create catalog service", "error", err)
+		return 1
+	}
+
+	if err := authSvc.Seed(ctx); err != nil {
+		slog.Error("Failed to seed auth database", "error", err)
+		return 1
+	}
+
+	seedCtx := auth.WithActorInfo(ctx, auth.ActorInfo{
+		ActorType: "system",
+	})
+	if err := catalogSvc.Seed(seedCtx); err != nil {
+		slog.Error("Failed to seed catalog database", "error", err)
+		return 1
+	}
+
+	agentSweep := sppending.NewSweep(db, publisher, agentSt, placementService, cfg.Agent.PendingRequestTimeout, cfg.Agent.QueuedRequestTimeout, cfg.Agent.SweepInterval, cfg.Agent.PendingRequestMaxRetries)
+	agentSweep.Start(ctx)
+	defer agentSweep.Stop()
+
+	agentHealthMonitor := agenthealthcheck.NewMonitor(agentSt, cfg.Agent.HeartbeatTimeout, cfg.SP.HealthCheckInterval)
+	agentHealthMonitor.Start(ctx)
+	defer agentHealthMonitor.Stop()
+
+	cleanupScheduler := spcleanup.NewScheduler(spDataStore, publisher, agentSt, &spconfig.CleanupConfig{
 		Interval:   cfg.SP.CleanupInterval,
 		MaxRetries: cfg.SP.CleanupMaxRetries,
 		Timeout:    cfg.SP.CleanupTimeout,
@@ -206,10 +238,10 @@ func Run() int {
 	}
 
 	router, err := newRouter(authMiddleware, RouteHandlers{
-		Catalog:    cataloghandlers.NewHandler(catalogSvc, logger),
-		Policy:     policyhandlers.NewPolicyHandler(policyService),
-		SPProvider: spproviderhandler.NewHandler(spProviderService),
-		SPRM:       sprmhandler.NewHandler(spInstanceService),
+		Agent:   agenthandlers.NewHandler(agentSvc),
+		Catalog: cataloghandlers.NewHandler(catalogSvc, logger),
+		Policy:  policyhandlers.NewPolicyHandler(policyService),
+		SPRM:    sprmhandler.NewHandler(spInstanceService),
 	}, checkers...)
 	if err != nil {
 		slog.Error("Failed to configure HTTP router", "error", err)
@@ -249,10 +281,10 @@ func Run() int {
 }
 
 type RouteHandlers struct {
-	Catalog    catalogserver.StrictServerInterface
-	Policy     policyserver.StrictServerInterface
-	SPProvider spproviderserver.StrictServerInterface
-	SPRM       sprmserver.StrictServerInterface
+	Agent   agentserver.StrictServerInterface
+	Catalog catalogserver.StrictServerInterface
+	Policy  policyserver.StrictServerInterface
+	SPRM    sprmserver.StrictServerInterface
 }
 
 func newRouter(authMW func(http.Handler) http.Handler, h RouteHandlers, checkers ...Checker) (chi.Router, error) {
@@ -269,10 +301,13 @@ func newRouter(authMW func(http.Handler) http.Handler, h RouteHandlers, checkers
 
 	const baseURL = "/api/v1alpha1"
 
-	// Single monolith health endpoint; domain OpenAPI specs omit /health to avoid
-	// duplicate chi route registration when mounting multiple generated servers.
 	registerMonolithHealth(router, checkers...)
 
+	agentserver.HandlerFromMuxWithBaseURL(
+		agentserver.NewStrictHandler(h.Agent, nil),
+		router,
+		baseURL,
+	)
 	catalogserver.HandlerFromMuxWithBaseURL(
 		catalogserver.NewStrictHandler(h.Catalog, nil),
 		router,
@@ -285,10 +320,6 @@ func newRouter(authMW func(http.Handler) http.Handler, h RouteHandlers, checkers
 	)
 
 	apiRouter := chi.NewRouter()
-	spproviderserver.HandlerFromMux(
-		spproviderserver.NewStrictHandler(h.SPProvider, nil),
-		apiRouter,
-	)
 	sprmserver.HandlerFromMux(
 		sprmserver.NewStrictHandler(h.SPRM, nil),
 		apiRouter,

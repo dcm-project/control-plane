@@ -26,7 +26,7 @@ func storeModelToResource(m *model.Resource) types.Resource {
 		RequiresResources:     append([]string(nil), m.RequiresResources...),
 		DagLevel:              m.DagLevel,
 		Status:                m.Status,
-		ProviderName:          m.ProviderName,
+		AgentName:             m.AgentName,
 		ApprovalStatus:        m.ApprovalStatus,
 		CreateTime:            PtrTime(m.CreateTime),
 		UpdateTime:            PtrTime(m.UpdateTime),

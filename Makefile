@@ -31,6 +31,7 @@ include make/catalog.mk
 include make/placement.mk
 include make/policy.mk
 include make/sp.mk
+include make/agent.mk
 
 # Same as Containerfile: static build, no CGO (Postgres in prod/compose).
 # For SQLite local dev use make run (go run with CGO).

@@ -17,9 +17,9 @@ var (
 
 // ResourceListOptions contains optional fields for listing runs.
 type ResourceListOptions struct {
-	ProviderName *string
-	PageSize     int
-	PageToken    *string
+	AgentName *string
+	PageSize  int
+	PageToken *string
 }
 
 // ResourceListResult contains resources for a page of runs (complete sets per run_id).
@@ -40,6 +40,7 @@ type Resource interface {
 	DeleteByRunID(ctx context.Context, runID string) error
 	UpdateRunID(ctx context.Context, oldRunID, newRunID string) error
 	UpdateStatusByRunID(ctx context.Context, runID, status string) error
+	UpdateAgentName(ctx context.Context, id string, agentName string) error
 }
 
 type ResourceStore struct {
@@ -71,8 +72,8 @@ func (s *ResourceStore) ListRun(ctx context.Context, opts *ResourceListOptions) 
 	query := s.db.WithContext(ctx).Model(&model.Resource{})
 
 	// Apply filters
-	if opts != nil && opts.ProviderName != nil && *opts.ProviderName != "" {
-		query = query.Where("provider_name = ?", *opts.ProviderName)
+	if opts != nil && opts.AgentName != nil && strings.TrimSpace(*opts.AgentName) != "" {
+		query = query.Where("agent_name = ?", *opts.AgentName)
 	}
 
 	// Page distinct run_ids (limit+1 to detect if there are more results).
@@ -199,6 +200,19 @@ func (s *ResourceStore) UpdateStatusByRunID(ctx context.Context, runID, status s
 	result := s.db.WithContext(ctx).Model(&model.Resource{}).
 		Where("run_id = ?", runID).
 		Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrResourceNotFound
+	}
+	return nil
+}
+
+// UpdateAgentName updates the agent_name column for observability after the
+// self-healing loop re-routes a resource to a different agent.
+func (s *ResourceStore) UpdateAgentName(ctx context.Context, id string, agentName string) error {
+	result := s.db.WithContext(ctx).Model(&model.Resource{}).Where("id = ?", id).Update("agent_name", agentName)
 	if result.Error != nil {
 		return result.Error
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
 	authmodel "github.com/dcm-project/control-plane/internal/auth/store/model"
 	catalogmodel "github.com/dcm-project/control-plane/internal/catalog/store/model"
 	placementmodel "github.com/dcm-project/control-plane/internal/placement/store/model"
@@ -69,6 +70,7 @@ func openDB(cfg *Config) (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	if err := db.AutoMigrate(
+		&agentmodel.Agent{},
 		&authmodel.Actor{},
 		&authmodel.ActorIdentity{},
 		&catalogmodel.ServiceType{},
@@ -76,7 +78,6 @@ func openDB(cfg *Config) (*gorm.DB, error) {
 		&catalogmodel.CatalogItemInstance{},
 		&placementmodel.Resource{},
 		&policymodel.Policy{},
-		&spmodel.Provider{},
 		&spmodel.ServiceTypeInstance{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate schema: %w", err)

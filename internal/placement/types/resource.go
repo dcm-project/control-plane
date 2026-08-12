@@ -20,6 +20,7 @@ type CreateRunRequest struct {
 
 // Resource is a placement resource row within a run.
 type Resource struct {
+	AgentName             *string        `json:"agent_name,omitempty"`
 	ApprovalStatus        *string        `json:"approval_status,omitempty"`
 	CatalogItemInstanceId string         `json:"catalog_item_instance_id"`
 	CreateTime            *time.Time     `json:"create_time,omitempty"`
@@ -27,7 +28,6 @@ type Resource struct {
 	Id                    *string        `json:"id,omitempty"`
 	Name                  string         `json:"name"`
 	Path                  *string        `json:"path,omitempty"`
-	ProviderName          *string        `json:"provider_name,omitempty"`
 	RequiresResources     []string       `json:"requires_resources,omitempty"`
 	RunId                 string         `json:"run_id"`
 	Spec                  map[string]any `json:"spec"`

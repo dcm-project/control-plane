@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 
+	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
 	"github.com/dcm-project/control-plane/internal/placement/store"
 	"github.com/dcm-project/control-plane/internal/placement/store/model"
 	"github.com/google/uuid"
@@ -27,7 +28,7 @@ var _ = Describe("Resource Store", func() {
 			Logger: logger.Default.LogMode(logger.Silent),
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(db.AutoMigrate(&model.Resource{})).To(Succeed())
+		Expect(db.AutoMigrate(&agentmodel.Agent{}, &model.Resource{})).To(Succeed())
 
 		requestStore = store.NewResource(db)
 		ctx = context.Background()
@@ -40,7 +41,7 @@ var _ = Describe("Resource Store", func() {
 
 	Describe("Create", func() {
 		It("persists the resource without optional fields", func() {
-			provider := "test-provider"
+			agent := "test-agent"
 			approval := "APPROVED"
 			r := model.Resource{
 				ID:                    uuid.New().String(),
@@ -48,7 +49,7 @@ var _ = Describe("Resource Store", func() {
 				Name:                  "main",
 				CatalogItemInstanceId: "catalog-instance-123",
 				Spec:                  map[string]any{"cpu": "2", "memory": "4Gi"},
-				ProviderName:          &provider,
+				AgentName:             &agent,
 				ApprovalStatus:        &approval,
 				Path:                  "resources/" + uuid.New().String(),
 			}
@@ -58,15 +59,15 @@ var _ = Describe("Resource Store", func() {
 			Expect(created.ID).To(Equal(r.ID))
 			Expect(created.CatalogItemInstanceId).To(Equal("catalog-instance-123"))
 			Expect(created.Spec).To(Equal(map[string]any{"cpu": "2", "memory": "4Gi"}))
-			Expect(created.ProviderName).NotTo(BeNil())
-			Expect(*created.ProviderName).To(Equal("test-provider"))
+			Expect(created.AgentName).NotTo(BeNil())
+			Expect(*created.AgentName).To(Equal("test-agent"))
 			Expect(created.ApprovalStatus).NotTo(BeNil())
 			Expect(*created.ApprovalStatus).To(Equal("APPROVED"))
 		})
 
 		It("returns error for duplicate ID", func() {
 			id := uuid.New().String()
-			provider := "test-provider"
+			agent := "test-agent"
 			approval := "APPROVED"
 			r1 := model.Resource{
 				ID:                    id,
@@ -74,7 +75,7 @@ var _ = Describe("Resource Store", func() {
 				Name:                  "main",
 				CatalogItemInstanceId: "catalog-instance-123",
 				Spec:                  map[string]any{"cpu": "2"},
-				ProviderName:          &provider,
+				AgentName:             &agent,
 				ApprovalStatus:        &approval,
 				Path:                  "resources/" + id,
 			}
@@ -88,7 +89,7 @@ var _ = Describe("Resource Store", func() {
 				Name:                  "main",
 				CatalogItemInstanceId: "catalog-instance-456",
 				Spec:                  map[string]any{"cpu": "4"},
-				ProviderName:          &provider,
+				AgentName:             &agent,
 				ApprovalStatus:        &approval,
 				Path:                  "resources/" + id,
 			}
@@ -100,7 +101,7 @@ var _ = Describe("Resource Store", func() {
 
 	Describe("CreateBatch", func() {
 		It("persists multiple resources in one call", func() {
-			provider := "test-provider"
+			agent := "test-agent"
 			approval := "APPROVED"
 			id1 := uuid.New().String()
 			id2 := uuid.New().String()
@@ -111,7 +112,7 @@ var _ = Describe("Resource Store", func() {
 					Name:                  "db",
 					CatalogItemInstanceId: "catalog-instance-123",
 					Spec:                  map[string]any{"cpu": "2"},
-					ProviderName:          &provider,
+					AgentName:             &agent,
 					ApprovalStatus:        &approval,
 					Path:                  "resources/" + id1,
 					DagLevel:              0,
@@ -123,7 +124,7 @@ var _ = Describe("Resource Store", func() {
 					CatalogItemInstanceId: "catalog-instance-123",
 					Spec:                  map[string]any{"cpu": "4"},
 					RequiresResources:     []string{"db"},
-					ProviderName:          &provider,
+					AgentName:             &agent,
 					ApprovalStatus:        &approval,
 					Path:                  "resources/" + id2,
 					DagLevel:              1,
@@ -142,7 +143,7 @@ var _ = Describe("Resource Store", func() {
 		})
 
 		It("returns error when any resource ID already exists", func() {
-			provider := "test-provider"
+			agent := "test-agent"
 			approval := "APPROVED"
 			existingID := uuid.New().String()
 			_, err := requestStore.Create(ctx, model.Resource{
@@ -151,7 +152,7 @@ var _ = Describe("Resource Store", func() {
 				Name:                  "main",
 				CatalogItemInstanceId: "catalog-instance-123",
 				Spec:                  map[string]any{"cpu": "2"},
-				ProviderName:          &provider,
+				AgentName:             &agent,
 				ApprovalStatus:        &approval,
 				Path:                  "resources/" + existingID,
 			})
@@ -165,7 +166,7 @@ var _ = Describe("Resource Store", func() {
 					Name:                  "a",
 					CatalogItemInstanceId: "catalog-instance-123",
 					Spec:                  map[string]any{},
-					ProviderName:          &provider,
+					AgentName:             &agent,
 					ApprovalStatus:        &approval,
 					Path:                  "resources/" + newID,
 				},
@@ -175,7 +176,7 @@ var _ = Describe("Resource Store", func() {
 					Name:                  "b",
 					CatalogItemInstanceId: "catalog-instance-123",
 					Spec:                  map[string]any{},
-					ProviderName:          &provider,
+					AgentName:             &agent,
 					ApprovalStatus:        &approval,
 					Path:                  "resources/" + existingID,
 				},
@@ -186,7 +187,7 @@ var _ = Describe("Resource Store", func() {
 
 	Describe("Get", func() {
 		It("retrieves by ID", func() {
-			provider := "test-provider"
+			agent := "test-agent"
 			approval := "APPROVED"
 			r := model.Resource{
 				ID:                    uuid.New().String(),
@@ -194,7 +195,7 @@ var _ = Describe("Resource Store", func() {
 				Name:                  "main",
 				CatalogItemInstanceId: "catalog-instance-456",
 				Spec:                  map[string]any{"test": "data"},
-				ProviderName:          &provider,
+				AgentName:             &agent,
 				ApprovalStatus:        &approval,
 				Path:                  "resources/" + uuid.New().String(),
 			}
@@ -215,19 +216,19 @@ var _ = Describe("Resource Store", func() {
 
 	Describe("ListRun", func() {
 		var (
-			providerA = "provider-a"
-			providerB = "provider-b"
-			approval  = "APPROVED"
+			agentA   = "agent-a"
+			agentB   = "agent-b"
+			approval = "APPROVED"
 		)
 
-		createResource := func(runID, name, provider, catalogID string) {
+		createResource := func(runID, name, agent, catalogID string) {
 			_, err := requestStore.Create(ctx, model.Resource{
 				ID:                    uuid.New().String(),
 				RunID:                 runID,
 				Name:                  name,
 				CatalogItemInstanceId: catalogID,
 				Spec:                  map[string]any{},
-				ProviderName:          &provider,
+				AgentName:             &agent,
 				ApprovalStatus:        &approval,
 				Path:                  "resources/" + name,
 			})
@@ -236,13 +237,13 @@ var _ = Describe("Resource Store", func() {
 
 		BeforeEach(func() {
 			// run-1: 2 resources (would span a page_size=2 resource list alone)
-			createResource("run-1", "db", providerA, "cat-1")
-			createResource("run-1", "app", providerA, "cat-1")
-			// run-2: 1 resource, different provider
-			createResource("run-2", "main", providerB, "cat-2")
+			createResource("run-1", "db", agentA, "cat-1")
+			createResource("run-1", "app", agentA, "cat-1")
+			// run-2: 1 resource, different agent
+			createResource("run-2", "main", agentB, "cat-2")
 			// run-3: 2 resources
-			createResource("run-3", "db", providerA, "cat-3")
-			createResource("run-3", "app", providerA, "cat-3")
+			createResource("run-3", "db", agentA, "cat-3")
+			createResource("run-3", "app", agentA, "cat-3")
 		})
 
 		It("paginates by run_id and returns complete resource sets", func() {
@@ -275,28 +276,57 @@ var _ = Describe("Resource Store", func() {
 			Expect(page1.NextPageToken).NotTo(BeNil())
 		})
 
-		It("filters by provider name", func() {
+		It("filters by agent name", func() {
 			page, err := requestStore.ListRun(ctx, &store.ResourceListOptions{
-				ProviderName: &providerB,
+				AgentName: &agentB,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(page.Resources).To(HaveLen(1))
 			Expect(page.Resources[0].RunID).To(Equal("run-2"))
-			Expect(*page.Resources[0].ProviderName).To(Equal(providerB))
+			Expect(*page.Resources[0].AgentName).To(Equal(agentB))
 			Expect(page.NextPageToken).To(BeNil())
 		})
 
-		It("excludes other providers' resources within a mixed-provider run", func() {
-			createResource("run-mixed", "db", providerA, "cat-mixed")
-			createResource("run-mixed", "app", providerB, "cat-mixed")
+		It("excludes resources with no agent name when filtering by agent name", func() {
+			_, err := requestStore.Create(ctx, model.Resource{
+				ID:                    uuid.New().String(),
+				RunID:                 "run-unassigned",
+				Name:                  "db",
+				CatalogItemInstanceId: "cat-unassigned",
+				Spec:                  map[string]any{},
+				ApprovalStatus:        &approval,
+				Path:                  "resources/db",
+			})
+			Expect(err).NotTo(HaveOccurred())
 
 			page, err := requestStore.ListRun(ctx, &store.ResourceListOptions{
-				ProviderName: &providerB,
+				AgentName: &agentB,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(page.Resources).To(HaveLen(1))
+			Expect(page.Resources[0].RunID).To(Equal("run-2"))
+		})
+
+		It("treats a blank agent name as no filter", func() {
+			blank := "   "
+			page, err := requestStore.ListRun(ctx, &store.ResourceListOptions{
+				AgentName: &blank,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(page.Resources).To(HaveLen(5))
+		})
+
+		It("excludes other agents' resources within a mixed-agent run", func() {
+			createResource("run-mixed", "db", agentA, "cat-mixed")
+			createResource("run-mixed", "app", agentB, "cat-mixed")
+
+			page, err := requestStore.ListRun(ctx, &store.ResourceListOptions{
+				AgentName: &agentB,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(page.Resources).To(HaveLen(2))
 			for _, r := range page.Resources {
-				Expect(*r.ProviderName).To(Equal(providerB))
+				Expect(*r.AgentName).To(Equal(agentB))
 			}
 			Expect(page.Resources[0].RunID).To(Equal("run-2"))
 			Expect(page.Resources[1].RunID).To(Equal("run-mixed"))
@@ -342,7 +372,7 @@ var _ = Describe("Resource Store", func() {
 
 	Describe("Delete", func() {
 		It("deletes the resource", func() {
-			provider := "test-provider"
+			agent := "test-agent"
 			approval := "APPROVED"
 			r := model.Resource{
 				ID:                    uuid.New().String(),
@@ -350,7 +380,7 @@ var _ = Describe("Resource Store", func() {
 				Name:                  "main",
 				CatalogItemInstanceId: "cat-del",
 				Spec:                  map[string]any{},
-				ProviderName:          &provider,
+				AgentName:             &agent,
 				ApprovalStatus:        &approval,
 				Path:                  "resources/del",
 			}
@@ -373,7 +403,7 @@ var _ = Describe("Resource Store", func() {
 
 	Describe("UpdateStatusByRunID", func() {
 		It("updates status for all resources in the run", func() {
-			provider := "test-provider"
+			agent := "test-agent"
 			approval := "APPROVED"
 			id1 := uuid.New().String()
 			id2 := uuid.New().String()
@@ -384,7 +414,7 @@ var _ = Describe("Resource Store", func() {
 					Name:                  "db",
 					CatalogItemInstanceId: "cat-1",
 					Spec:                  map[string]any{},
-					ProviderName:          &provider,
+					AgentName:             &agent,
 					ApprovalStatus:        &approval,
 					Path:                  "resources/" + id1,
 					Status:                "PENDING",
@@ -396,7 +426,7 @@ var _ = Describe("Resource Store", func() {
 					Name:                  "app",
 					CatalogItemInstanceId: "cat-1",
 					Spec:                  map[string]any{},
-					ProviderName:          &provider,
+					AgentName:             &agent,
 					ApprovalStatus:        &approval,
 					Path:                  "resources/" + id2,
 					Status:                "PENDING",
