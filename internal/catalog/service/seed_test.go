@@ -123,12 +123,12 @@ var _ = Describe("Seed", func() {
 						Expect(st.Spec).To(HaveKey(key))
 					}
 				},
-				Entry("vm", "vm", []string{"vcpu", "memory", "storage", "guest_os", "access"}),
-				Entry("container", "container", []string{"image", "resources", "process", "network"}),
-				Entry("database", "database", []string{"engine", "version", "resources"}),
-				Entry("cluster", "cluster", []string{"version"}),
-				Entry("storage", "storage", []string{"capacity"}),
-				Entry("network", "network", []string{"ports", "routing_level"}),
+				Entry("vm", "vm", []string{"vcpu", "memory", "storage", "guest_os", "access", "ip"}),
+				Entry("container", "container", []string{"image", "resources", "process", "network", "endpoints"}),
+				Entry("database", "database", []string{"engine", "version", "resources", "connection_string"}),
+				Entry("cluster", "cluster", []string{"version", "api_endpoint", "console_url", "kubeconfig"}),
+				Entry("storage", "storage", []string{"capacity", "volume_name"}),
+				Entry("network", "network", []string{"ports", "routing_level", "endpoints"}),
 			)
 		})
 

@@ -85,8 +85,8 @@ var (
 	// ErrCELSelfReference indicates a resource references its own output via CEL
 	ErrCELSelfReference = errors.New("CEL reference cannot target the same resource")
 
-	// ErrCELServiceTypeOutputNotFound indicates the referenced output is not declared on the source service type
-	ErrCELServiceTypeOutputNotFound = errors.New("CEL reference output not found on service type")
+	// ErrCELServiceTypeOutputNotFound indicates the referenced field is not declared on the source service type
+	ErrCELServiceTypeOutputNotFound = errors.New("CEL reference field not found on service type")
 
 	// ErrCELRequiresResourceMissing indicates a CEL reference targets a resource not listed in requires_resources
 	ErrCELRequiresResourceMissing = errors.New("CEL reference resource must be listed in requires_resources")
