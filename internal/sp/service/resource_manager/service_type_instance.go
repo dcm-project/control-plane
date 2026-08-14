@@ -38,6 +38,7 @@ func NewInstanceService(store store.Store, publisher *messaging.Publisher, agent
 
 func (s *InstanceService) CreateInstance(ctx context.Context, request *resource_manager.ServiceTypeInstance, queryID *string, agentName string) (*resource_manager.ServiceTypeInstance, error) {
 	log := logging.FromContext(ctx)
+	log.Debug("Creating instance", "agent_name", agentName)
 
 	serviceType, ok := request.Spec["service_type"].(string)
 	if !ok {
@@ -217,6 +218,13 @@ func (s *InstanceService) GetInstance(ctx context.Context, instanceID string, sh
 
 func (s *InstanceService) ListInstances(ctx context.Context, serviceType, agentName *string, showDeleted bool, maxPageSize *int, pageToken *string) (*resource_manager.ServiceTypeInstanceList, error) {
 	log := logging.FromContext(ctx)
+	log.Debug("Listing instances",
+		"service_type", serviceType,
+		"agent_name", agentName,
+		"show_deleted", showDeleted,
+		"max_page_size", maxPageSize,
+		"has_page_token", pageToken != nil && *pageToken != "",
+	)
 
 	opts := &rmstore.ServiceTypeInstanceListOptions{
 		ServiceType: serviceType,
@@ -247,6 +255,10 @@ func (s *InstanceService) ListInstances(ctx context.Context, serviceType, agentN
 		apiInstances[i] = *ModelToAPI(&inst)
 	}
 
+	log.Debug("Instances listed",
+		"count", len(apiInstances),
+		"has_next_page", result.NextPageToken != nil,
+	)
 	return &resource_manager.ServiceTypeInstanceList{
 		Instances:     &apiInstances,
 		NextPageToken: result.NextPageToken,
@@ -263,12 +275,14 @@ func (s *InstanceService) ListInstances(ctx context.Context, serviceType, agentN
 // tracking the cleanup scheduler uses for deferred deletes.
 func (s *InstanceService) DeleteInstance(ctx context.Context, instanceID string, deferred bool) error {
 	log := logging.FromContext(ctx)
+	log.Debug("Deleting instance", "instance_id", instanceID, "deferred", deferred)
 
 	instance, err := s.store.ServiceTypeInstance().Get(ctx, instanceID, true)
 	if err != nil {
 		if errors.Is(err, rmstore.ErrInstanceNotFound) {
 			return service.NewNotFoundError(fmt.Sprintf("instance %s not found", instanceID))
 		}
+		log.Error("Failed to get instance for deletion", "instance_id", instanceID, "error", err)
 		return service.NewInternalError(fmt.Sprintf("failed to retrieve instance: %v", err))
 	}
 
@@ -370,9 +384,11 @@ func (s *InstanceService) resolveInstanceID(ctx context.Context, queryID *string
 
 	exists, err := s.store.ServiceTypeInstance().ExistsByID(ctx, requestedID)
 	if err != nil {
+		log.Error("Failed to check instance ID existence", "instance_id", requestedID, "error", err)
 		return nil, service.NewInternalError(fmt.Sprintf("failed to check instance existence: %v", err))
 	}
 	if exists {
+		log.Warn("Duplicate instance ID", "instance_id", requestedID)
 		return nil, service.NewConflictError(fmt.Sprintf("instance with ID '%s' already exists", requestedID))
 	}
 
