@@ -22,7 +22,18 @@ var (
 	// "pending_deletion"), so a self-heal/reassignment can't resurrect it
 	// into "pending" out from under an in-flight delete.
 	ErrInstanceNotEligible = errors.New("instance is not eligible for reassignment")
+	// ErrInstanceConflict is returned when Create hits a unique-constraint
+	// violation (typically a duplicate primary key).
+	ErrInstanceConflict = errors.New("service type instance already exists")
 )
+
+func isUniqueViolation(err error) bool {
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique constraint") || strings.Contains(msg, "duplicate key")
+}
 
 // ServiceTypeInstanceListOptions contains optional fields for listing instances.
 type ServiceTypeInstanceListOptions struct {
@@ -154,6 +165,9 @@ func (s *ServiceTypeInstanceStore) List(ctx context.Context, opts *ServiceTypeIn
 func (s *ServiceTypeInstanceStore) Create(ctx context.Context, instance model.ServiceTypeInstance) (*model.ServiceTypeInstance, error) {
 	operation := func() (*model.ServiceTypeInstance, error) {
 		if err := s.db.WithContext(ctx).Clauses(clause.Returning{}).Create(&instance).Error; err != nil {
+			if isUniqueViolation(err) {
+				return nil, backoff.Permanent(ErrInstanceConflict)
+			}
 			return nil, err
 		}
 		return &instance, nil

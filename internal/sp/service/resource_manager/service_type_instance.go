@@ -77,6 +77,9 @@ func (s *InstanceService) CreateInstance(ctx context.Context, request *resource_
 
 	created, err := s.store.ServiceTypeInstance().Create(ctx, instance)
 	if err != nil {
+		if errors.Is(err, rmstore.ErrInstanceConflict) {
+			return nil, service.NewConflictError(fmt.Sprintf("instance with ID '%s' already exists", *instanceID))
+		}
 		log.Error("Failed to create instance in store", "instance_id", *instanceID, "error", err)
 		return nil, service.NewInternalError(fmt.Sprintf("failed to create database record for instance %s: %v", *instanceID, err))
 	}

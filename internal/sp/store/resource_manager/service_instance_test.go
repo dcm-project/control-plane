@@ -94,6 +94,15 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("database is closed"))
 		})
+
+		It("returns ErrInstanceConflict for duplicate ID without retrying forever", func() {
+			instance := newServiceTypeInstance("dup-inst", map[string]any{"cpu": 1})
+			_, err := s.Create(ctx, instance)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = s.Create(ctx, instance)
+			Expect(err).To(MatchError(rmstore.ErrInstanceConflict))
+		})
 	})
 
 	Describe("Get", func() {
