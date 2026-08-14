@@ -304,6 +304,7 @@ func (s *ServiceTypeInstanceStore) ExistsByID(ctx context.Context, id string) (b
 const (
 	DeletionStatusScheduled = "SCHEDULED"
 	DeletionStatusFailed    = "FAILED"
+	DeletionStatusDeleted   = "DELETED"
 )
 
 func (s *ServiceTypeInstanceStore) MarkForDeletion(ctx context.Context, id string) error {
@@ -358,13 +359,22 @@ func (s *ServiceTypeInstanceStore) IncrementDeletionRetry(ctx context.Context, i
 func (s *ServiceTypeInstanceStore) MarkDeletionFailed(ctx context.Context, id string) error {
 	result := s.db.WithContext(ctx).
 		Model(&model.ServiceTypeInstance{}).
-		Where("id = ?", id).
+		Where("id = ? AND deletion_status <> ?", id, DeletionStatusDeleted).
 		Update("deletion_status", DeletionStatusFailed)
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return ErrInstanceNotFound
+		var existing model.ServiceTypeInstance
+		err := s.db.WithContext(ctx).Select("id", "deletion_status").Where("id = ?", id).First(&existing).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrInstanceNotFound
+		}
+		if err != nil {
+			return err
+		}
+		// Already DELETED (or otherwise not eligible): do not regress status.
+		return nil
 	}
 	return nil
 }
@@ -373,7 +383,7 @@ func (s *ServiceTypeInstanceStore) MarkDeletionComplete(ctx context.Context, id 
 	result := s.db.WithContext(ctx).
 		Model(&model.ServiceTypeInstance{}).
 		Where("id = ?", id).
-		Update("deletion_status", "DELETED")
+		Update("deletion_status", DeletionStatusDeleted)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -394,7 +404,7 @@ func (s *ServiceTypeInstanceStore) MarkDeletionCompleteFromAgent(ctx context.Con
 	result := s.db.WithContext(ctx).
 		Model(&model.ServiceTypeInstance{}).
 		Where("id = ? AND agent_name = ?", id, agentName).
-		Update("deletion_status", "DELETED")
+		Update("deletion_status", DeletionStatusDeleted)
 	if result.Error != nil {
 		return result.Error
 	}

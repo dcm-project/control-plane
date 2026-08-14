@@ -723,6 +723,18 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			err := s.MarkDeletionFailed(ctx, uuid.New().String())
 			Expect(err).To(MatchError(rmstore.ErrInstanceNotFound))
 		})
+
+		It("does not overwrite DELETED with FAILED", func() {
+			inst := addInstanceToStore(newServiceTypeInstance("fail-after-deleted", map[string]any{}))
+			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
+			Expect(s.MarkDeletionComplete(ctx, inst.ID)).To(Succeed())
+
+			Expect(s.MarkDeletionFailed(ctx, inst.ID)).To(Succeed())
+
+			found, err := s.Get(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*found.DeletionStatus).To(Equal("DELETED"))
+		})
 	})
 
 	Describe("ResetRetryCount", func() {
