@@ -6,9 +6,10 @@ on:
   pull_request:
     branches: [main, 'release/v*']
 
+# Temporary pin to shared-workflows#33 — revert to @main after that merges.
 jobs:
   auth-subsystem:
-    uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@main
+    uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@fix/blackbox-docker-compose-gha
     with:
       up-target: auth-subsystem-test-up
       test-target: auth-subsystem-test
@@ -20,7 +21,7 @@ jobs:
         quay.io/keycloak/keycloak:26.0
 
   policy-subsystem:
-    uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@main
+    uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@fix/blackbox-docker-compose-gha
     with:
       up-target: policy-subsystem-test-up
       test-target: policy-subsystem-test
@@ -31,7 +32,7 @@ jobs:
         quay.io/sclorg/postgresql-16-c9s:latest
 
   catalog-subsystem:
-    uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@main
+    uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@fix/blackbox-docker-compose-gha
     with:
       up-target: catalog-subsystem-test-up
       test-target: catalog-subsystem-test
@@ -43,7 +44,7 @@ jobs:
         wiremock/wiremock:3x
 
   sp-subsystem:
-    uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@main
+    uses: dcm-project/shared-workflows/.github/workflows/black-box.yaml@fix/blackbox-docker-compose-gha
     with:
       up-target: sp-subsystem-test-up
       test-target: sp-subsystem-test
