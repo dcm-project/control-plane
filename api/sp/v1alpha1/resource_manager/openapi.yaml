@@ -346,7 +346,9 @@ components:
             Deletion status for deferred deletions. Absent for active
             instances. SCHEDULED indicates the instance is queued for cleanup.
             FAILED indicates the cleanup has exceeded maximum retries.
-          enum: [SCHEDULED, FAILED]
+            DELETED indicates cleanup completed (visible when listing deleted
+            instances).
+          enum: [SCHEDULED, FAILED, DELETED]
         spec:
           type: object
           description: |

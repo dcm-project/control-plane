@@ -446,6 +446,51 @@ var _ = Describe("InstanceService", func() {
 			Expect(*result.Instances).To(HaveLen(1))
 			Expect(string(*(*result.Instances)[0].DeletionStatus)).To(Equal("SCHEDULED"))
 		})
+
+		It("surfaces deletion_status DELETED on the API struct after cleanup completes", func() {
+			agentName := "test-agent"
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "running",
+				InstanceName: "deleted-api-inst",
+				Spec:         map[string]any{"cpu": 2},
+				AgentName:    &agentName,
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+			Expect(dataStore.ServiceTypeInstance().MarkForDeletion(ctx, inst.ID)).To(Succeed())
+			Expect(dataStore.ServiceTypeInstance().MarkDeletionComplete(ctx, inst.ID)).To(Succeed())
+
+			got, err := instanceService.GetInstance(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.DeletionStatus).NotTo(BeNil())
+			Expect(string(*got.DeletionStatus)).To(Equal("DELETED"))
+
+			result, err := instanceService.ListInstances(ctx, nil, nil, true, nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*result.Instances).To(HaveLen(1))
+			Expect(string(*(*result.Instances)[0].DeletionStatus)).To(Equal("DELETED"))
+		})
+
+		It("surfaces deletion_status FAILED on the API struct after cleanup gives up", func() {
+			agentName := "test-agent"
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "running",
+				InstanceName: "failed-api-inst",
+				Spec:         map[string]any{"cpu": 2},
+				AgentName:    &agentName,
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+			Expect(dataStore.ServiceTypeInstance().MarkForDeletion(ctx, inst.ID)).To(Succeed())
+			Expect(dataStore.ServiceTypeInstance().MarkDeletionFailed(ctx, inst.ID)).To(Succeed())
+
+			got, err := instanceService.GetInstance(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.DeletionStatus).NotTo(BeNil())
+			Expect(string(*got.DeletionStatus)).To(Equal("FAILED"))
+		})
 	})
 
 	Describe("InstanceService agent fields", func() {

@@ -13,6 +13,7 @@ const (
 
 // Defines values for ServiceTypeInstanceDeletionStatus.
 const (
+	DELETED   ServiceTypeInstanceDeletionStatus = "DELETED"
 	FAILED    ServiceTypeInstanceDeletionStatus = "FAILED"
 	SCHEDULED ServiceTypeInstanceDeletionStatus = "SCHEDULED"
 )
@@ -20,6 +21,8 @@ const (
 // Valid indicates whether the value is a known member of the ServiceTypeInstanceDeletionStatus enum.
 func (e ServiceTypeInstanceDeletionStatus) Valid() bool {
 	switch e {
+	case DELETED:
+		return true
 	case FAILED:
 		return true
 	case SCHEDULED:
@@ -59,6 +62,8 @@ type ServiceTypeInstance struct {
 	// DeletionStatus Deletion status for deferred deletions. Absent for active
 	// instances. SCHEDULED indicates the instance is queued for cleanup.
 	// FAILED indicates the cleanup has exceeded maximum retries.
+	// DELETED indicates cleanup completed (visible when listing deleted
+	// instances).
 	DeletionStatus *ServiceTypeInstanceDeletionStatus `json:"deletion_status,omitempty"`
 
 	// Id Unique identifier for the Service Type Instance
@@ -81,6 +86,8 @@ type ServiceTypeInstance struct {
 // ServiceTypeInstanceDeletionStatus Deletion status for deferred deletions. Absent for active
 // instances. SCHEDULED indicates the instance is queued for cleanup.
 // FAILED indicates the cleanup has exceeded maximum retries.
+// DELETED indicates cleanup completed (visible when listing deleted
+// instances).
 type ServiceTypeInstanceDeletionStatus string
 
 // ServiceTypeInstanceList Paginated list of instances

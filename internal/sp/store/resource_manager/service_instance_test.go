@@ -682,6 +682,16 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			Expect(pending).To(BeEmpty())
 		})
 
+		It("excludes DELETED instances", func() {
+			inst := addInstanceToStore(newServiceTypeInstance("deleted", map[string]any{}))
+			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
+			Expect(s.MarkDeletionComplete(ctx, inst.ID)).To(Succeed())
+
+			pending, err := s.ListPendingDeletions(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pending).To(BeEmpty())
+		})
+
 		It("returns empty when no pending deletions exist", func() {
 			addInstanceToStore(newServiceTypeInstance("active", map[string]any{}))
 
@@ -778,6 +788,28 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(found.ID).To(Equal(inst.ID))
 			Expect(*found.DeletionStatus).To(Equal("SCHEDULED"))
+		})
+
+		It("returns DELETED instance when showDeleted is true", func() {
+			inst := addInstanceToStore(newServiceTypeInstance("soft-del-complete", map[string]any{}))
+			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
+			Expect(s.MarkDeletionComplete(ctx, inst.ID)).To(Succeed())
+
+			found, err := s.Get(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.ID).To(Equal(inst.ID))
+			Expect(*found.DeletionStatus).To(Equal("DELETED"))
+		})
+
+		It("returns FAILED instance when showDeleted is true", func() {
+			inst := addInstanceToStore(newServiceTypeInstance("soft-del-failed", map[string]any{}))
+			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
+			Expect(s.MarkDeletionFailed(ctx, inst.ID)).To(Succeed())
+
+			found, err := s.Get(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.ID).To(Equal(inst.ID))
+			Expect(*found.DeletionStatus).To(Equal("FAILED"))
 		})
 
 		It("returns not found for soft-deleted instance when showDeleted is false", func() {
