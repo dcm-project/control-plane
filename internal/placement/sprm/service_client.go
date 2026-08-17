@@ -42,6 +42,14 @@ func (c *serviceClient) CreateResource(ctx context.Context, req CreateResourceRe
 	return resp, nil
 }
 
+func (c *serviceClient) GetOutputSpec(ctx context.Context, resourceID string) (*GetOutputSpecResponse, error) {
+	outputSpec, err := c.instances.GetOutputSpec(ctx, resourceID)
+	if err != nil {
+		return nil, mapInstanceError(err)
+	}
+	return &GetOutputSpecResponse{OutputSpec: outputSpec}, nil
+}
+
 func (c *serviceClient) DeleteResource(ctx context.Context, resourceID string) error {
 	return c.deleteResource(ctx, resourceID, false)
 }

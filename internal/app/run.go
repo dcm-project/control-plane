@@ -110,22 +110,17 @@ func Run() int {
 	var publisher *messaging.Publisher
 	checkers := []Checker{NewPostgresChecker(db)}
 
-	if !cfg.NATS.Disabled {
-		statusConsumer, err := spconsumer.New(cfg.NATS.URL, cfg.NATS.Subject, spDataStore,
-			spconsumer.SetStreamName(cfg.NATS.StreamName),
-			spconsumer.SetConsumerName(cfg.NATS.ConsumerName),
-		)
-		if err != nil {
-			slog.Error("Failed to initialize status consumer", "error", err)
-			return 1
-		}
-		if err := statusConsumer.Start(ctx); err != nil {
-			slog.Error("Failed to start status consumer", "error", err)
-			return 1
-		}
-		defer statusConsumer.Stop()
-		checkers = append(checkers, NewNATSChecker(statusConsumer))
+	// Build services first so non-NATS mode can still run.
+	spInstanceService := sprmsvc.NewInstanceService(spDataStore, publisher, agentSt)
+	policyClient := placementpolicy.NewServiceClient(evaluationService)
+	sprmClient := placementsprm.NewServiceClient(spInstanceService)
+	placementService := placementservice.NewPlacementService(
+		placementDataStore, policyClient, sprmClient,
+		placementservice.WithAgentClient(agentClient),
+	)
 
+	if !cfg.NATS.Disabled {
+		// Phase 1: initialize JetStream publisher and agent response consumer.
 		agentNc, err := nats.Connect(cfg.NATS.URL, nats.MaxReconnects(-1))
 		if err != nil {
 			slog.Error("Failed to connect to NATS for agent response consumer", "error", err)
@@ -145,23 +140,49 @@ func Run() int {
 			return 1
 		}
 
-		responseConsumer := spconsumer.NewResponseConsumer(agentJS, spDataStore, agentSt, cfg.Agent.ResponseMaxDeliver, cfg.Agent.ResponseAckWait)
+		// Phase 2: rebuild placement dependencies with the active publisher.
+		spInstanceService = sprmsvc.NewInstanceService(spDataStore, publisher, agentSt)
+		sprmClient = placementsprm.NewServiceClient(spInstanceService)
+		placementService = placementservice.NewPlacementService(
+			placementDataStore, policyClient, sprmClient,
+			placementservice.WithAgentClient(agentClient),
+		)
+
+		responseConsumer := spconsumer.NewResponseConsumer(
+			agentJS,
+			spDataStore,
+			agentSt,
+			cfg.Agent.ResponseMaxDeliver,
+			cfg.Agent.ResponseAckWait,
+			spconsumer.SetPlacementDeletionHandler(placementService.OnResourceDeleted),
+		)
 		if err := responseConsumer.Start(ctx); err != nil {
 			slog.Error("Failed to start agent response consumer", "error", err)
 			return 1
 		}
 		defer responseConsumer.Stop()
+
+		// Phase 3: start status consumer wired to placement callbacks.
+		statusConsumer, err := spconsumer.New(cfg.NATS.URL, cfg.NATS.Subject, spDataStore,
+			spconsumer.SetStreamName(cfg.NATS.StreamName),
+			spconsumer.SetConsumerName(cfg.NATS.ConsumerName),
+			spconsumer.SetPlacementStatusHandlers(
+				placementService.OnResourceRunning,
+				nil,
+				placementService.OnResourceFailed,
+			),
+		)
+		if err != nil {
+			slog.Error("Failed to initialize status consumer", "error", err)
+			return 1
+		}
+		if err := statusConsumer.Start(ctx); err != nil {
+			slog.Error("Failed to start status consumer", "error", err)
+			return 1
+		}
+		defer statusConsumer.Stop()
+		checkers = append(checkers, NewNATSChecker(statusConsumer))
 	}
-
-	spInstanceService := sprmsvc.NewInstanceService(spDataStore, publisher, agentSt)
-
-	policyClient := placementpolicy.NewServiceClient(evaluationService)
-	sprmClient := placementsprm.NewServiceClient(spInstanceService)
-
-	placementService := placementservice.NewPlacementService(
-		placementDataStore, policyClient, sprmClient,
-		placementservice.WithAgentClient(agentClient),
-	)
 	pmClient, err := buildPlacementClient(cfg, placementService, logger)
 	if err != nil {
 		slog.Error("Failed to initialize placement client", "error", err)

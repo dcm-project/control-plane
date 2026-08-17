@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"net/http"
 
 	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
 	placementagent "github.com/dcm-project/control-plane/internal/placement/agent"
@@ -41,6 +42,7 @@ func (m *mockPolicyClient) Evaluate(ctx context.Context, req policy.EvaluateRequ
 // mockSPRMClient is a mock implementation of sprm.Client for testing
 type mockSPRMClient struct {
 	CreateResourceFunc         func(ctx context.Context, req sprm.CreateResourceRequest) (*sprm.CreateResourceResponse, error)
+	GetOutputSpecFunc          func(ctx context.Context, resourceID string) (*sprm.GetOutputSpecResponse, error)
 	DeleteResourceFunc         func(ctx context.Context, resourceId string) error
 	DeleteResourceDeferredFunc func(ctx context.Context, resourceId string) error
 	ReassignResourceFunc       func(ctx context.Context, resourceId string, agentName string, expectedCurrentAgent string) error
@@ -56,6 +58,13 @@ func (m *mockSPRMClient) CreateResource(ctx context.Context, req sprm.CreateReso
 		ID:     req.ID,
 		Status: "provisioning",
 	}, nil
+}
+
+func (m *mockSPRMClient) GetOutputSpec(ctx context.Context, resourceID string) (*sprm.GetOutputSpecResponse, error) {
+	if m.GetOutputSpecFunc != nil {
+		return m.GetOutputSpecFunc(ctx, resourceID)
+	}
+	return &sprm.GetOutputSpecResponse{OutputSpec: map[string]any{}}, nil
 }
 
 // DeleteResource calls the mock function if set, otherwise returns success
@@ -92,6 +101,13 @@ func (m *mockAgentClient) ListReadyAgents(_ context.Context) ([]placementagent.I
 		return nil, m.err
 	}
 	return m.agents, nil
+}
+
+func runningEvent(resourceID string) types.ResourceStatusEvent {
+	return types.ResourceStatusEvent{
+		ResourceID: resourceID,
+		Status:     types.ResourceStatusRunning,
+	}
 }
 
 func getStoredResource(ctx context.Context, dataStore store.Store, id string) *model.Resource {
@@ -617,7 +633,7 @@ var _ = Describe("PlacementService", func() {
 	})
 
 	Describe("DeleteRun", func() {
-		It("deletes existing resource", func() {
+		It("starts deletion for existing resource by setting DELETING status", func() {
 			// Create a resource first
 			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-delete",
@@ -630,11 +646,12 @@ var _ = Describe("PlacementService", func() {
 			err = placementSvc.DeleteRun(ctx, created.RunId)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Verify it's deleted
-			expectStoredResourceMissing(ctx, dataStore, *created.Resources[0].Id)
+			// Verify initial delete at highest dag level has started
+			stored := getStoredResource(ctx, dataStore, *created.Resources[0].Id)
+			Expect(stored.Status).To(Equal(types.ResourceStatusDeleting))
 		})
 
-		It("marks all resources PENDING_DELETION and deletes only the highest dag level", func() {
+		It("marks all resources PENDING_DELETION and starts delete from highest dag level", func() {
 			req := &types.CreateRunRequest{
 				CatalogItemInstanceId: "catalog-delete-multi",
 				RunId:                 uuid.New().String(),
@@ -648,7 +665,9 @@ var _ = Describe("PlacementService", func() {
 			Expect(created.Resources).To(HaveLen(2))
 
 			var dbID, appID string
+			nameByID := make(map[string]string, 2)
 			for _, r := range created.Resources {
+				nameByID[*r.Id] = r.Name
 				switch r.Name {
 				case "db":
 					dbID = *r.Id
@@ -659,14 +678,23 @@ var _ = Describe("PlacementService", func() {
 				}
 			}
 
+			deletedOrder := make([]string, 0, 2)
+			mockSPRM.DeleteResourceFunc = func(_ context.Context, resourceID string) error {
+				deletedOrder = append(deletedOrder, nameByID[resourceID])
+				return nil
+			}
+
 			err = placementSvc.DeleteRun(ctx, created.RunId)
 			Expect(err).NotTo(HaveOccurred())
 
-			expectStoredResourceMissing(ctx, dataStore, appID)
-
-			remaining, err := dataStore.Resource().Get(ctx, dbID)
+			app, err := dataStore.Resource().Get(ctx, appID)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(remaining.Status).To(Equal(types.ResourceStatusPendingDeletion))
+			Expect(app.Status).To(Equal(types.ResourceStatusDeleting))
+
+			db, err := dataStore.Resource().Get(ctx, dbID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(db.Status).To(Equal(types.ResourceStatusPendingDeletion))
+			Expect(deletedOrder).To(Equal([]string{"app"}))
 		})
 
 		It("returns not found error for non-existent resource", func() {
@@ -679,7 +707,7 @@ var _ = Describe("PlacementService", func() {
 			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
 		})
 
-		It("returns error when SPRM deletion fails (404)", func() {
+		It("treats SPRM deletion not found (404) as idempotent success", func() {
 			// Create a resource first
 			resource := &types.Resource{
 				CatalogItemInstanceId: "catalog-sprm-404",
@@ -696,14 +724,9 @@ var _ = Describe("PlacementService", func() {
 			// Try to delete the resource
 			err = placementSvc.DeleteRun(ctx, created.RunId)
 
-			Expect(err).To(HaveOccurred())
-			var svcErr *service.ServiceError
-			Expect(err).To(BeAssignableToTypeOf(svcErr))
-			svcErr = err.(*service.ServiceError)
-			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
-
-			// Verify resource still exists in DB (SPRM delete failed, so DB delete didn't happen)
-			_ = getStoredResource(ctx, dataStore, *created.Resources[0].Id)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = dataStore.Resource().Get(ctx, *created.Resources[0].Id)
+			Expect(errors.Is(err, store.ErrResourceNotFound)).To(BeTrue())
 		})
 
 		It("returns error when SPRM deletion fails (500)", func() {
@@ -731,6 +754,364 @@ var _ = Describe("PlacementService", func() {
 
 			// Verify resource still exists in DB (SPRM delete failed, so DB delete didn't happen)
 			_ = getStoredResource(ctx, dataStore, *created.Resources[0].Id)
+		})
+	})
+
+	Describe("Status-driven orchestration", func() {
+		It("progresses next DAG level on OnResourceRunning", func() {
+			createdKinds := make([]string, 0, 2)
+			mockSPRM.CreateResourceFunc = func(_ context.Context, req sprm.CreateResourceRequest) (*sprm.CreateResourceResponse, error) {
+				kind, _ := req.Spec["kind"].(string)
+				createdKinds = append(createdKinds, kind)
+				return &sprm.CreateResourceResponse{ID: req.ID, Status: "provisioning"}, nil
+			}
+
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-progress",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var dbID string
+			for _, r := range created.Resources {
+				if r.Name == "db" {
+					dbID = *r.Id
+				}
+			}
+			Expect(createdKinds).To(Equal([]string{"db"}))
+
+			err = placementSvc.OnResourceRunning(ctx, runningEvent(dbID))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(createdKinds).To(Equal([]string{"db", "app"}))
+		})
+
+		It("re-evaluates policy for the next DAG level on OnResourceRunning", func() {
+			evaluateCalls := 0
+			sprmSpecs := make(map[string]map[string]any)
+			mockPolicy.EvaluateFunc = func(_ context.Context, req policy.EvaluateRequest) (*policy.EvaluateResponse, error) {
+				evaluateCalls++
+				evaluatedSpec := map[string]any{}
+				for k, v := range req.Spec {
+					evaluatedSpec[k] = v
+				}
+				if kind, _ := req.Spec["kind"].(string); kind == "app" && evaluateCalls > 2 {
+					evaluatedSpec["policy_at_progress"] = true
+				}
+				return &policy.EvaluateResponse{
+					Status:        "APPROVED",
+					SelectedAgent: "progress-agent",
+					EvaluatedSpec: evaluatedSpec,
+				}, nil
+			}
+			mockSPRM.CreateResourceFunc = func(_ context.Context, req sprm.CreateResourceRequest) (*sprm.CreateResourceResponse, error) {
+				specCopy := map[string]any{}
+				for k, v := range req.Spec {
+					specCopy[k] = v
+				}
+				sprmSpecs[req.ID] = specCopy
+				return &sprm.CreateResourceResponse{ID: req.ID, Status: "provisioning"}, nil
+			}
+
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-policy-progress",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var dbID, appID string
+			for _, r := range created.Resources {
+				switch r.Name {
+				case "db":
+					dbID = *r.Id
+				case "app":
+					appID = *r.Id
+				}
+			}
+			Expect(evaluateCalls).To(Equal(2))
+
+			err = placementSvc.OnResourceRunning(ctx, runningEvent(dbID))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(evaluateCalls).To(Equal(3))
+			Expect(sprmSpecs[appID]).To(HaveKey("policy_at_progress"))
+
+			storedApp := getStoredResource(ctx, dataStore, appID)
+			Expect(storedApp.AgentName).NotTo(BeNil())
+			Expect(*storedApp.AgentName).To(Equal("progress-agent"))
+		})
+
+		It("binds apply-time CEL from RUNNING dependency outputs before provisioning", func() {
+			var appCreateSpec map[string]any
+			mockSPRM.GetOutputSpecFunc = func(_ context.Context, _ string) (*sprm.GetOutputSpecResponse, error) {
+				return &sprm.GetOutputSpecResponse{
+					OutputSpec: map[string]any{"connection_string": "postgres://db:5432/orders"},
+				}, nil
+			}
+			mockSPRM.CreateResourceFunc = func(_ context.Context, req sprm.CreateResourceRequest) (*sprm.CreateResourceResponse, error) {
+				if kind, _ := req.Spec["kind"].(string); kind == "app" {
+					specCopy := map[string]any{}
+					for k, v := range req.Spec {
+						specCopy[k] = v
+					}
+					appCreateSpec = specCopy
+				}
+				return &sprm.CreateResourceResponse{ID: req.ID, Status: "provisioning"}, nil
+			}
+
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-cel-bind",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{
+						Name:              "app",
+						Spec:              map[string]any{"kind": "app", "database_url": "${db.connection_string}"},
+						RequiresResources: []string{"db"},
+					},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var dbID string
+			for _, r := range created.Resources {
+				if r.Name == "db" {
+					dbID = *r.Id
+				}
+			}
+
+			err = placementSvc.OnResourceRunning(ctx, runningEvent(dbID))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(appCreateSpec).NotTo(BeNil())
+			Expect(appCreateSpec["database_url"]).To(Equal("postgres://db:5432/orders"))
+		})
+
+		It("returns not found when the RUNNING resource does not exist", func() {
+			err := placementSvc.OnResourceRunning(ctx, runningEvent(uuid.New().String()))
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(err).To(BeAssignableToTypeOf(svcErr))
+			svcErr = err.(*service.ServiceError)
+			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
+		})
+
+		It("returns nil when no pending resources are ready to provision", func() {
+			resource := &types.Resource{
+				CatalogItemInstanceId: "catalog-single",
+				Spec:                  map[string]any{"kind": "db"},
+			}
+			created, err := placementSvc.CreateRun(ctx, singleResourceRun(resource.CatalogItemInstanceId, resource.Spec, nil))
+			Expect(err).NotTo(HaveOccurred())
+			dbID := *created.Resources[0].Id
+
+			createCalls := 0
+			mockSPRM.CreateResourceFunc = func(_ context.Context, _ sprm.CreateResourceRequest) (*sprm.CreateResourceResponse, error) {
+				createCalls++
+				return &sprm.CreateResourceResponse{Status: "provisioning"}, nil
+			}
+
+			err = placementSvc.OnResourceRunning(ctx, runningEvent(dbID))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(createCalls).To(Equal(0))
+		})
+
+		It("returns a validation error when CEL binding fails", func() {
+			mockSPRM.GetOutputSpecFunc = func(_ context.Context, _ string) (*sprm.GetOutputSpecResponse, error) {
+				return &sprm.GetOutputSpecResponse{OutputSpec: map[string]any{"kind": "db"}}, nil
+			}
+
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-cel-fail",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{
+						Name:              "app",
+						Spec:              map[string]any{"database_url": "${db.connection_string}"},
+						RequiresResources: []string{"db"},
+					},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var dbID string
+			for _, r := range created.Resources {
+				if r.Name == "db" {
+					dbID = *r.Id
+				}
+			}
+
+			err = placementSvc.OnResourceRunning(ctx, runningEvent(dbID))
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(err).To(BeAssignableToTypeOf(svcErr))
+			svcErr = err.(*service.ServiceError)
+			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
+		})
+
+		It("returns an SPRM error when GetOutputSpec fails", func() {
+			mockSPRM.GetOutputSpecFunc = func(_ context.Context, _ string) (*sprm.GetOutputSpecResponse, error) {
+				return nil, &sprm.HTTPError{StatusCode: http.StatusNotFound, Body: "instance not found"}
+			}
+
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-output-fail",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var dbID string
+			for _, r := range created.Resources {
+				if r.Name == "db" {
+					dbID = *r.Id
+				}
+			}
+
+			err = placementSvc.OnResourceRunning(ctx, runningEvent(dbID))
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(err).To(BeAssignableToTypeOf(svcErr))
+			svcErr = err.(*service.ServiceError)
+			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
+		})
+
+		It("progresses reverse DAG deletion on OnResourceDeleted", func() {
+			deleteOrder := make([]string, 0, 2)
+
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-reverse-delete",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(created.Resources).To(HaveLen(2))
+
+			var dbID, appID string
+			nameByID := map[string]string{}
+			for _, r := range created.Resources {
+				nameByID[*r.Id] = r.Name
+				switch r.Name {
+				case "db":
+					dbID = *r.Id
+				case "app":
+					appID = *r.Id
+				}
+			}
+
+			mockSPRM.DeleteResourceFunc = func(_ context.Context, resourceID string) error {
+				deleteOrder = append(deleteOrder, nameByID[resourceID])
+				return nil
+			}
+
+			err = placementSvc.DeleteRun(ctx, created.RunId)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(deleteOrder).To(Equal([]string{"app"}))
+
+			err = placementSvc.OnResourceDeleted(ctx, appID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(deleteOrder).To(Equal([]string{"app", "db"}))
+
+			db, err := dataStore.Resource().Get(ctx, dbID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(db.Status).To(Equal(types.ResourceStatusDeleting))
+
+			err = placementSvc.OnResourceDeleted(ctx, dbID)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = dataStore.Resource().Get(ctx, appID)
+			Expect(errors.Is(err, store.ErrResourceNotFound)).To(BeTrue())
+			_, err = dataStore.Resource().Get(ctx, dbID)
+			Expect(errors.Is(err, store.ErrResourceNotFound)).To(BeTrue())
+		})
+
+		It("treats SPRM deletion not found during OnResourceDeleted progression as idempotent success", func() {
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-reverse-delete-404",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var dbID, appID string
+			for _, r := range created.Resources {
+				switch r.Name {
+				case "db":
+					dbID = *r.Id
+				case "app":
+					appID = *r.Id
+				}
+			}
+
+			mockSPRM.DeleteResourceFunc = func(_ context.Context, resourceID string) error {
+				if resourceID == dbID {
+					return &sprm.HTTPError{StatusCode: 404, Body: "not found in SPRM"}
+				}
+				return nil
+			}
+
+			err = placementSvc.DeleteRun(ctx, created.RunId)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = placementSvc.OnResourceDeleted(ctx, appID)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = dataStore.Resource().Get(ctx, appID)
+			Expect(errors.Is(err, store.ErrResourceNotFound)).To(BeTrue())
+			_, err = dataStore.Resource().Get(ctx, dbID)
+			Expect(errors.Is(err, store.ErrResourceNotFound)).To(BeTrue())
+		})
+
+		It("starts rollback on OnResourceFailed", func() {
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-failed",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var dbID, appID string
+			for _, r := range created.Resources {
+				if r.Name == "db" {
+					dbID = *r.Id
+				}
+				if r.Name == "app" {
+					appID = *r.Id
+				}
+			}
+
+			err = placementSvc.OnResourceFailed(ctx, dbID)
+			Expect(err).NotTo(HaveOccurred())
+
+			app, err := dataStore.Resource().Get(ctx, appID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(app.Status).To(Equal(types.ResourceStatusDeleting))
 		})
 	})
 

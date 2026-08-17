@@ -204,6 +204,15 @@ func (s *InstanceService) GetInstance(ctx context.Context, instanceID string, sh
 	log := logging.FromContext(ctx)
 	log.Debug("Getting instance", "instance_id", instanceID, "show_deleted", showDeleted)
 
+	instance, err := s.getInstanceModel(ctx, instanceID, showDeleted)
+	if err != nil {
+		return nil, err
+	}
+	return ModelToAPI(instance), nil
+}
+
+func (s *InstanceService) getInstanceModel(ctx context.Context, instanceID string, showDeleted bool) (*model.ServiceTypeInstance, error) {
+	log := logging.FromContext(ctx)
 	instance, err := s.store.ServiceTypeInstance().Get(ctx, instanceID, showDeleted)
 	if err != nil {
 		if errors.Is(err, rmstore.ErrInstanceNotFound) {
@@ -212,8 +221,19 @@ func (s *InstanceService) GetInstance(ctx context.Context, instanceID string, sh
 		log.Error("Failed to get instance from store", "instance_id", instanceID, "error", err)
 		return nil, service.NewInternalError(fmt.Sprintf("failed to retrieve instance: %v", err))
 	}
+	return instance, nil
+}
 
-	return ModelToAPI(instance), nil
+// GetOutputSpec returns the persisted output_spec for an instance.
+func (s *InstanceService) GetOutputSpec(ctx context.Context, instanceID string) (map[string]any, error) {
+	log := logging.FromContext(ctx)
+	log.Debug("Getting instance output_spec", "instance_id", instanceID)
+
+	instance, err := s.getInstanceModel(ctx, instanceID, false)
+	if err != nil {
+		return nil, err
+	}
+	return instance.OutputSpec, nil
 }
 
 func (s *InstanceService) ListInstances(ctx context.Context, serviceType, agentName *string, showDeleted bool, maxPageSize *int, pageToken *string) (*resource_manager.ServiceTypeInstanceList, error) {
@@ -333,7 +353,7 @@ func (s *InstanceService) DeleteInstance(ctx context.Context, instanceID string,
 		return service.NewProvisioningError(fmt.Sprintf("failed to publish delete for instance %s: %v", instanceID, err))
 	}
 
-	if err := s.store.ServiceTypeInstance().UpdateStatus(ctx, instanceID, model.StatusDeleting, ""); err != nil {
+	if err := s.store.ServiceTypeInstance().UpdateStatus(ctx, instanceID, model.StatusDeleting, "", nil); err != nil {
 		log.Error("Failed to mark instance deleting", "instance_id", instanceID, "error", err)
 		return service.NewInternalError(fmt.Sprintf("failed to update instance %s: %v", instanceID, err))
 	}

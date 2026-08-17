@@ -19,9 +19,15 @@ type CreateResourceResponse struct {
 	Status string `json:"status"`
 }
 
+// GetOutputSpecResponse is the persisted provider output for an instance.
+type GetOutputSpecResponse struct {
+	OutputSpec map[string]any `json:"output_spec"`
+}
+
 // Client is the port PlacementService uses to manage SP resource instances.
 type Client interface {
 	CreateResource(ctx context.Context, req CreateResourceRequest) (*CreateResourceResponse, error)
+	GetOutputSpec(ctx context.Context, resourceID string) (*GetOutputSpecResponse, error)
 	DeleteResource(ctx context.Context, resourceId string) error
 	DeleteResourceDeferred(ctx context.Context, resourceId string) error
 	// ReassignResource re-points an existing resource at a new agent and

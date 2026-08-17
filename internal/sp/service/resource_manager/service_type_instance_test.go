@@ -242,6 +242,34 @@ var _ = Describe("InstanceService", func() {
 		})
 	})
 
+	Describe("GetOutputSpec", func() {
+		It("returns persisted output_spec", func() {
+			req := &resource_manager.ServiceTypeInstance{
+				Spec: map[string]interface{}{"cpu": 2, "service_type": "vm"},
+			}
+			created, err := instanceService.CreateInstance(ctx, req, nil, "test-agent")
+			Expect(err).NotTo(HaveOccurred())
+
+			outputSpec := map[string]any{"connection_string": "postgres://db:5432/orders"}
+			err = dataStore.ServiceTypeInstance().UpdateStatus(ctx, *created.Id, "RUNNING", "ready", outputSpec)
+			Expect(err).NotTo(HaveOccurred())
+
+			got, err := instanceService.GetOutputSpec(ctx, *created.Id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(Equal(outputSpec))
+		})
+
+		It("returns not found error for non-existent instance", func() {
+			_, err := instanceService.GetOutputSpec(ctx, uuid.New().String())
+
+			Expect(err).To(HaveOccurred())
+			var svcErr *service.ServiceError
+			Expect(err).To(BeAssignableToTypeOf(svcErr))
+			errors.As(err, &svcErr)
+			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
+		})
+	})
+
 	Describe("ListInstances", func() {
 		It("returns empty list when no instances exist", func() {
 			result, err := instanceService.ListInstances(ctx, nil, nil, false, nil, nil)

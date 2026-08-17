@@ -92,28 +92,11 @@ func (s *PlacementService) CreateRun(ctx context.Context, req *types.CreateRunRe
 		path := fmt.Sprintf("resources/%s", resourceID)
 
 		// Evaluate spec with policy engine
-		policyRequest := policy.EvaluateRequest{
-			Spec:            resource.Spec,
-			AvailableAgents: availableAgents,
-		}
 		log.Debug("Evaluating policy", "run_id", runID, "resource_id", resourceID, "name", resource.Name)
-		policyResponse, err := s.policy.Evaluate(ctx, policyRequest)
+		evaluated, err := s.evaluateResourcePolicy(ctx, resourceID, resource.Spec, availableAgents)
 		if err != nil {
-			log.Error("Policy evaluation failed", "run_id", runID, "resource_id", resourceID, "error", err)
-			return nil, handlePolicyError(err)
+			return nil, err
 		}
-		if policyResponse.SelectedAgent == "" {
-			log.Error("Policy response missing selected agent",
-				"run_id", runID,
-				"resource_id", resourceID,
-				"status", policyResponse.Status,
-			)
-			return nil, NewPolicyInternalError("policy response missing selected agent")
-		}
-
-		// Extract approvalStatus and agentName from policy response
-		approval := policyResponse.Status
-		agentName := policyResponse.SelectedAgent
 
 		prepared = append(prepared, preparedResource{
 			resource: model.Resource{
@@ -126,10 +109,10 @@ func (s *PlacementService) CreateRun(ctx context.Context, req *types.CreateRunRe
 				DagLevel:              resourceNameDagLevelMap[resource.Name],
 				Status:                types.ResourceStatusPending,
 				Path:                  path,
-				AgentName:             &agentName,
-				ApprovalStatus:        &approval,
+				AgentName:             &evaluated.SelectedAgent,
+				ApprovalStatus:        &evaluated.Status,
 			},
-			evaluatedSpec: policyResponse.EvaluatedSpec,
+			evaluatedSpec: evaluated.EvaluatedSpec,
 		})
 	}
 
@@ -149,7 +132,15 @@ func (s *PlacementService) CreateRun(ctx context.Context, req *types.CreateRunRe
 		return nil, NewInternalError(fmt.Sprintf("failed to create database records for run %s: %v", runID, err))
 	}
 
-	// step 5: provision dag_level 0 via SPRM (higher levels continue asynchronously later)
+	// step 5: provision dag_level 0 synchronously; higher levels are progressed by
+	// OnResourceRunning status callbacks.
+	slices.SortFunc(prepared, func(a, b preparedResource) int {
+		if a.resource.DagLevel != b.resource.DagLevel {
+			return cmp.Compare(a.resource.DagLevel, b.resource.DagLevel)
+		}
+		return cmp.Compare(a.resource.Name, b.resource.Name)
+	})
+
 	var provisionedIDs []string
 	for _, p := range prepared {
 		if p.resource.DagLevel != 0 {
@@ -256,52 +247,13 @@ func (s *PlacementService) DeleteRun(ctx context.Context, runID string) error {
 		return NewNotFoundError(fmt.Sprintf("run %s not found", runID))
 	}
 
-	// Find the highest dag_level (first delete wave)
-	maxDagLevel := slices.MaxFunc(resources, func(a, b model.Resource) int {
-		return cmp.Compare(a.DagLevel, b.DagLevel)
-	}).DagLevel
-
 	// Mark all resources in the run as PENDING_DELETION
 	if err := s.store.Resource().UpdateStatusByRunID(ctx, runID, types.ResourceStatusPendingDeletion); err != nil {
 		log.Error("Failed to mark resources as pending deletion", "run_id", runID, "error", err)
 		return NewInternalError(fmt.Sprintf("failed to mark run %s as pending deletion: %v", runID, err))
 	}
 
-	for _, resource := range resources {
-		if resource.DagLevel != maxDagLevel {
-			continue
-		}
-		// Delete from SPRM first before deleting from the database
-		log.Debug("Deleting resource from SPRM",
-			"run_id", runID,
-			"resource_id", resource.ID,
-			"dag_level", resource.DagLevel,
-		)
-		if err := s.sprm.DeleteResource(ctx, resource.ID); err != nil {
-			// No delete-path rollback: already-deleted SPRM resources stay gone.
-			log.Error("SPRM deletion failed, preserving remaining DB records",
-				"run_id", runID,
-				"resource_id", resource.ID,
-				"error", err,
-			)
-			return handleSPRMError(err)
-		}
-		// Delete record from the database
-		if err := s.store.Resource().Delete(ctx, resource.ID); err != nil && !errors.Is(err, store.ErrResourceNotFound) {
-			log.Error("Failed to delete resource from store after SPRM success",
-				"run_id", runID,
-				"resource_id", resource.ID,
-				"error", err,
-			)
-			return NewInternalError(fmt.Sprintf("failed to delete database record for resource %s: %v", resource.ID, err))
-		}
-	}
-
-	log.Info("Run delete started for highest dag level",
-		"run_id", runID,
-		"dag_level", maxDagLevel,
-	)
-	return nil
+	return s.progressRunDeletion(ctx, runID)
 }
 
 // RehydrateResource re-evaluates an existing resource against current policies
@@ -346,29 +298,11 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 		log.Error("Failed to list available agents for rehydration", "error", err)
 		return nil, err
 	}
-	policyRequest := policy.EvaluateRequest{
-		Spec:            oldResource.Spec,
-		AvailableAgents: availableAgents,
-	}
-
 	log.Debug("Re-evaluating policy for rehydration", "resource_id", resourceID)
-	policyResponse, err := s.policy.Evaluate(ctx, policyRequest)
+	evaluated, err := s.evaluateResourcePolicy(ctx, resourceID, oldResource.Spec, availableAgents)
 	if err != nil {
-		log.Error("Policy re-evaluation failed during rehydration", "resource_id", resourceID, "error", err)
-		return nil, handlePolicyError(err)
+		return nil, err
 	}
-
-	if policyResponse.SelectedAgent == "" {
-		log.Error("Policy response missing selected agent during rehydration",
-			"resource_id", resourceID,
-			"status", policyResponse.Status,
-		)
-		return nil, NewPolicyInternalError("policy response missing selected agent")
-	}
-
-	// Extract approvalStatus from policy response
-	approvalStatus := policyResponse.Status
-
 	// Step 3: Create new resource in DB
 	newPath := fmt.Sprintf("resources/%s", newResourceID)
 	newResource := model.Resource{
@@ -381,8 +315,8 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 		DagLevel:              oldResource.DagLevel,
 		Status:                types.ResourceStatusPending,
 		Path:                  newPath,
-		ApprovalStatus:        &approvalStatus,
-		AgentName:             &policyResponse.SelectedAgent,
+		ApprovalStatus:        &evaluated.Status,
+		AgentName:             &evaluated.SelectedAgent,
 	}
 
 	// Step 3: Create new resource in DB
@@ -399,8 +333,8 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 	// Step 4: Provision new resource in SPRM
 	sprmRequest := sprm.CreateResourceRequest{
 		ID:        newResourceID,
-		Spec:      policyResponse.EvaluatedSpec,
-		AgentName: policyResponse.SelectedAgent,
+		Spec:      evaluated.EvaluatedSpec,
+		AgentName: evaluated.SelectedAgent,
 	}
 	if _, err = s.sprm.CreateResource(ctx, sprmRequest); err != nil {
 		log.Error("SPRM provisioning failed during rehydration, rolling back", "new_resource_id", newResourceID, "error", err)
@@ -414,8 +348,6 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 		}
 		return nil, handleSPRMError(err)
 	}
-
-	// TODO: Delete the old run in reverse DAG order.
 
 	// Step 5: Delete old resource from SPRM (deferred - non-blocking)
 	if err := s.sprm.DeleteResourceDeferred(ctx, resourceID); err != nil {
@@ -438,8 +370,8 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 		"old_resource_id", resourceID,
 		"new_resource_id", newResourceID,
 		"catalog_item_instance_id", oldResource.CatalogItemInstanceId,
-		"agent", policyResponse.SelectedAgent,
-		"approval_status", approvalStatus,
+		"agent", evaluated.SelectedAgent,
+		"approval_status", evaluated.Status,
 	)
 
 	res := storeModelToResource(created)
@@ -649,4 +581,27 @@ func getOrGenerateStringId(id *string) string {
 	}
 	// Generate UUID if not provided
 	return uuid.New().String()
+}
+
+// evaluateResourcePolicy runs the policy engine against a resource spec and returns
+// the selected agent, approval status, and evaluated spec for SPRM provisioning.
+func (s *PlacementService) evaluateResourcePolicy(ctx context.Context, resourceID string, spec map[string]any, availableAgents []policy.AgentInfo) (*policy.EvaluateResponse, error) {
+	log := logging.FromContext(ctx)
+	log.Debug("Evaluating policy", "resource_id", resourceID)
+	policyResponse, err := s.policy.Evaluate(ctx, policy.EvaluateRequest{
+		Spec:            spec,
+		AvailableAgents: availableAgents,
+	})
+	if err != nil {
+		log.Error("Policy evaluation failed", "resource_id", resourceID, "error", err)
+		return nil, handlePolicyError(err)
+	}
+	if policyResponse.SelectedAgent == "" {
+		log.Error("Policy response missing selected agent",
+			"resource_id", resourceID,
+			"status", policyResponse.Status,
+		)
+		return nil, NewPolicyInternalError("policy response missing selected agent")
+	}
+	return policyResponse, nil
 }

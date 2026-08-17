@@ -47,6 +47,7 @@ type ResponseConsumer struct {
 	store      store.Store
 	publisher  *messaging.Publisher
 	agentStore agentstore.Agent
+	onDeleted  func(context.Context, string) error
 	maxDeliver int
 	ackWait    time.Duration
 	ctx        context.Context
@@ -54,18 +55,29 @@ type ResponseConsumer struct {
 	wg         sync.WaitGroup
 }
 
+// ResponseOption configures ResponseConsumer behavior.
+type ResponseOption func(*ResponseConsumer)
+
+// SetPlacementDeletionHandler registers a callback invoked when an agent
+// deletion-acknowledged event finalizes deletion for an instance.
+func SetPlacementDeletionHandler(onDeleted func(context.Context, string) error) ResponseOption {
+	return func(c *ResponseConsumer) {
+		c.onDeleted = onDeleted
+	}
+}
+
 // NewResponseConsumer constructs a ResponseConsumer. maxDeliver bounds
 // redeliveries of a message that keeps getting Nak'd; ackWait is how long
 // JetStream waits for an ack before redelivering. Pass <= 0 for either to
 // use the package defaults.
-func NewResponseConsumer(js jetstream.JetStream, st store.Store, agentSt agentstore.Agent, maxDeliver int, ackWait time.Duration) *ResponseConsumer {
+func NewResponseConsumer(js jetstream.JetStream, st store.Store, agentSt agentstore.Agent, maxDeliver int, ackWait time.Duration, opts ...ResponseOption) *ResponseConsumer {
 	if maxDeliver <= 0 {
 		maxDeliver = defaultMaxDeliver
 	}
 	if ackWait <= 0 {
 		ackWait = defaultAckWait
 	}
-	return &ResponseConsumer{
+	c := &ResponseConsumer{
 		js:         js,
 		store:      st,
 		publisher:  messaging.NewPublisher(js),
@@ -73,6 +85,10 @@ func NewResponseConsumer(js jetstream.JetStream, st store.Store, agentSt agentst
 		maxDeliver: maxDeliver,
 		ackWait:    ackWait,
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 func (c *ResponseConsumer) Start(ctx context.Context) error {
@@ -257,6 +273,7 @@ func (c *ResponseConsumer) handleRequestQueued(ctx context.Context, data eventDa
 // already-finalized tombstone.
 func (c *ResponseConsumer) handleDeletionAcknowledged(ctx context.Context, data eventData, msg jetstream.Msg) {
 	stiStore := c.store.ServiceTypeInstance()
+	deletionFinalized := false
 
 	instance, err := stiStore.Get(ctx, data.ResourceID, true)
 	if err != nil {
@@ -285,6 +302,7 @@ func (c *ResponseConsumer) handleDeletionAcknowledged(ctx context.Context, data 
 				"instance_id", data.ResourceID, "event_type", messaging.CETypeDeletionAcknowledged, "agent_name", data.AgentName)
 		} else {
 			slog.Info("deletion-acknowledged: instance hard-deleted", "instance_id", data.ResourceID, "event_type", messaging.CETypeDeletionAcknowledged, "agent_name", data.AgentName, "status", "DELETED")
+			deletionFinalized = true
 		}
 	case instance.Status == model.StatusPendingDeletion,
 		instance.DeletionStatus != nil && *instance.DeletionStatus == rmstore.DeletionStatusScheduled:
@@ -303,10 +321,20 @@ func (c *ResponseConsumer) handleDeletionAcknowledged(ctx context.Context, data 
 			}
 		} else {
 			slog.Info("deletion-acknowledged: deferred deletion marked complete", "instance_id", data.ResourceID, "event_type", messaging.CETypeDeletionAcknowledged, "agent_name", data.AgentName, "status", "DELETED")
+			deletionFinalized = true
 		}
 	default:
 		slog.Info("deletion-acknowledged: deletion already finalized or instance was never deleting, ignoring stale/duplicate ack",
 			"instance_id", data.ResourceID, "event_type", messaging.CETypeDeletionAcknowledged, "agent_name", data.AgentName, "status", instance.Status, "deletion_status", instance.DeletionStatus)
+	}
+	if deletionFinalized && c.onDeleted != nil {
+		if err := c.onDeleted(ctx, data.ResourceID); err != nil {
+			slog.Error("deletion-acknowledged: placement OnResourceDeleted callback failed",
+				"instance_id", data.ResourceID,
+				"event_type", messaging.CETypeDeletionAcknowledged,
+				"error", err,
+			)
+		}
 	}
 	_ = msg.Ack()
 }

@@ -9,6 +9,7 @@ import (
 
 	cloudevents "github.com/cloudevents/sdk-go/v2/event"
 	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
+	placementtypes "github.com/dcm-project/control-plane/internal/placement/types"
 	"github.com/dcm-project/control-plane/internal/sp/consumer"
 	"github.com/dcm-project/control-plane/internal/sp/store"
 	"github.com/dcm-project/control-plane/internal/sp/store/model"
@@ -123,6 +124,87 @@ var _ = Describe("StatusConsumer", func() {
 		_, err := dataStore.ServiceTypeInstance().Create(bg.ctx, instance)
 		Expect(err).NotTo(HaveOccurred())
 	}
+
+	It("invokes onRunning for RUNNING events with or without output_spec", func() {
+		sc.Stop()
+		Expect(js.DeleteStream(bg.ctx, "test-stream-"+streamID)).To(Succeed())
+
+		runningCalls := 0
+		scWithHandler, err := consumer.New(natsURL, "dcm.*", dataStore,
+			consumer.SetStreamName("test-stream-"+streamID),
+			consumer.SetConsumerName("test-consumer-handler-"+streamID),
+			consumer.SetPlacementStatusHandlers(
+				func(_ context.Context, _ placementtypes.ResourceStatusEvent) error {
+					runningCalls++
+					return nil
+				},
+				nil,
+				nil,
+			),
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(scWithHandler.Start(bg.ctx)).To(Succeed())
+		defer scWithHandler.Stop()
+
+		instanceID := uuid.New().String()
+		createInstance(instanceID)
+
+		publishStatusEvent("kubevirt-sp", "vm", instanceID, "RUNNING", "VM is running without outputs")
+		Eventually(func() int { return runningCalls }, 2*time.Second, 100*time.Millisecond).Should(Equal(1))
+
+		event := cloudevents.New()
+		event.SetID(uuid.New().String())
+		event.SetSource("dcm/providers/kubevirt-sp")
+		event.SetType("dcm.status.vm")
+		event.SetTime(time.Now())
+		payload := consumer.StatusEvent{
+			Id:         instanceID,
+			Status:     "RUNNING",
+			Message:    "VM is running with outputs",
+			OutputSpec: map[string]any{"connection_string": "postgres://db:5432/orders"},
+			Timestamp:  time.Now(),
+		}
+		Expect(event.SetData(cloudevents.ApplicationJSON, payload)).To(Succeed())
+		data, err := json.Marshal(event)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = js.Publish(bg.ctx, "dcm.vm", data)
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func() int { return runningCalls }, 2*time.Second, 100*time.Millisecond).Should(Equal(2))
+	})
+
+	It("persists output_spec from status events", func() {
+		instanceID := uuid.New().String()
+		createInstance(instanceID)
+
+		event := cloudevents.New()
+		event.SetID(uuid.New().String())
+		event.SetSource("dcm/providers/kubevirt-sp")
+		event.SetType("dcm.status.vm")
+		event.SetTime(time.Now())
+		payload := consumer.StatusEvent{
+			Id:      instanceID,
+			Status:  "RUNNING",
+			Message: "VM is running",
+			OutputSpec: map[string]any{
+				"connection_string": "postgres://db:5432/orders",
+			},
+			Timestamp: time.Now(),
+		}
+		Expect(event.SetData(cloudevents.ApplicationJSON, payload)).To(Succeed())
+		data, err := json.Marshal(event)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = js.Publish(bg.ctx, "dcm.vm", data)
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func() map[string]any {
+			var inst model.ServiceTypeInstance
+			db.Where("id = ?", instanceID).First(&inst)
+			return inst.OutputSpec
+		}, 2*time.Second, 100*time.Millisecond).Should(Equal(map[string]any{
+			"connection_string": "postgres://db:5432/orders",
+		}))
+	})
 
 	It("updates instance status on valid status event", func() {
 		instanceID := uuid.New().String()

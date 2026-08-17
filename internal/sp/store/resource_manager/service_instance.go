@@ -55,7 +55,7 @@ type ServiceTypeInstance interface { //nolint:interfacebloat
 	Create(ctx context.Context, instance model.ServiceTypeInstance) (*model.ServiceTypeInstance, error)
 	Get(ctx context.Context, id string, showDeleted bool) (*model.ServiceTypeInstance, error)
 	ExistsByID(ctx context.Context, id string) (bool, error)
-	UpdateStatus(ctx context.Context, instanceID string, status string, statusMessage string) error
+	UpdateStatus(ctx context.Context, instanceID string, status string, statusMessage string, outputSpec map[string]any) error
 	UpdateStatusFrom(ctx context.Context, instanceID string, fromStatuses []string, agentName string, status string, statusMessage string) (bool, error)
 	MarkQueued(ctx context.Context, id string, agentName string) error
 	ReassignAndReset(ctx context.Context, id string, agentName string, expectedCurrentAgent string) error
@@ -191,18 +191,17 @@ func (s *ServiceTypeInstanceStore) Get(ctx context.Context, id string, showDelet
 	return &instance, nil
 }
 
-func (s *ServiceTypeInstanceStore) UpdateStatus(ctx context.Context, instanceID string, status string, statusMessage string) error {
-	// Map-based Updates, not a struct literal: GORM's struct-based Updates
-	// skips zero-value fields, so a struct literal would silently ignore
-	// statusMessage == "" and leave a stale status_message (e.g. an old
-	// failure reason) attached to a status that no longer has one.
-	result := s.db.WithContext(ctx).
-		Model(&model.ServiceTypeInstance{}).
-		Where("id = ?", instanceID).
-		Updates(map[string]any{
-			"status":         status,
-			"status_message": statusMessage,
-		})
+func (s *ServiceTypeInstanceStore) UpdateStatus(ctx context.Context, instanceID string, status string, statusMessage string, outputSpec map[string]any) error {
+	update := model.ServiceTypeInstance{
+		Status:        status,
+		StatusMessage: statusMessage,
+	}
+	query := s.db.WithContext(ctx).Model(&model.ServiceTypeInstance{}).Where("id = ?", instanceID).Select("status", "status_message")
+	if outputSpec != nil {
+		update.OutputSpec = outputSpec
+		query = query.Select("status", "status_message", "output_spec")
+	}
+	result := query.Updates(&update)
 	if result.Error != nil {
 		return result.Error
 	}

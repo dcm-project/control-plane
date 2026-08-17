@@ -14,6 +14,7 @@ type ServiceTypeInstance struct {
 	// the instance count grows.
 	Status        string         `gorm:"column:status;not null;index:idx_sti_status_pending,priority:1"`
 	StatusMessage string         `gorm:"column:status_message"`
+	OutputSpec    map[string]any `gorm:"column:output_spec;type:jsonb;serializer:json"`
 	InstanceName  string         `gorm:"column:instance_name;not null"`
 	Spec          map[string]any `gorm:"column:spec;type:jsonb;serializer:json;not null"`
 	CreateTime    time.Time      `gorm:"column:create_time;autoCreateTime"`

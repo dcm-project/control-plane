@@ -450,4 +450,38 @@ var _ = Describe("Resource Store", func() {
 			Expect(err).To(Equal(store.ErrResourceNotFound))
 		})
 	})
+
+	Describe("UpdatePlacementDecision", func() {
+		It("updates agent and approval for a resource", func() {
+			agent := "old-agent"
+			approval := "PENDING"
+			id := uuid.New().String()
+			_, err := requestStore.Create(ctx, model.Resource{
+				ID:                    id,
+				RunID:                 "run-placement-1",
+				Name:                  "app",
+				CatalogItemInstanceId: "cat-1",
+				Spec:                  map[string]any{},
+				AgentName:             &agent,
+				ApprovalStatus:        &approval,
+				Path:                  "resources/" + id,
+				Status:                "PENDING",
+				DagLevel:              1,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = requestStore.UpdatePlacementDecision(ctx, id, "new-agent", "APPROVED")
+			Expect(err).NotTo(HaveOccurred())
+
+			updated, err := requestStore.Get(ctx, id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*updated.AgentName).To(Equal("new-agent"))
+			Expect(*updated.ApprovalStatus).To(Equal("APPROVED"))
+		})
+
+		It("returns ErrResourceNotFound for missing ID", func() {
+			err := requestStore.UpdatePlacementDecision(ctx, uuid.New().String(), "provider", "APPROVED")
+			Expect(err).To(Equal(store.ErrResourceNotFound))
+		})
+	})
 })

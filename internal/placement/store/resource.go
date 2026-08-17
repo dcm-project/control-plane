@@ -30,7 +30,7 @@ type ResourceListResult struct {
 }
 
 // Resource defines the repository interface for Resource operations
-type Resource interface {
+type Resource interface { //nolint:interfacebloat
 	ListRun(ctx context.Context, opts *ResourceListOptions) (*ResourceListResult, error)
 	Create(ctx context.Context, request model.Resource) (*model.Resource, error)
 	CreateBatch(ctx context.Context, resources []model.Resource) ([]model.Resource, error)
@@ -39,8 +39,10 @@ type Resource interface {
 	ListByRunID(ctx context.Context, runID string) (model.ResourceList, error)
 	DeleteByRunID(ctx context.Context, runID string) error
 	UpdateRunID(ctx context.Context, oldRunID, newRunID string) error
+	UpdateStatus(ctx context.Context, id, status string) error
 	UpdateStatusByRunID(ctx context.Context, runID, status string) error
 	UpdateAgentName(ctx context.Context, id string, agentName string) error
+	UpdatePlacementDecision(ctx context.Context, id, agentName, approval string) error
 }
 
 type ResourceStore struct {
@@ -196,6 +198,19 @@ func (s *ResourceStore) UpdateRunID(ctx context.Context, oldRunID, newRunID stri
 	return nil
 }
 
+func (s *ResourceStore) UpdateStatus(ctx context.Context, id, status string) error {
+	result := s.db.WithContext(ctx).Model(&model.Resource{}).
+		Where("id = ?", id).
+		Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrResourceNotFound
+	}
+	return nil
+}
+
 func (s *ResourceStore) UpdateStatusByRunID(ctx context.Context, runID, status string) error {
 	result := s.db.WithContext(ctx).Model(&model.Resource{}).
 		Where("run_id = ?", runID).
@@ -213,6 +228,22 @@ func (s *ResourceStore) UpdateStatusByRunID(ctx context.Context, runID, status s
 // self-healing loop re-routes a resource to a different agent.
 func (s *ResourceStore) UpdateAgentName(ctx context.Context, id string, agentName string) error {
 	result := s.db.WithContext(ctx).Model(&model.Resource{}).Where("id = ?", id).Update("agent_name", agentName)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrResourceNotFound
+	}
+	return nil
+}
+
+func (s *ResourceStore) UpdatePlacementDecision(ctx context.Context, id, agentName, approval string) error {
+	result := s.db.WithContext(ctx).Model(&model.Resource{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"agent_name":      agentName,
+			"approval_status": approval,
+		})
 	if result.Error != nil {
 		return result.Error
 	}

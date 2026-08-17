@@ -297,7 +297,7 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 			instance := newServiceTypeInstance("status-inst", map[string]any{"cpu": "2"})
 			addInstanceToStore(instance)
 
-			err := s.UpdateStatus(ctx, instance.ID, "RUNNING", "VM is running")
+			err := s.UpdateStatus(ctx, instance.ID, "RUNNING", "VM is running", nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			found, err := s.Get(ctx, instance.ID, false)
@@ -307,8 +307,21 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 		})
 
 		It("returns ErrInstanceNotFound for non-existent instance", func() {
-			err := s.UpdateStatus(ctx, "non-existent", "RUNNING", "message")
+			err := s.UpdateStatus(ctx, "non-existent", "RUNNING", "message", nil)
 			Expect(err).To(MatchError(rmstore.ErrInstanceNotFound))
+		})
+
+		It("persists output_spec when provided", func() {
+			instance := newServiceTypeInstance("output-spec-inst", map[string]any{"cpu": "2"})
+			addInstanceToStore(instance)
+
+			outputSpec := map[string]any{"connection_string": "postgres://db:5432/orders"}
+			err := s.UpdateStatus(ctx, instance.ID, "RUNNING", "VM is running", outputSpec)
+			Expect(err).NotTo(HaveOccurred())
+
+			found, err := s.Get(ctx, instance.ID, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.OutputSpec).To(Equal(outputSpec))
 		})
 	})
 

@@ -293,6 +293,33 @@ var _ = Describe("ResponseConsumer", func() {
 		}, 2*time.Second, 100*time.Millisecond).Should(MatchError(gorm.ErrRecordNotFound))
 	})
 
+	It("invokes placement deletion callback when deletion is finalized", func() {
+		rc.Stop()
+		calls := 0
+		lastID := ""
+		rc = consumer.NewResponseConsumer(
+			js,
+			dataStore,
+			nil,
+			0,
+			0,
+			consumer.SetPlacementDeletionHandler(func(_ context.Context, resourceID string) error {
+				calls++
+				lastID = resourceID
+				return nil
+			}),
+		)
+
+		instance := createPendingInstance(ctx, db)
+		Expect(db.Model(&instance).Update("status", "deleting").Error).NotTo(HaveOccurred())
+
+		Expect(rc.Start(ctx)).To(Succeed())
+		publishAgentEvent(js, "dcm.agent.deletion-acknowledged", instance.ID, testAgentName)
+
+		Eventually(func() int { return calls }, 2*time.Second, 20*time.Millisecond).Should(Equal(1))
+		Expect(lastID).To(Equal(instance.ID))
+	})
+
 	It("logs the hard-delete with event_type on a successful deletion-acknowledged (non-deferred)", func() {
 		instance := createPendingInstance(ctx, db)
 		Expect(db.Model(&instance).Update("status", "deleting").Error).NotTo(HaveOccurred())
