@@ -52,6 +52,18 @@ components:
           maxLength: 63
           example: my-dev-vm
 
+        namespace:
+          type: string
+          description: |
+            Provider administrative namespace or equivalent where the
+            resource was provisioned (response-only).
+
+            Providers map their native grouping concept into this field,
+            for example Kubernetes namespace, GCP project, OpenStack
+            project, or Azure resource group.
+          readOnly: true
+          example: production
+
         labels:
           type: object
           description: |

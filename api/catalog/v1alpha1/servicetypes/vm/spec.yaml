@@ -52,6 +52,14 @@ components:
             access:
               $ref: '#/components/schemas/Access'
 
+            ip:
+              type: string
+              description: |
+                Primary IP address assigned to the virtual machine.
+                Populated after the VM is running.
+              readOnly: true
+              example: "10.244.0.12"
+
           additionalProperties: true
 
     Vcpu:

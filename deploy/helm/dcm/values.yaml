@@ -76,10 +76,15 @@ acmClusterServiceProvider:
   spName: acm-cluster-sp
   namespace: default
   baseDomain: ""
-  pullSecret: ""
+  pullSecret: ""     # base64-encoded .dockerconfigjson (required unless pullSecretRef is set)
+  pullSecretRef: ""  # name of an existing Secret in the *release namespace* with key "pull-secret"
+                     # whose value is the base64-encoded .dockerconfigjson string
+                     # (secretKeyRef is same-namespace only; the Secret must use stringData)
   defaultInfraEnv: ""
   agentNamespace: ""
-  kubeconfig: ""
+  kubeconfig: ""        # raw kubeconfig content; omit for in-cluster SA auth with auto-created RBAC
+  kubeconfigRef: ""     # name of an existing Secret in the *release namespace* with key "kubeconfig"
+                        # (use instead of kubeconfig to avoid inlining sensitive data in values)
 
 threeTierDemoServiceProvider:
   enabled: false

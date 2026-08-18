@@ -43,6 +43,16 @@ components:
               pattern: '^[0-9]+(\.[0-9]+)?(Ei|Pi|Ti|Gi|Mi|Ki|E|P|T|G|M|K)?$'
               example: 100Gi
 
+            volume_name:
+              type: string
+              description: |
+                Bound volume identifier assigned by the provider
+                (for example the PersistentVolume name).
+
+                Empty until the volume is bound.
+              readOnly: true
+              example: pvc-abc123
+
           additionalProperties: true
 
     KubernetesProviderHints:

@@ -55,6 +55,11 @@ type DatabaseResources struct {
 
 // DatabaseSpec defines model for DatabaseSpec.
 type DatabaseSpec struct {
+	// ConnectionString Database connection URI (response-only).
+	// Format: <scheme>://<username>:<password>@<hostname>:<port>/<database>
+	// Empty until the database is running.
+	ConnectionString *string `json:"connection_string,omitempty"`
+
 	// CreateTime Timestamp when the resource was created (RFC 3339)
 	CreateTime *time.Time `json:"create_time,omitempty"`
 
@@ -317,6 +322,14 @@ func (a *DatabaseSpec) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
+	if raw, found := object["connection_string"]; found {
+		err = json.Unmarshal(raw, &a.ConnectionString)
+		if err != nil {
+			return fmt.Errorf("error reading 'connection_string': %w", err)
+		}
+		delete(object, "connection_string")
+	}
+
 	if raw, found := object["create_time"]; found {
 		err = json.Unmarshal(raw, &a.CreateTime)
 		if err != nil {
@@ -447,6 +460,13 @@ func (a *DatabaseSpec) UnmarshalJSON(b []byte) error {
 func (a DatabaseSpec) MarshalJSON() ([]byte, error) {
 	var err error
 	object := make(map[string]json.RawMessage)
+
+	if a.ConnectionString != nil {
+		object["connection_string"], err = json.Marshal(a.ConnectionString)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'connection_string': %w", err)
+		}
+	}
 
 	if a.CreateTime != nil {
 		object["create_time"], err = json.Marshal(a.CreateTime)

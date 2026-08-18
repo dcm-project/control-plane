@@ -47,6 +47,24 @@ components:
             network:
               $ref: '#/components/schemas/Network'
 
+            endpoints:
+              type: array
+              description: |
+                Resolved connection endpoints (response-only).
+                Each entry is dialable via address + port; scope indicates
+                reachability. Omitted when no ports are exposed
+                (all visibility=none).
+              readOnly: true
+              items:
+                $ref: '#/components/schemas/ContainerEndpoint'
+              example:
+                - address: "10.96.45.12"
+                  port: 8080
+                  scope: internal
+                - address: "34.123.45.67"
+                  port: 8080
+                  scope: external
+
           additionalProperties: true
 
     Image:
@@ -166,4 +184,37 @@ components:
             - internal
             - external
           example: internal
+      additionalProperties: true
+
+    ContainerEndpoint:
+      type: object
+      description: |
+        Provider-agnostic connection endpoint (response-only).
+      required:
+        - address
+        - port
+        - scope
+      properties:
+        address:
+          type: string
+          description: IP address or hostname to dial
+          example: "10.96.45.12"
+        port:
+          type: integer
+          description: Port to dial on address
+          minimum: 1
+          maximum: 65535
+          example: 8080
+        scope:
+          type: string
+          description: |
+            Reachability of this endpoint: internal or external.
+            Aligns with network.ports[].visibility (none yields no endpoint).
+          pattern: '^(internal|external)$'
+          example: internal
+        protocol:
+          type: string
+          description: Transport protocol (TCP or UDP). Optional.
+          pattern: '^(TCP|UDP)$'
+          example: TCP
       additionalProperties: true

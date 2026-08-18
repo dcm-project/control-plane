@@ -32,6 +32,23 @@ func (e ContainerPortVisibility) Valid() bool {
 	}
 }
 
+// ContainerEndpoint Provider-agnostic connection endpoint (response-only).
+type ContainerEndpoint struct {
+	// Address IP address or hostname to dial
+	Address string `json:"address"`
+
+	// Port Port to dial on address
+	Port int `json:"port"`
+
+	// Protocol Transport protocol (TCP or UDP). Optional.
+	Protocol *string `json:"protocol,omitempty"`
+
+	// Scope Reachability of this endpoint: internal or external.
+	// Aligns with network.ports[].visibility (none yields no endpoint).
+	Scope                string                 `json:"scope"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
 // ContainerPort Container port specification
 type ContainerPort struct {
 	// ContainerPort Port number inside container
@@ -71,6 +88,12 @@ type ContainerResources struct {
 type ContainerSpec struct {
 	// CreateTime Timestamp when the resource was created (RFC 3339)
 	CreateTime *time.Time `json:"create_time,omitempty"`
+
+	// Endpoints Resolved connection endpoints (response-only).
+	// Each entry is dialable via address + port; scope indicates
+	// reachability. Omitted when no ports are exposed
+	// (all visibility=none).
+	Endpoints *[]ContainerEndpoint `json:"endpoints,omitempty"`
 
 	// Id Unique identifier for the resource.
 	Id *string `json:"id,omitempty"`
@@ -163,6 +186,113 @@ type Process struct {
 	// Env Environment variables
 	Env                  *[]EnvVar              `json:"env,omitempty"`
 	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
+// Getter for additional properties for ContainerEndpoint. Returns the specified
+// element and whether it was found
+func (a ContainerEndpoint) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for ContainerEndpoint
+func (a *ContainerEndpoint) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for ContainerEndpoint to handle AdditionalProperties
+func (a *ContainerEndpoint) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["address"]; found {
+		err = json.Unmarshal(raw, &a.Address)
+		if err != nil {
+			return fmt.Errorf("error reading 'address': %w", err)
+		}
+		delete(object, "address")
+	}
+
+	if raw, found := object["port"]; found {
+		err = json.Unmarshal(raw, &a.Port)
+		if err != nil {
+			return fmt.Errorf("error reading 'port': %w", err)
+		}
+		delete(object, "port")
+	}
+
+	if raw, found := object["protocol"]; found {
+		err = json.Unmarshal(raw, &a.Protocol)
+		if err != nil {
+			return fmt.Errorf("error reading 'protocol': %w", err)
+		}
+		delete(object, "protocol")
+	}
+
+	if raw, found := object["scope"]; found {
+		err = json.Unmarshal(raw, &a.Scope)
+		if err != nil {
+			return fmt.Errorf("error reading 'scope': %w", err)
+		}
+		delete(object, "scope")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for ContainerEndpoint to handle AdditionalProperties
+func (a ContainerEndpoint) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	object["address"], err = json.Marshal(a.Address)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'address': %w", err)
+	}
+
+	object["port"], err = json.Marshal(a.Port)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'port': %w", err)
+	}
+
+	if a.Protocol != nil {
+		object["protocol"], err = json.Marshal(a.Protocol)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'protocol': %w", err)
+		}
+	}
+
+	object["scope"], err = json.Marshal(a.Scope)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'scope': %w", err)
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
 }
 
 // Getter for additional properties for ContainerPort. Returns the specified
@@ -356,6 +486,14 @@ func (a *ContainerSpec) UnmarshalJSON(b []byte) error {
 		delete(object, "create_time")
 	}
 
+	if raw, found := object["endpoints"]; found {
+		err = json.Unmarshal(raw, &a.Endpoints)
+		if err != nil {
+			return fmt.Errorf("error reading 'endpoints': %w", err)
+		}
+		delete(object, "endpoints")
+	}
+
 	if raw, found := object["id"]; found {
 		err = json.Unmarshal(raw, &a.Id)
 		if err != nil {
@@ -475,6 +613,13 @@ func (a ContainerSpec) MarshalJSON() ([]byte, error) {
 		object["create_time"], err = json.Marshal(a.CreateTime)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'create_time': %w", err)
+		}
+	}
+
+	if a.Endpoints != nil {
+		object["endpoints"], err = json.Marshal(a.Endpoints)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'endpoints': %w", err)
 		}
 	}
 

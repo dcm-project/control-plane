@@ -123,6 +123,14 @@ type ServiceMetadata struct {
 	// Name Resource name identifier.
 	// Must be unique within the namespace.
 	Name string `json:"name"`
+
+	// Namespace Provider administrative namespace or equivalent where the
+	// resource was provisioned (response-only).
+	//
+	// Providers map their native grouping concept into this field,
+	// for example Kubernetes namespace, GCP project, OpenStack
+	// project, or Azure resource group.
+	Namespace *string `json:"namespace,omitempty"`
 }
 
 // ServiceType Service type identifier.

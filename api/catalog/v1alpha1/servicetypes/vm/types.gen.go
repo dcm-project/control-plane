@@ -93,6 +93,10 @@ type VMSpec struct {
 	// Id Unique identifier for the resource.
 	Id *string `json:"id,omitempty"`
 
+	// Ip Primary IP address assigned to the virtual machine.
+	// Populated after the VM is running.
+	Ip *string `json:"ip,omitempty"`
+
 	// Memory Memory configuration (RAM)
 	Memory Memory `json:"memory"`
 
@@ -545,6 +549,14 @@ func (a *VMSpec) UnmarshalJSON(b []byte) error {
 		delete(object, "id")
 	}
 
+	if raw, found := object["ip"]; found {
+		err = json.Unmarshal(raw, &a.Ip)
+		if err != nil {
+			return fmt.Errorf("error reading 'ip': %w", err)
+		}
+		delete(object, "ip")
+	}
+
 	if raw, found := object["memory"]; found {
 		err = json.Unmarshal(raw, &a.Memory)
 		if err != nil {
@@ -667,6 +679,13 @@ func (a VMSpec) MarshalJSON() ([]byte, error) {
 		object["id"], err = json.Marshal(a.Id)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'id': %w", err)
+		}
+	}
+
+	if a.Ip != nil {
+		object["ip"], err = json.Marshal(a.Ip)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'ip': %w", err)
 		}
 	}
 

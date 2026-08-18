@@ -62,15 +62,36 @@ type KubernetesProviderHints struct {
 	Selector *map[string]string `json:"selector,omitempty"`
 }
 
+// NetworkEndpoint Provider-agnostic connection endpoint (response-only).
+//
+// Maps from provider-native state (for example Kubernetes
+// clusterIP / loadBalancer ingress / NodePort) without exposing
+// provider-specific types in the portable schema.
+type NetworkEndpoint struct {
+	// Address IP address or hostname to dial.
+	Address string `json:"address"`
+
+	// Name Optional port name correlating this endpoint with ports[].name.
+	// Useful when the service exposes multiple ports.
+	Name *string `json:"name,omitempty"`
+
+	// Port Port to dial on address.
+	Port int `json:"port"`
+
+	// Protocol Transport protocol (TCP or UDP). When omitted, consumers may
+	// infer it from the matching ports[] entry.
+	Protocol *string `json:"protocol,omitempty"`
+
+	// Scope Reachability of this endpoint: internal or external.
+	Scope                string                 `json:"scope"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
 // NetworkPort Network service port specification
 type NetworkPort struct {
 	// Name Port name for identification.
 	// Must be unique within the ports list.
 	Name *string `json:"name,omitempty"`
-
-	// NodePort Allocated node port (response-only).
-	// Present for NodePort and LoadBalancer types.
-	NodePort *int `json:"node_port,omitempty"`
 
 	// Port The port exposed by the service
 	Port int `json:"port"`
@@ -90,6 +111,15 @@ type NetworkPortProtocol string
 type NetworkSpec struct {
 	// CreateTime Timestamp when the resource was created (RFC 3339)
 	CreateTime *time.Time `json:"create_time,omitempty"`
+
+	// Endpoints Resolved connection endpoints for the provisioned network
+	// service. Present only in responses.
+	//
+	// Each entry is a dialable address: use address + port to
+	// connect. scope indicates reachability. Optional name
+	// correlates the endpoint with ports[].name when multiple
+	// ports are defined.
+	Endpoints *[]NetworkEndpoint `json:"endpoints,omitempty"`
 
 	// Id Unique identifier for the resource.
 	Id *string `json:"id,omitempty"`
@@ -146,6 +176,128 @@ type NetworkSpec struct {
 // combined with provider_hints (e.g. presence of node_ports).
 type NetworkSpecRoutingLevel string
 
+// Getter for additional properties for NetworkEndpoint. Returns the specified
+// element and whether it was found
+func (a NetworkEndpoint) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for NetworkEndpoint
+func (a *NetworkEndpoint) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for NetworkEndpoint to handle AdditionalProperties
+func (a *NetworkEndpoint) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["address"]; found {
+		err = json.Unmarshal(raw, &a.Address)
+		if err != nil {
+			return fmt.Errorf("error reading 'address': %w", err)
+		}
+		delete(object, "address")
+	}
+
+	if raw, found := object["name"]; found {
+		err = json.Unmarshal(raw, &a.Name)
+		if err != nil {
+			return fmt.Errorf("error reading 'name': %w", err)
+		}
+		delete(object, "name")
+	}
+
+	if raw, found := object["port"]; found {
+		err = json.Unmarshal(raw, &a.Port)
+		if err != nil {
+			return fmt.Errorf("error reading 'port': %w", err)
+		}
+		delete(object, "port")
+	}
+
+	if raw, found := object["protocol"]; found {
+		err = json.Unmarshal(raw, &a.Protocol)
+		if err != nil {
+			return fmt.Errorf("error reading 'protocol': %w", err)
+		}
+		delete(object, "protocol")
+	}
+
+	if raw, found := object["scope"]; found {
+		err = json.Unmarshal(raw, &a.Scope)
+		if err != nil {
+			return fmt.Errorf("error reading 'scope': %w", err)
+		}
+		delete(object, "scope")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for NetworkEndpoint to handle AdditionalProperties
+func (a NetworkEndpoint) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	object["address"], err = json.Marshal(a.Address)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'address': %w", err)
+	}
+
+	if a.Name != nil {
+		object["name"], err = json.Marshal(a.Name)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'name': %w", err)
+		}
+	}
+
+	object["port"], err = json.Marshal(a.Port)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'port': %w", err)
+	}
+
+	if a.Protocol != nil {
+		object["protocol"], err = json.Marshal(a.Protocol)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'protocol': %w", err)
+		}
+	}
+
+	object["scope"], err = json.Marshal(a.Scope)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'scope': %w", err)
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
 // Getter for additional properties for NetworkPort. Returns the specified
 // element and whether it was found
 func (a NetworkPort) Get(fieldName string) (value interface{}, found bool) {
@@ -177,14 +329,6 @@ func (a *NetworkPort) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("error reading 'name': %w", err)
 		}
 		delete(object, "name")
-	}
-
-	if raw, found := object["node_port"]; found {
-		err = json.Unmarshal(raw, &a.NodePort)
-		if err != nil {
-			return fmt.Errorf("error reading 'node_port': %w", err)
-		}
-		delete(object, "node_port")
 	}
 
 	if raw, found := object["port"]; found {
@@ -234,13 +378,6 @@ func (a NetworkPort) MarshalJSON() ([]byte, error) {
 		object["name"], err = json.Marshal(a.Name)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'name': %w", err)
-		}
-	}
-
-	if a.NodePort != nil {
-		object["node_port"], err = json.Marshal(a.NodePort)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'node_port': %w", err)
 		}
 	}
 
@@ -301,6 +438,14 @@ func (a *NetworkSpec) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("error reading 'create_time': %w", err)
 		}
 		delete(object, "create_time")
+	}
+
+	if raw, found := object["endpoints"]; found {
+		err = json.Unmarshal(raw, &a.Endpoints)
+		if err != nil {
+			return fmt.Errorf("error reading 'endpoints': %w", err)
+		}
+		delete(object, "endpoints")
 	}
 
 	if raw, found := object["id"]; found {
@@ -406,6 +551,13 @@ func (a NetworkSpec) MarshalJSON() ([]byte, error) {
 		object["create_time"], err = json.Marshal(a.CreateTime)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'create_time': %w", err)
+		}
+	}
+
+	if a.Endpoints != nil {
+		object["endpoints"], err = json.Marshal(a.Endpoints)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'endpoints': %w", err)
 		}
 	}
 
