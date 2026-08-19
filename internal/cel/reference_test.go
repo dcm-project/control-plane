@@ -42,4 +42,21 @@ var _ = Describe("ParseReference", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(isReference).To(BeTrue())
 	})
+
+	It("collects unique references from nested spec values", func() {
+		spec := map[string]any{
+			"database_url": "${db.connection_string}",
+			"kubeconfig":   "${cluster.kubeconfig}",
+			"nested": map[string]any{
+				"url": "${db.connection_string}",
+			},
+			"endpoints": []any{"${svc.endpoint[0].address}"},
+		}
+
+		refs, err := cel.CollectReferences(spec)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(refs).To(ContainElement(cel.Reference{ResourceName: "db", OutputField: "connection_string"}))
+		Expect(refs).To(ContainElement(cel.Reference{ResourceName: "cluster", OutputField: "kubeconfig"}))
+		Expect(refs).To(ContainElement(cel.Reference{ResourceName: "svc", OutputField: "endpoint[0].address"}))
+	})
 })

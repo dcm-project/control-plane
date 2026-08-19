@@ -55,6 +55,20 @@ func (s *PlacementService) OnResourceRunning(ctx context.Context, event types.Re
 		return handleSPRMError(err)
 	}
 	for _, r := range ready {
+		refs, err := cel.CollectReferences(r.Spec)
+		if err != nil {
+			return NewValidationError(fmt.Sprintf("resource %s: %v", r.Name, err))
+		}
+		for _, ref := range refs {
+			log.Info("audit: CEL output field consumed",
+				"run_id", r.RunID,
+				"resource_id", r.ID,
+				"resource_name", r.Name,
+				"source_resource", ref.ResourceName,
+				"output_field", ref.OutputField,
+			)
+		}
+
 		// Step 5: Bind apply-time CEL references from RUNNING dependency outputs.
 		boundSpec, err := cel.BindReferences(r.Spec, outputsByName)
 		if err != nil {
