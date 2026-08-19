@@ -31,7 +31,7 @@ var _ = Describe("Auth disabled mode ignores garbage headers", func() {
 	}
 
 	It("succeeds with a garbage Bearer token on a protected endpoint", func() {
-		resp := doGet("/providers", map[string]string{
+		resp := doGet("/service-types", map[string]string{
 			"Authorization": "Bearer garbage.invalid.token",
 		})
 		defer resp.Body.Close()
@@ -50,10 +50,10 @@ var _ = Describe("Auth disabled mode ignores garbage headers", func() {
 	})
 
 	It("succeeds with all garbage auth headers combined", func() {
-		resp := doGet("/providers", map[string]string{
-			"Authorization":                "Bearer garbage.invalid.token",
-			"X-Auth-Proxy-Secret":          "wrong-secret",
-			"X-Forwarded-User":             "garbage-user",
+		resp := doGet("/service-types", map[string]string{
+			"Authorization":                  "Bearer garbage.invalid.token",
+			"X-Auth-Proxy-Secret":            "wrong-secret",
+			"X-Forwarded-User":               "garbage-user",
 			"X-Forwarded-Preferred-Username": "garbage-username",
 		})
 		defer resp.Body.Close()
