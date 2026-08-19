@@ -44,7 +44,7 @@ func defaultServiceTypes() []model.ServiceType {
 				"storage":  vm.Storage{},
 				"guest_os": vm.GuestOS{},
 				"access":   vm.Access{},
-				"ip":       "",
+				"ip":       []vm.VmEndpoint{},
 			},
 			Path: "service-types/vm",
 		},

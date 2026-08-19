@@ -53,12 +53,18 @@ components:
               $ref: '#/components/schemas/Access'
 
             ip:
-              type: string
+              type: array
               description: |
-                Primary IP address assigned to the virtual machine.
-                Populated after the VM is running.
+                Resolved connection endpoints for the virtual machine (response-only).
+                Each entry is dialable via address + port; scope indicates
+                reachability.
               readOnly: true
-              example: "10.244.0.12"
+              items:
+                $ref: '#/components/schemas/VmEndpoint'
+              example:
+                - address: "10.244.0.12"
+                  port: 22
+                  scope: internal
 
           additionalProperties: true
 
@@ -178,4 +184,31 @@ components:
             - GCP: instance metadata
             - VMware: guest customization
           example: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample...
+      additionalProperties: true
+
+    VmEndpoint:
+      type: object
+      description: |
+        Provider-agnostic connection endpoint (response-only).
+      required:
+        - address
+        - port
+        - scope
+      properties:
+        address:
+          type: string
+          description: IP address or hostname to dial
+          example: "10.244.0.12"
+        port:
+          type: integer
+          description: Port to dial on address
+          minimum: 1
+          maximum: 65535
+          example: 22
+        scope:
+          type: string
+          description: |
+            Reachability of this endpoint: internal or external.
+          pattern: '^(internal|external)$'
+          example: internal
       additionalProperties: true
