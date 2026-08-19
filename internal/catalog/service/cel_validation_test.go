@@ -139,6 +139,8 @@ var _ = Describe("CEL validation", func() {
 			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrCELServiceTypeOutputNotFound)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring(`service type "database"`))
+			Expect(err.Error()).To(ContainSubstring(`connectionStrng`))
 		})
 
 		It("rejects CEL self-reference during merge", func() {

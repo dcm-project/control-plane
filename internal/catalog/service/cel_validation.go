@@ -82,8 +82,13 @@ func validateCELReferenceValue(
 		return ErrServiceTypeNotFound
 	}
 
+	// Interim check: field key presence on the service type template only.
+	// Enhancement #99 will add separate output definitions on the service type (parallel
+	// to input schemas); until then CEL cannot distinguish declared outputs from input
+	// fields (e.g. ${db.engine} passes if engine exists on the template).
 	if !serviceTypeTemplateHasField(sourceST, ref.OutputField) {
-		return fmt.Errorf("%w: %s.%s", ErrCELServiceTypeOutputNotFound, ref.ResourceName, ref.OutputField)
+		return fmt.Errorf("%w: service type %q has no field %q for %s.%s",
+			ErrCELServiceTypeOutputNotFound, source.ServiceType, ref.OutputField, ref.ResourceName, ref.OutputField)
 	}
 
 	return nil
