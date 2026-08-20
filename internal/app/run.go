@@ -110,24 +110,15 @@ func Run() int {
 	var publisher *messaging.Publisher
 	checkers := []Checker{NewPostgresChecker(db)}
 
-	// Build services first so non-NATS mode can still run.
-	spInstanceService := sprmsvc.NewInstanceService(spDataStore, publisher, agentSt)
-	policyClient := placementpolicy.NewServiceClient(evaluationService)
-	sprmClient := placementsprm.NewServiceClient(spInstanceService)
-	placementService := placementservice.NewPlacementService(
-		placementDataStore, policyClient, sprmClient,
-		placementservice.WithAgentClient(agentClient),
-	)
-
+	var agentJS jetstream.JetStream
 	if !cfg.NATS.Disabled {
-		// Phase 1: initialize JetStream publisher and agent response consumer.
 		agentNc, err := nats.Connect(cfg.NATS.URL, nats.MaxReconnects(-1))
 		if err != nil {
 			slog.Error("Failed to connect to NATS for agent response consumer", "error", err)
 			return 1
 		}
 		defer agentNc.Close()
-		agentJS, err := jetstream.New(agentNc)
+		agentJS, err = jetstream.New(agentNc)
 		if err != nil {
 			slog.Error("Failed to create JetStream for agent response consumer", "error", err)
 			return 1
@@ -139,15 +130,17 @@ func Run() int {
 			slog.Error("Failed to ensure agent request stream", "error", err)
 			return 1
 		}
+	}
 
-		// Phase 2: rebuild placement dependencies with the active publisher.
-		spInstanceService = sprmsvc.NewInstanceService(spDataStore, publisher, agentSt)
-		sprmClient = placementsprm.NewServiceClient(spInstanceService)
-		placementService = placementservice.NewPlacementService(
-			placementDataStore, policyClient, sprmClient,
-			placementservice.WithAgentClient(agentClient),
-		)
+	policyClient := placementpolicy.NewServiceClient(evaluationService)
+	spInstanceService := sprmsvc.NewInstanceService(spDataStore, publisher, agentSt)
+	sprmClient := placementsprm.NewServiceClient(spInstanceService)
+	placementService := placementservice.NewPlacementService(
+		placementDataStore, policyClient, sprmClient,
+		placementservice.WithAgentClient(agentClient),
+	)
 
+	if !cfg.NATS.Disabled {
 		responseConsumer := spconsumer.NewResponseConsumer(
 			agentJS,
 			spDataStore,
@@ -162,7 +155,6 @@ func Run() int {
 		}
 		defer responseConsumer.Stop()
 
-		// Phase 3: start status consumer wired to placement callbacks.
 		statusConsumer, err := spconsumer.New(cfg.NATS.URL, cfg.NATS.Subject, spDataStore,
 			spconsumer.SetStreamName(cfg.NATS.StreamName),
 			spconsumer.SetConsumerName(cfg.NATS.ConsumerName),
