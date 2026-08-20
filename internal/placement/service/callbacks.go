@@ -27,6 +27,14 @@ func (s *PlacementService) OnResourceRunning(ctx context.Context, event types.Re
 		}
 		return NewInternalError(fmt.Sprintf("failed to load resource %s: %v", resourceID, err))
 	}
+	if resourceStatusBlocksCreateProgression(resource.Status) {
+		log.Debug("Ignoring RUNNING callback during teardown or terminal state",
+			"run_id", resource.RunID,
+			"resource_id", resourceID,
+			"status", resource.Status,
+		)
+		return nil
+	}
 	if err := s.store.Resource().UpdateStatus(ctx, resourceID, types.ResourceStatusRunning); err != nil {
 		return NewInternalError(fmt.Sprintf("failed to set RUNNING status for resource %s: %v", resourceID, err))
 	}
@@ -44,7 +52,7 @@ func (s *PlacementService) OnResourceRunning(ctx context.Context, event types.Re
 	}
 
 	// Step 3: Find PENDING resources whose dependencies are all RUNNING.
-	ready := pendingResourcesReadyForProvisioning(resources)
+	ready := pendingResourcesReadyAtLowestLevel(resources)
 	if len(ready) == 0 {
 		return nil
 	}
@@ -150,11 +158,13 @@ func (s *PlacementService) progressRunDeletion(ctx context.Context, runID string
 
 		nextLevel := highestPendingDeletionLevel(resources)
 		if nextLevel < 0 {
-			if err := s.store.Resource().DeleteByRunID(ctx, runID); err != nil {
-				if errors.Is(err, store.ErrResourceNotFound) {
-					return nil
+			if allResourcesDeleted(resources) {
+				if err := s.store.Resource().DeleteByRunID(ctx, runID); err != nil {
+					if errors.Is(err, store.ErrResourceNotFound) {
+						return nil
+					}
+					return NewInternalError(fmt.Sprintf("failed to clean up completed run %s: %v", runID, err))
 				}
-				return NewInternalError(fmt.Sprintf("failed to clean up completed run %s: %v", runID, err))
 			}
 			return nil
 		}

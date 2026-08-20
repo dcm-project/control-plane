@@ -11,9 +11,9 @@ import (
 	"github.com/dcm-project/control-plane/internal/placement/types"
 )
 
-// pendingResourcesReadyForProvisioning returns PENDING resources whose
+// pendingResourcesReadyAtLowestLevel returns PENDING resources whose
 // requires_resources are all RUNNING, limited to the lowest ready dag_level.
-func pendingResourcesReadyForProvisioning(resources model.ResourceList) []model.Resource {
+func pendingResourcesReadyAtLowestLevel(resources model.ResourceList) []model.Resource {
 	byName := make(map[string]model.Resource, len(resources))
 	for _, r := range resources {
 		byName[r.Name] = r
@@ -100,4 +100,31 @@ func resourcesAtDeletionLevel(resources []model.Resource, level int) []model.Res
 		}
 	}
 	return atLevel
+}
+
+// resourceStatusBlocksCreateProgression reports whether a late RUNNING callback
+// must not restart create orchestration (for example during teardown).
+func resourceStatusBlocksCreateProgression(status string) bool {
+	switch status {
+	case types.ResourceStatusPendingDeletion,
+		types.ResourceStatusDeleting,
+		types.ResourceStatusDeleted,
+		types.ResourceStatusFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+// allResourcesDeleted reports whether every resource in the run is DELETED.
+func allResourcesDeleted(resources []model.Resource) bool {
+	if len(resources) == 0 {
+		return false
+	}
+	for _, r := range resources {
+		if r.Status != types.ResourceStatusDeleted {
+			return false
+		}
+	}
+	return true
 }

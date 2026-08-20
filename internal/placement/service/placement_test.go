@@ -924,6 +924,42 @@ var _ = Describe("PlacementService", func() {
 			Expect(createCalls).To(Equal(0))
 		})
 
+		It("ignores late RUNNING callbacks during teardown", func() {
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-running-teardown",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var dbID string
+			for _, r := range created.Resources {
+				if r.Name == "db" {
+					dbID = *r.Id
+				}
+			}
+
+			err = placementSvc.DeleteRun(ctx, created.RunId)
+			Expect(err).NotTo(HaveOccurred())
+
+			createCalls := 0
+			mockSPRM.CreateResourceFunc = func(_ context.Context, _ sprm.CreateResourceRequest) (*sprm.CreateResourceResponse, error) {
+				createCalls++
+				return &sprm.CreateResourceResponse{Status: "provisioning"}, nil
+			}
+
+			err = placementSvc.OnResourceRunning(ctx, runningEvent(dbID))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(createCalls).To(Equal(0))
+
+			stored := getStoredResource(ctx, dataStore, dbID)
+			Expect(stored.Status).To(Equal(types.ResourceStatusPendingDeletion))
+		})
+
 		It("returns a validation error when CEL binding fails", func() {
 			mockSPRM.GetOutputSpecFunc = func(_ context.Context, _ string) (*sprm.GetOutputSpecResponse, error) {
 				return &sprm.GetOutputSpecResponse{OutputSpec: map[string]any{"kind": "db"}}, nil
@@ -1082,6 +1118,40 @@ var _ = Describe("PlacementService", func() {
 			Expect(errors.Is(err, store.ErrResourceNotFound)).To(BeTrue())
 			_, err = dataStore.Resource().Get(ctx, dbID)
 			Expect(errors.Is(err, store.ErrResourceNotFound)).To(BeTrue())
+		})
+
+		It("does not delete live siblings when a single resource is deleted outside DeleteRun", func() {
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-stray-delete",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var dbID, appID string
+			for _, r := range created.Resources {
+				switch r.Name {
+				case "db":
+					dbID = *r.Id
+				case "app":
+					appID = *r.Id
+				}
+			}
+
+			err = placementSvc.OnResourceDeleted(ctx, dbID)
+			Expect(err).NotTo(HaveOccurred())
+
+			db, err := dataStore.Resource().Get(ctx, dbID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(db.Status).To(Equal(types.ResourceStatusDeleted))
+
+			app, err := dataStore.Resource().Get(ctx, appID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(app.Status).To(Equal(types.ResourceStatusPending))
 		})
 
 		It("starts rollback on OnResourceFailed", func() {

@@ -41,7 +41,7 @@ var _ = Describe("DAG orchestration helpers", func() {
 			{ID: "cache", Name: "cache", Status: types.ResourceStatusPending, DagLevel: 1, RequiresResources: []string{"worker"}},
 		}
 
-		ready := pendingResourcesReadyForProvisioning(resources)
+		ready := pendingResourcesReadyAtLowestLevel(resources)
 		Expect(ready).To(HaveLen(1))
 		Expect(ready[0].Name).To(Equal("app"))
 	})
@@ -53,7 +53,7 @@ var _ = Describe("DAG orchestration helpers", func() {
 			{ID: "c-id", Name: "c", Status: types.ResourceStatusPending, DagLevel: 2, RequiresResources: []string{"db"}},
 		}
 
-		ready := pendingResourcesReadyForProvisioning(resources)
+		ready := pendingResourcesReadyAtLowestLevel(resources)
 		Expect(ready).To(HaveLen(1))
 		Expect(ready[0].Name).To(Equal("b"))
 	})
@@ -121,5 +121,25 @@ var _ = Describe("DAG orchestration helpers", func() {
 		Expect(atLevel).To(HaveLen(2))
 		Expect(atLevel[0].Name).To(Equal("db"))
 		Expect(atLevel[1].Name).To(Equal("app"))
+	})
+
+	It("reports when all resources are deleted", func() {
+		Expect(allResourcesDeleted([]model.Resource{
+			{Status: types.ResourceStatusDeleted},
+			{Status: types.ResourceStatusDeleted},
+		})).To(BeTrue())
+		Expect(allResourcesDeleted([]model.Resource{
+			{Status: types.ResourceStatusDeleted},
+			{Status: types.ResourceStatusRunning},
+		})).To(BeFalse())
+	})
+
+	It("blocks create progression during teardown statuses", func() {
+		Expect(resourceStatusBlocksCreateProgression(types.ResourceStatusPendingDeletion)).To(BeTrue())
+		Expect(resourceStatusBlocksCreateProgression(types.ResourceStatusDeleting)).To(BeTrue())
+		Expect(resourceStatusBlocksCreateProgression(types.ResourceStatusDeleted)).To(BeTrue())
+		Expect(resourceStatusBlocksCreateProgression(types.ResourceStatusFailed)).To(BeTrue())
+		Expect(resourceStatusBlocksCreateProgression(types.ResourceStatusRunning)).To(BeFalse())
+		Expect(resourceStatusBlocksCreateProgression(types.ResourceStatusPending)).To(BeFalse())
 	})
 })
