@@ -77,7 +77,7 @@ var (
 	ErrUserValueDependsOnViolation = errors.New("user value violates depends_on constraint")
 
 	// ErrInvalidCELExpression indicates a string is not a valid restricted CEL reference
-	ErrInvalidCELExpression = errors.New("invalid CEL expression: must match ${resourceName.outputField}")
+	ErrInvalidCELExpression = errors.New("invalid CEL expression: must match ${resourceName.outputField} with optional nested paths and [index] segments")
 
 	// ErrCELResourceNotFound indicates a CEL reference targets an unknown catalog resource
 	ErrCELResourceNotFound = errors.New("CEL reference resource not found in catalog item")

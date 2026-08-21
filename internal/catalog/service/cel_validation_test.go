@@ -296,6 +296,58 @@ var _ = Describe("CEL validation", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrCELResourceNotFound)).To(BeTrue())
 		})
+
+		It("accepts nested and indexed CEL output paths during merge", func() {
+			ensureServiceTypeWithSpec(ctx, str, "vm-ip-st", "vm-with-ip", map[string]any{
+				"ip": []any{
+					map[string]any{"address": "", "port": 0, "scope": ""},
+				},
+			})
+			requiresVM := []string{"myVm"}
+			spec := v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{Name: "myVm", ServiceType: "vm-with-ip"},
+					{
+						Name:              "app",
+						ServiceType:       "container",
+						RequiresResources: &requiresVM,
+						Fields: &[]v1alpha1.FieldConfiguration{
+							{Path: "host", Default: "${myVm.ip[0].address}"},
+						},
+					},
+				},
+			}
+			catalogItemID := createCatalogItemWithSpec(spec)
+			result, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).ToNot(BeNil())
+		})
+
+		It("rejects indexed CEL paths that do not exist on the service type template", func() {
+			ensureServiceTypeWithSpec(ctx, str, "vm-ip-st-missing", "vm-with-ip-missing", map[string]any{
+				"ip": []any{
+					map[string]any{"address": "", "port": 0, "scope": ""},
+				},
+			})
+			requiresVM := []string{"myVm"}
+			spec := v1alpha1.CatalogItemSpec{
+				Resources: []v1alpha1.CatalogResource{
+					{Name: "myVm", ServiceType: "vm-with-ip-missing"},
+					{
+						Name:              "app",
+						ServiceType:       "container",
+						RequiresResources: &requiresVM,
+						Fields: &[]v1alpha1.FieldConfiguration{
+							{Path: "host", Default: "${myVm.ip[0].missing}"},
+						},
+					},
+				},
+			}
+			catalogItemID := createCatalogItemWithSpec(spec)
+			_, err := svc.CatalogItemInstance().Create(ctx, instanceCreateReq(catalogItemID))
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, service.ErrCELServiceTypeOutputNotFound)).To(BeTrue())
+		})
 	})
 
 	Describe("BuildResourceGraph", func() {

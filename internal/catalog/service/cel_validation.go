@@ -2,36 +2,14 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"regexp"
 	"slices"
-	"strings"
 
 	"github.com/dcm-project/control-plane/internal/catalog/store"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
+	"github.com/dcm-project/control-plane/internal/cel"
 )
-
-// celReferencePattern matches restricted catalog CEL: ${resourceName.outputField}
-var celReferencePattern = regexp.MustCompile(`^\$\{([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)\}$`)
-
-type celReference struct {
-	ResourceName string
-	OutputField  string
-}
-
-func parseCELReference(value string) (celReference, bool, error) {
-	if !strings.Contains(value, "${") {
-		return celReference{}, false, nil
-	}
-	matches := celReferencePattern.FindStringSubmatch(value)
-	if matches == nil {
-		return celReference{}, true, fmt.Errorf("%w: %q", ErrInvalidCELExpression, value)
-	}
-	return celReference{
-		ResourceName: matches[1],
-		OutputField:  matches[2],
-	}, true, nil
-}
 
 // serviceTypeTemplateHasField reports whether fieldName exists on the service type template spec.
 func serviceTypeTemplateHasField(st *model.ServiceType, fieldName string) bool {
@@ -55,8 +33,11 @@ func validateCELReferenceValue(
 		return nil
 	}
 
-	ref, isCEL, err := parseCELReference(str)
+	ref, isCEL, err := cel.ParseReference(str)
 	if err != nil {
+		if errors.Is(err, cel.ErrInvalidReference) {
+			return fmt.Errorf("%w: %q", ErrInvalidCELExpression, str)
+		}
 		return err
 	}
 	if !isCEL {
