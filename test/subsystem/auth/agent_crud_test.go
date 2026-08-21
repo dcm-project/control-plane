@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -99,9 +98,8 @@ var _ = Describe("Agent CRUD with JWT auth (TC-08)", func() {
 			"topic_name": "dcm.agent.should-fail"
 		}`
 		resp := doRequestWithBody(http.MethodPost, "/agents", createBody)
-		Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
-
 		problem := readProblemResponse(resp)
+		Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
 		Expect(problem.Detail).To(Equal("missing authentication"))
 	})
 
@@ -115,23 +113,8 @@ var _ = Describe("Agent CRUD with JWT auth (TC-08)", func() {
 			}
 		}`
 		resp := doRequestWithBody(http.MethodPost, "/catalog-item-instances", createBody)
-		Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
-
 		problem := readProblemResponse(resp)
+		Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
 		Expect(problem.Detail).To(Equal("missing authentication"))
 	})
 })
-
-func doRequestWithBody(method, path, body string, opts ...requestOption) *http.Response {
-	GinkgoHelper()
-	reqURL := apiURL + path
-	req, err := http.NewRequest(method, reqURL, strings.NewReader(body))
-	Expect(err).NotTo(HaveOccurred())
-	req.Header.Set("Content-Type", "application/json")
-	for _, opt := range opts {
-		opt(req)
-	}
-	resp, err := httpClient.Do(req)
-	Expect(err).NotTo(HaveOccurred())
-	return resp
-}

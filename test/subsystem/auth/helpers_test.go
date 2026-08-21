@@ -143,6 +143,20 @@ func doRequest(method, path string, opts ...requestOption) *http.Response {
 	return resp
 }
 
+func doRequestWithBody(method, path, body string, opts ...requestOption) *http.Response {
+	GinkgoHelper()
+	reqURL := apiURL + path
+	req, err := http.NewRequest(method, reqURL, strings.NewReader(body))
+	Expect(err).NotTo(HaveOccurred())
+	req.Header.Set("Content-Type", "application/json")
+	for _, opt := range opts {
+		opt(req)
+	}
+	resp, err := httpClient.Do(req)
+	Expect(err).NotTo(HaveOccurred())
+	return resp
+}
+
 type problemResponse struct {
 	Type   string `json:"type"`
 	Status int    `json:"status"`
