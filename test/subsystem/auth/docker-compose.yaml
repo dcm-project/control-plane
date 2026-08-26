@@ -94,8 +94,12 @@ services:
 
   # TC-13: Config C (proxy-only, no JWT). No AUTH_ISSUER_URL means no
   # JWTValidator is configured, so Bearer tokens must be ignored and the
-  # proxy-header path used instead. Shares the auth_test DB - admin seeding
-  # is idempotent so this does not conflict with the `control-plane` service.
+  # proxy-header path used instead. Shares the auth_test DB with the main
+  # `control-plane` service. Admin seeding is check-then-insert (not
+  # concurrency-safe), so this MUST wait for `control-plane` to be healthy
+  # (i.e. past its own seeding, which runs before the HTTP server starts -
+  # see internal/app/run.go) before starting, or both processes can race to
+  # insert the same admin actor and one will crash on the unique constraint.
   # Reuses the image built by `control-plane` above (same source, different
   # env) instead of rebuilding, to avoid tripling CI build time.
   control-plane-configc:
@@ -119,7 +123,7 @@ services:
       postgres:
         condition: service_healthy
       control-plane:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1alpha1/health"]
       interval: 5s
@@ -130,6 +134,9 @@ services:
   # own database (auth_test_noadmin) so the admin-actor-count assertion isn't
   # polluted by the admin actor seeded into auth_test by `control-plane`.
   # Reuses the image built by `control-plane` above instead of rebuilding.
+  # Depends on `control-plane` being healthy (not just started) purely to
+  # guarantee the shared image has finished building - no DB is shared here,
+  # so there is no seeding race like control-plane-configc has.
   control-plane-configa:
     image: auth-subsystem-control-plane:latest
     environment:
@@ -150,7 +157,7 @@ services:
       postgres:
         condition: service_healthy
       control-plane:
-        condition: service_started
+        condition: service_healthy
       db-init-noadmin:
         condition: service_completed_successfully
     healthcheck:
