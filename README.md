@@ -76,10 +76,10 @@ in shared-workflows for tag behavior and version conventions.
 
 Full-stack Compose and Helm packaging live under `deploy/`:
 
-- **Compose:** control-plane, postgres, nats, keycloak, dcm-ui, and optional service providers
+- **Compose:** control-plane, postgres, nats, keycloak, dcm-ui, and optional environment-agent (or legacy external SP profiles)
 - **Helm:** Kubernetes/OpenShift chart at `deploy/helm/dcm` (optional auth via `auth.enabled`)
 
-See [deploy/RUN.md](deploy/RUN.md) for local stack usage, authentication, and service provider profiles.
+See [deploy/RUN.md](deploy/RUN.md) for local stack usage, authentication, and the environment-agent profile.
 See [deploy/helm/dcm/README.md](deploy/helm/dcm/README.md) for cluster installs.
 
 Authentication is disabled by default (`AUTH_DISABLED=true`). The CLI forwards

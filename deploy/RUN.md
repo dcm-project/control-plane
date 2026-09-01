@@ -3,13 +3,21 @@
 ## Prerequisites
 
 - [Podman](https://podman.io/) or [Docker](https://www.docker.com/) (the Makefile auto-detects which engine is available)
-- (Optional) A Kubernetes cluster with KubeVirt for the kubevirt-service-provider
-- (Optional) A Kubernetes cluster for the k8s-container-service-provider
-- (Optional) An OpenShift cluster with ACM/MCE and HyperShift for the acm-cluster-service-provider
+- (Optional) [Kind](https://kind.sigs.k8s.io/) with KubeVirt for the environment-agent embedded `vm` SP
+- (Optional) A Kubernetes cluster for environment-agent embedded `container` and `cluster` SPs
+- (Optional) [utilities](https://github.com/dcm-project/utilities) repo as a sibling directory for Kind helper scripts (`../utilities`)
 
 ## Quick start
 
-Start the core platform (postgres, nats, keycloak, control-plane, and dcm-ui):
+### With environment-agent (Service Providers)
+
+An [environment-agent](https://github.com/dcm-project/environment-agent) must be running and
+registered with the control-plane in order to use Service Providers. Follow the guide,
+[environment-agent-kind.md](docs/environment-agent-kind.md) for the full setup.
+
+### Control-plane and UI only
+
+If you only need the API and UI (no workload provisioning):
 
 ```bash
 make compose-up
@@ -31,133 +39,10 @@ The CLI forwards bearer tokens to the control-plane API. Run `dcm login` for int
 OIDC device authorization (Keycloak `dcm-cli` client), or set `DCM_TOKEN` / `--token`
 for CI and scripting.
 
-## Running with service providers
+## Running with Environment Agent
 
-Service providers are behind compose profiles and do not start by default.
-
-### KubeVirt service provider
-
-To include the `kubevirt-service-provider`, set the required environment variables and
-activate the `kubevirt` profile:
-
-```bash
-export KUBERNETES_NAMESPACE=vms
-export KUBEVIRT_KUBECONFIG="/path/to/kubeconfig"
-make compose-up-with-providers PROFILES=kubevirt
-```
-
-### K8s container service provider
-
-To include the `k8s-container-service-provider`, set the required environment variables and
-activate the `k8s-container` profile:
-
-```bash
-export K8S_CONTAINER_SP_KUBECONFIG="/path/to/kubeconfig"
-make compose-up-with-providers PROFILES=k8s-container
-```
-
-If using Kind, see [K8s Container SP with Kind](docs/k8s-container-sp-kind.md) for additional network setup.
-
-Optionally override the provider name or external service type:
-
-```bash
-export K8S_CONTAINER_SP_NAME=my-provider
-export K8S_CONTAINER_SP_EXTERNAL_SVC_TYPE=LoadBalancer
-```
-
-### K8s storage service provider
-
-To include the `k8s-storage-service-provider`, set the required environment variables and
-activate the `storage` profile:
-
-```bash
-export K8S_STORAGE_SP_KUBECONFIG="/path/to/kubeconfig"
-make compose-up-with-providers PROFILES=storage
-```
-
-Optionally override the provider name, namespace, and default PVC behavior:
-
-```bash
-export K8S_STORAGE_SP_NAME=my-storage-provider
-export K8S_STORAGE_SP_NAMESPACE=default
-export K8S_STORAGE_SP_DEFAULT_STORAGE_CLASS=ceph-rbd
-export K8S_STORAGE_SP_DEFAULT_ACCESS_MODE=ReadWriteOnce
-```
-
-### ACM cluster service provider
-
-To include the `acm-cluster-service-provider`, set the required environment variables and
-activate the `acm-cluster` profile:
-
-```bash
-export ACM_CLUSTER_SP_KUBECONFIG="/path/to/kubeconfig"
-export ACM_CLUSTER_SP_PULL_SECRET="<base64-encoded-dockerconfigjson>"
-make compose-up-with-providers PROFILES=acm-cluster
-```
-
-Optionally override the provider name, namespace, or base domain:
-
-```bash
-export ACM_CLUSTER_SP_NAME=my-acm-provider
-export ACM_CLUSTER_SP_NAMESPACE=clusters
-export ACM_CLUSTER_SP_BASE_DOMAIN="apps.example.com"
-```
-
-For BareMetal provisioning, also set:
-
-```bash
-export ACM_CLUSTER_SP_DEFAULT_INFRA_ENV="my-infra-env"
-export ACM_CLUSTER_SP_AGENT_NAMESPACE="my-agent-namespace"
-```
-
-### Three-tier demo app service provider
-
-To include the `three-tier-demo-service-provider`, set the required environment variables and
-activate the `three-tier` profile:
-
-```bash
-export K8S_CONTAINER_SP_KUBECONFIG="/path/to/kubeconfig"
-make compose-up-with-providers PROFILES=three-tier
-```
-
-When using Kind, complete the k8s-container setup (steps 1–5 in [K8s Container
-SP with Kind](docs/k8s-container-sp-kind.md)) first.
-For Pet Clinic usage, see [Three-Tier Demo App with Kind](docs/three-tier-app-kind.md).
-
-Optionally override the provider name or cluster namespace (`K8S_CONTAINER_SP_NAMESPACE` applies
-to both k8s-container and three-tier SPs):
-
-```bash
-export THREE_TIER_SP_NAME=my-provider
-export K8S_CONTAINER_SP_NAMESPACE=default
-```
-
-### All providers
-
-To start all providers at once, set the required environment variables and run:
-
-```bash
-export KUBEVIRT_KUBECONFIG="/path/to/kubeconfig"
-export K8S_CONTAINER_SP_KUBECONFIG="/path/to/kubeconfig"
-export K8S_STORAGE_SP_KUBECONFIG="/path/to/kubeconfig"
-export ACM_CLUSTER_SP_KUBECONFIG="/path/to/kubeconfig"
-export ACM_CLUSTER_SP_PULL_SECRET="<base64-encoded-dockerconfigjson>"
-# BareMetal only:
-export ACM_CLUSTER_SP_DEFAULT_INFRA_ENV="my-infra-env"
-export ACM_CLUSTER_SP_AGENT_NAMESPACE="my-agent-namespace"
-make compose-up-with-providers
-```
-
-This defaults to the `providers` Compose profile (all service providers, including the
-three-tier demo SP). To start a single provider instead, pass `PROFILES=`:
-
-```bash
-make compose-up-with-providers PROFILES=kubevirt
-make compose-up-with-providers PROFILES=k8s-container
-make compose-up-with-providers PROFILES=storage
-make compose-up-with-providers PROFILES=acm-cluster
-make compose-up-with-providers PROFILES=three-tier
-```
+See [environment-agent-kind.md](docs/environment-agent-kind.md) for Kind setup, the
+`environment-agent` compose profile, configuration, and verification.
 
 ## Authentication
 
@@ -167,8 +52,8 @@ JWKS endpoint using OIDC discovery (no external auth proxy required). A proxy-he
 fallback path (`X-Auth-Proxy-Secret` + `X-Forwarded-User`) is also supported.
 
 Authentication is disabled by default (`AUTH_DISABLED=true`). When enabled, the CLI
-(`dcm login` / bearer token) and direct JWT API calls work; service providers do not
-forward authentication headers yet, so SP ↔ control-plane traffic may fail.
+(`dcm login` / bearer token) and direct JWT API calls work; the environment-agent and legacy
+external service providers do not forward authentication headers yet, so SP workflows may fail.
 
 To enable authentication (Compose):
 
@@ -179,9 +64,9 @@ AUTH_DISABLED=false AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm make compose
 For Helm chart installs, see [helm/dcm/README.md](helm/dcm/README.md#authentication)
 (`auth.enabled=true`).
 
-> **Warning:** Service providers do not forward authentication headers yet, so enabling
-> auth can break SP workflows. The CLI (`dcm login` / bearer token) and direct API
-> calls with a valid Keycloak JWT work.
+> **Warning:** The environment-agent and legacy external service providers do not forward
+> authentication headers yet, so enabling auth can break SP workflows. The CLI (`dcm login` /
+> bearer token) and direct API calls with a valid Keycloak JWT work.
 
 When enabled, the control-plane authenticates requests via two paths (tried in order):
 
@@ -267,9 +152,21 @@ the compose network (see [k8s-container-sp-kind.md](docs/k8s-container-sp-kind.m
 | `DCM_DEV_USER_PASSWORD`                     | `admin`                     | Password for the `dcm-admin` dev user in Keycloak                                                           |
 | `POSTGRES_USER`                            | `admin`                     | PostgreSQL username                                                                                         |
 | `POSTGRES_PASSWORD`                        | `adminpass`                 | PostgreSQL password                                                                                         |
-| `KUBERNETES_NAMESPACE`                     | `default`                   | Kubernetes namespace for KubeVirt VMs                                                                       |
-| `KUBEVIRT_KUBECONFIG`                      | `~/.kube/config`            | Path to kubeconfig on the host                                                                              |
-| `KUBEVIRT_PROVIDER_NAME`                   | `kubevirt-service-provider` | Provider name and Compose service `container_name`                                                          |
+| `KUBERNETES_NAMESPACE`                     | `default`                   | Kubernetes namespace for KubeVirt VMs (legacy kubevirt profile)                                           |
+| `KUBEVIRT_KUBECONFIG`                      | `~/.kube/config`            | Path to kubeconfig on the host (legacy kubevirt profile)                                                    |
+| `AGENT_NAME`                               | `local-agent`               | Agent name for environment-agent profile                                                                    |
+| `AGENT_ENVIRONMENT`                        | `dev`                       | Environment classification for environment-agent                                                            |
+| `AGENT_COST`                               | `low`                       | Cost classification for environment-agent                                                                   |
+| `AGENT_PORT`                               | `8081`                      | Host port for environment-agent HTTP API                                                                    |
+| `AGENT_EMBEDDED_SPS`                       | `container,vm`              | Embedded SP types for environment-agent: `container`, `vm`, `cluster`                                       |
+| `AGENT_KUBECONFIG_HOST`                    | `~/.kube/config`            | Host kubeconfig bind mount; use `.kube/config` in `deploy/.env` with Kind (`make kubeconfig-for-compose`) |
+| `SP_K8S_NAMESPACE`                         | `default`                   | Container SP workload namespace (environment-agent)                                                         |
+| `SP_K8S_EXTERNAL_SVC_TYPE`                 | `NodePort`                  | Container SP external service type (environment-agent)                                                      |
+| `SP_CLUSTER_NAMESPACE`                     | _(required for cluster SP)_ | ACM cluster namespace (environment-agent cluster SP)                                                        |
+| `SP_PULL_SECRET`                           | _(required for cluster SP)_ | Base64-encoded dockerconfigjson for environment-agent cluster SP                                            |
+| `SP_BASE_DOMAIN`                           | _(none)_                    | Base domain for hosted clusters (environment-agent cluster SP)                                              |
+| `ENVIRONMENT_AGENT_VERSION`                | `main`                      | Image tag for environment-agent                                                                             |
+| `KUBEVIRT_PROVIDER_NAME`                   | `kubevirt-service-provider` | Provider name and Compose service `container_name` (legacy kubevirt profile)                                |
 | `K8S_CONTAINER_SP_KUBECONFIG`              | `~/.kube/config`            | Path to kubeconfig on the host for the k8s-container-service-provider                                       |
 | `K8S_CONTAINER_SP_NAMESPACE`               | `default`                   | Kubernetes namespace for k8s containers                                                                     |
 | `K8S_CONTAINER_SP_NAME`                    | `k8s-container-provider`    | Provider name for the k8s-container-service-provider                                                        |
