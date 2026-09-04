@@ -107,6 +107,22 @@ func NewUnavailableError(message string) *ServiceError {
 	}
 }
 
+// IsCallbackRetryable reports whether a placement callback error should cause
+// the status consumer to NAK the message for redelivery.
+func IsCallbackRetryable(err error) bool {
+	var svcErr *ServiceError
+	if !errors.As(err, &svcErr) {
+		return true
+	}
+	switch svcErr.Code {
+	case ErrCodeValidation, ErrCodeNotFound, ErrCodeConflict,
+		ErrCodePolicyRejected, ErrCodePolicyConflict, ErrCodeProvisioningError:
+		return false
+	default:
+		return true
+	}
+}
+
 // IsClientError returns true if err is a ServiceError representing a client-side
 // (4xx) problem. If svcErr is non-nil it is populated with the unwrapped error.
 func IsClientError(err error, svcErr **ServiceError) bool {

@@ -35,8 +35,31 @@ func (s *PlacementService) OnResourceRunning(ctx context.Context, event types.Re
 		)
 		return nil
 	}
-	if err := s.store.Resource().UpdateStatus(ctx, resourceID, types.ResourceStatusRunning); err != nil {
+
+	// set the resource to RUNNING only if PENDING or PROVISIONING state.
+	applied, err := s.store.Resource().UpdateStatusFrom(ctx, resourceID,
+		[]string{types.ResourceStatusPending, types.ResourceStatusProvisioning},
+		types.ResourceStatusRunning,
+	)
+	if err != nil {
 		return NewInternalError(fmt.Sprintf("failed to set RUNNING status for resource %s: %v", resourceID, err))
+	}
+	if !applied {
+		resource, err = s.store.Resource().Get(ctx, resourceID)
+		if err != nil {
+			return NewInternalError(fmt.Sprintf("failed to reload resource %s after CAS: %v", resourceID, err))
+		}
+		if resource.Status != types.ResourceStatusRunning {
+			if resourceStatusBlocksCreateProgression(resource.Status) {
+				return nil
+			}
+			log.Debug("Ignoring RUNNING callback for resource in unexpected state",
+				"run_id", resource.RunID,
+				"resource_id", resourceID,
+				"status", resource.Status,
+			)
+			return nil
+		}
 	}
 
 	// Step 2: Reload the full run
@@ -63,6 +86,23 @@ func (s *PlacementService) OnResourceRunning(ctx context.Context, event types.Re
 		return handleSPRMError(err)
 	}
 	for _, r := range ready {
+		// Claim the target so redelivered RUNNING callbacks cannot issue a second SPRM create.
+		claimed, err := s.store.Resource().UpdateStatusFrom(ctx, r.ID,
+			[]string{types.ResourceStatusPending},
+			types.ResourceStatusProvisioning,
+		)
+		if err != nil {
+			return NewInternalError(fmt.Sprintf("failed to claim resource %s for provisioning: %v", r.ID, err))
+		}
+		if !claimed {
+			log.Debug("Skipping duplicate DAG progression for resource already claimed",
+				"run_id", r.RunID,
+				"resource_id", r.ID,
+				"name", r.Name,
+			)
+			continue
+		}
+
 		refs, err := cel.CollectReferences(r.Spec)
 		if err != nil {
 			return NewValidationError(fmt.Sprintf("resource %s: %v", r.Name, err))
@@ -132,8 +172,29 @@ func (s *PlacementService) OnResourceDeleted(ctx context.Context, resourceID str
 		}
 		return NewInternalError(fmt.Sprintf("failed to load resource %s: %v", resourceID, err))
 	}
-	if err := s.store.Resource().UpdateStatus(ctx, resourceID, types.ResourceStatusDeleted); err != nil {
+
+	// Set status to DELETED only if the current status is one of these five.
+	applied, err := s.store.Resource().UpdateStatusFrom(ctx, resourceID,
+		[]string{
+			types.ResourceStatusDeleting,
+			types.ResourceStatusPendingDeletion,
+			types.ResourceStatusPending,
+			types.ResourceStatusProvisioning,
+			types.ResourceStatusRunning,
+		},
+		types.ResourceStatusDeleted,
+	)
+	if err != nil {
 		return NewInternalError(fmt.Sprintf("failed to set DELETED status for resource %s: %v", resourceID, err))
+	}
+	if !applied {
+		resource, err = s.store.Resource().Get(ctx, resourceID)
+		if err != nil {
+			return NewInternalError(fmt.Sprintf("failed to reload resource %s after CAS: %v", resourceID, err))
+		}
+		if resource.Status != types.ResourceStatusDeleted {
+			return nil
+		}
 	}
 	return s.progressRunDeletion(ctx, resource.RunID)
 }
@@ -171,10 +232,34 @@ func (s *PlacementService) progressRunDeletion(ctx context.Context, runID string
 
 		anyDeleting := false
 		for _, r := range resourcesAtDeletionLevel(resources, nextLevel) {
-			// Mark DELETING before dispatch so a fast DELETED callback can't be overwritten.
-			if err := s.store.Resource().UpdateStatus(ctx, r.ID, types.ResourceStatusDeleting); err != nil {
+			applied, err := s.store.Resource().UpdateStatusFrom(ctx, r.ID,
+				[]string{types.ResourceStatusPendingDeletion},
+				types.ResourceStatusDeleting,
+			)
+			if err != nil {
 				return NewInternalError(fmt.Sprintf("failed to set DELETING status for resource %s: %v", r.ID, err))
 			}
+			if !applied {
+				current, getErr := s.store.Resource().Get(ctx, r.ID)
+				if getErr != nil {
+					return NewInternalError(fmt.Sprintf("failed to reload resource %s after CAS: %v", r.ID, getErr))
+				}
+				switch current.Status {
+				case types.ResourceStatusDeleting:
+					anyDeleting = true
+					continue
+				case types.ResourceStatusDeleted:
+					continue
+				default:
+					log.Debug("Skipping deletion progression for resource in unexpected state",
+						"run_id", runID,
+						"resource_id", r.ID,
+						"status", current.Status,
+					)
+					continue
+				}
+			}
+
 			if err := s.sprm.DeleteResource(ctx, r.ID); err != nil {
 				var httpErr *sprm.HTTPError
 				if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
@@ -183,9 +268,11 @@ func (s *PlacementService) progressRunDeletion(ctx context.Context, runID string
 						"resource_id", r.ID,
 						"dag_level", r.DagLevel,
 					)
-					// No DELETED event will arrive for absent resources; complete locally.
-					if err := s.store.Resource().UpdateStatus(ctx, r.ID, types.ResourceStatusDeleted); err != nil {
-						return NewInternalError(fmt.Sprintf("failed to set DELETED status for resource %s: %v", r.ID, err))
+					if _, casErr := s.store.Resource().UpdateStatusFrom(ctx, r.ID,
+						[]string{types.ResourceStatusDeleting, types.ResourceStatusPendingDeletion},
+						types.ResourceStatusDeleted,
+					); casErr != nil {
+						return NewInternalError(fmt.Sprintf("failed to set DELETED status for resource %s: %v", r.ID, casErr))
 					}
 				} else {
 					return handleSPRMError(err)
@@ -210,8 +297,33 @@ func (s *PlacementService) OnResourceFailed(ctx context.Context, resourceID stri
 		}
 		return NewInternalError(fmt.Sprintf("failed to load resource %s: %v", resourceID, err))
 	}
-	if err := s.store.Resource().UpdateStatus(ctx, resourceID, types.ResourceStatusFailed); err != nil {
+
+	// Set status to FAILED only if PENDING, PROVISIONING or RUNNING
+	applied, err := s.store.Resource().UpdateStatusFrom(ctx, resourceID,
+		[]string{
+			types.ResourceStatusPending,
+			types.ResourceStatusProvisioning,
+			types.ResourceStatusRunning,
+		},
+		types.ResourceStatusFailed,
+	)
+	if err != nil {
 		return NewInternalError(fmt.Sprintf("failed to set FAILED status for resource %s: %v", resourceID, err))
+	}
+	if !applied {
+		resource, err = s.store.Resource().Get(ctx, resourceID)
+		if err != nil {
+			return NewInternalError(fmt.Sprintf("failed to reload resource %s after CAS: %v", resourceID, err))
+		}
+		switch resource.Status {
+		case types.ResourceStatusFailed,
+			types.ResourceStatusPendingDeletion,
+			types.ResourceStatusDeleting,
+			types.ResourceStatusDeleted:
+			return nil
+		default:
+			return nil
+		}
 	}
 	return s.DeleteRun(ctx, resource.RunID)
 }
