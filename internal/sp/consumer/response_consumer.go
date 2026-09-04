@@ -10,6 +10,7 @@ import (
 	"time"
 
 	agentstore "github.com/dcm-project/control-plane/internal/agent/store/agent"
+	placementservice "github.com/dcm-project/control-plane/internal/placement/service"
 	"github.com/dcm-project/control-plane/internal/sp/messaging"
 	"github.com/dcm-project/control-plane/internal/sp/store"
 	"github.com/dcm-project/control-plane/internal/sp/store/model"
@@ -329,6 +330,15 @@ func (c *ResponseConsumer) handleDeletionAcknowledged(ctx context.Context, data 
 	}
 	if deletionFinalized && c.onDeleted != nil {
 		if err := c.onDeleted(ctx, data.ResourceID); err != nil {
+			if placementservice.IsCallbackRetryable(err) {
+				slog.Warn("deletion-acknowledged: placement OnResourceDeleted callback failed with retryable error, nacking",
+					"instance_id", data.ResourceID,
+					"event_type", messaging.CETypeDeletionAcknowledged,
+					"error", err,
+				)
+				_ = msg.NakWithDelay(5 * time.Second)
+				return
+			}
 			slog.Error("deletion-acknowledged: placement OnResourceDeleted callback failed",
 				"instance_id", data.ResourceID,
 				"event_type", messaging.CETypeDeletionAcknowledged,

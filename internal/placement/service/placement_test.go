@@ -1183,6 +1183,81 @@ var _ = Describe("PlacementService", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(app.Status).To(Equal(types.ResourceStatusDeleting))
 		})
+
+		It("does not duplicate SPRM create on redelivered OnResourceRunning", func() {
+			createCalls := make(map[string]int)
+			mockSPRM.CreateResourceFunc = func(_ context.Context, req sprm.CreateResourceRequest) (*sprm.CreateResourceResponse, error) {
+				createCalls[req.ID]++
+				return &sprm.CreateResourceResponse{ID: req.ID, Status: "provisioning"}, nil
+			}
+
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-dup-running",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var dbID, appID string
+			for _, r := range created.Resources {
+				switch r.Name {
+				case "db":
+					dbID = *r.Id
+				case "app":
+					appID = *r.Id
+				}
+			}
+
+			err = placementSvc.OnResourceRunning(ctx, runningEvent(dbID))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(createCalls[appID]).To(Equal(1))
+
+			err = placementSvc.OnResourceRunning(ctx, runningEvent(dbID))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(createCalls[appID]).To(Equal(1))
+
+			app, err := dataStore.Resource().Get(ctx, appID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(app.Status).To(Equal(types.ResourceStatusProvisioning))
+		})
+
+		It("is idempotent when OnResourceFailed is redelivered", func() {
+			deleteCalls := 0
+			mockSPRM.DeleteResourceFunc = func(_ context.Context, _ string) error {
+				deleteCalls++
+				return nil
+			}
+
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-dup-failed",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var dbID string
+			for _, r := range created.Resources {
+				if r.Name == "db" {
+					dbID = *r.Id
+				}
+			}
+
+			err = placementSvc.OnResourceFailed(ctx, dbID)
+			Expect(err).NotTo(HaveOccurred())
+			firstDeleteCalls := deleteCalls
+
+			err = placementSvc.OnResourceFailed(ctx, dbID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(deleteCalls).To(Equal(firstDeleteCalls))
+		})
 	})
 
 	Describe("RehydrateResource", func() {
