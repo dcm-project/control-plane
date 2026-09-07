@@ -142,11 +142,18 @@ For the full catalog of agent and SP environment variables, see
 | `AGENT_ENVIRONMENT` | `dev` | Environment classification |
 | `AGENT_COST` | `low` | Cost classification |
 | `AGENT_PORT` | `8081` | Host port for agent HTTP API |
-| `AGENT_EMBEDDED_SPS` | `container,vm` | Embedded SP types: `container`, `vm`, `cluster` |
+| `AGENT_EMBEDDED_SPS` | `container,vm` | Embedded SP types: `container`, `vm`, `cluster`, `storage` |
 | `AGENT_KUBECONFIG_HOST` | `~/.kube/config` | Host kubeconfig bind mount; use `.kube/config` with Kind (`make kubeconfig-for-compose`) |
-| `SP_K8S_NAMESPACE` | `default` | Container SP workload namespace |
+| `SP_DEFAULT_KUBECONFIG` | `/kubeconfig` | In-container path (set in `compose.yaml`; do not set in `.env`) |
+| `SP_CONTAINER_NAMESPACE` | `default` | Container SP workload namespace |
 | `SP_K8S_EXTERNAL_SVC_TYPE` | `NodePort` | Container SP external service type |
-| `KUBERNETES_NAMESPACE` | `default` | VM SP workload namespace |
+| `SP_VM_NAMESPACE` | `default` | VM SP workload namespace |
+| `SP_CLUSTER_NAMESPACE` | _(required for cluster SP)_ | ACM cluster namespace |
+| `SP_PULL_SECRET` | _(required for cluster SP)_ | Base64-encoded dockerconfigjson |
+| `SP_BASE_DOMAIN` | _(none)_ | Base domain for hosted clusters |
+| `SP_STORAGE_NAMESPACE` | `default` | Storage SP workload namespace |
+| `SP_K8S_DEFAULT_STORAGE_CLASS` | _(none)_ | Default storage class for storage SP |
+| `SP_K8S_DEFAULT_ACCESS_MODE` | `ReadWriteOnce` | Default PVC access mode for storage SP |
 | `ENVIRONMENT_AGENT_VERSION` | `main` | Agent image tag |
 
 `DCM_REGISTRATION_URL` is set to `http://control-plane:8080` in compose (base URL only and the agent
