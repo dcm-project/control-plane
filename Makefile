@@ -132,7 +132,7 @@ test:
 tidy:
 	go mod tidy
 
-.PHONY: build build-gitops run run-dev compose-up compose-up-with-agent compose-up-with-providers compose-down \
+.PHONY: build build-gitops run run-dev compose-up compose-up-with-agent compose-down \
 	install-kubevirt kubeconfig-for-compose kind-connect kind-disconnect \
 	disconnect-compose-networks remove-compose-networks \
 	image-build clean fmt vet lint test test-catalog test-placement test-policy test-sp test-gitops tidy subsystem-env \

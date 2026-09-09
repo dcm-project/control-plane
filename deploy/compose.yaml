@@ -81,6 +81,8 @@ services:
         condition: service_healthy
       nats:
         condition: service_started
+      keycloak:
+        condition: service_healthy
 
   dcm-ui:
     image: quay.io/dcm-project/dcm-ui:${DCM_UI_VERSION:-main}

@@ -80,7 +80,7 @@ in shared-workflows for tag behavior and version conventions.
 
 Full-stack Compose and Helm packaging live under `deploy/`:
 
-- **Compose:** control-plane, postgres, nats, keycloak, dcm-ui, and optional environment-agent (or legacy external SP profiles)
+- **Compose:** control-plane, postgres, nats, keycloak, dcm-ui, and optional environment-agent profile
 - **Helm:** Kubernetes/OpenShift chart at `deploy/helm/dcm` (optional auth via `auth.enabled`)
 
 See [deploy/RUN.md](deploy/RUN.md) for local stack usage, authentication, and the environment-agent profile.

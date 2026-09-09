@@ -51,11 +51,13 @@ Writes `deploy/.kube/config` (API URL `https://kubernetes:6443`). No compose sta
 ### 3. Start the platform stack (without the agent)
 
 ```bash
-cp deploy/.env.example deploy/.env   # optional; set agent vars in step 5
+cp deploy/.env.example deploy/.env
 make compose-up
 ```
 
 Control-plane API: `http://localhost:8080`. DCM UI: `http://localhost:7007`.
+
+Set agent variables in `deploy/.env` before starting the agent (step 6).
 
 ### 4. Connect Kind to compose
 
@@ -73,12 +75,16 @@ make kind-connect KIND_SCRIPTS_DIR=/path/to/utilities/scripts/kind
 
 ### 5. Configure the agent
 
-Enable the SPs in `deploy/.env`. For example:
+**Required:** set `AGENT_EMBEDDED_SPS` in `deploy/.env`. Compose does not default this — an unset
+value means no embedded service providers.
 
 ```bash
-AGENT_EMBEDDED_SPS=container,vm
+AGENT_EMBEDDED_SPS=container
 AGENT_KUBECONFIG_HOST=.kube/config
 ```
+
+Add `vm`, `cluster`, or `storage` as needed (e.g. `container,vm`). Run `make install-kubevirt`
+when `vm` is included.
 
 ### 6. Start the agent (`compose-up-with-agent`)
 
@@ -142,7 +148,7 @@ For the full catalog of agent and SP environment variables, see
 | `AGENT_ENVIRONMENT` | `dev` | Environment classification |
 | `AGENT_COST` | `low` | Cost classification |
 | `AGENT_PORT` | `8081` | Host port for agent HTTP API |
-| `AGENT_EMBEDDED_SPS` | `container,vm` | Embedded SP types: `container`, `vm`, `cluster`, `storage` |
+| `AGENT_EMBEDDED_SPS` | _empty_ (set in `deploy/.env`) | **Required** for the agent profile. Comma-separated: `container`, `vm`, `cluster`, `storage` |
 | `AGENT_KUBECONFIG_HOST` | `~/.kube/config` | Host kubeconfig bind mount; use `.kube/config` with Kind (`make kubeconfig-for-compose`) |
 | `SP_DEFAULT_KUBECONFIG` | `/kubeconfig` | In-container path (set in `compose.yaml`; do not set in `.env`) |
 | `SP_CONTAINER_NAMESPACE` | `default` | Container SP workload namespace |

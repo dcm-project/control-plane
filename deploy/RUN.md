@@ -62,8 +62,8 @@ using OIDC discovery (no external auth proxy required). A proxy-header fallback 
 (`X-Auth-Proxy-Secret` + `X-Forwarded-User`) is also supported.
 
 Authentication is disabled by default (`AUTH_DISABLED=true`). When enabled, the CLI
-(`dcm login` / bearer token) and direct JWT API calls work; the environment-agent and legacy
-external service providers do not forward authentication headers yet, so SP workflows may fail.
+(`dcm login` / bearer token) and direct JWT API calls work; the environment-agent does not
+forward authentication headers yet, so SP workflows may fail.
 
 To enable authentication (Compose):
 
@@ -80,9 +80,9 @@ With service providers: `make compose-up-with-providers PROFILES=kubevirt AUTH=t
 For Helm chart installs, create the `dcm-auth` Secret and set `auth.enabled=true` — see
 [helm/dcm/README.md](helm/dcm/README.md#authentication).
 
-> **Warning:** The environment-agent and legacy external service providers do not forward
-> authentication headers yet, so enabling auth can break SP workflows. The CLI (`dcm login` /
-> bearer token) and direct API calls with a valid Keycloak JWT work.
+> **Warning:** The environment-agent does not forward authentication headers yet, so enabling
+> auth can break SP workflows. The CLI (`dcm login` / bearer token) and direct API calls with a
+> valid Keycloak JWT work.
 
 When enabled, the control-plane authenticates requests via two paths (tried in order):
 
@@ -154,7 +154,7 @@ make compose-down
 ```
 
 This stops all compose services and removes volumes. If Kind was connected to
-the compose network (see [k8s-container-sp-kind.md](docs/k8s-container-sp-kind.md)),
+the compose network (see [environment-agent-kind.md](docs/environment-agent-kind.md)),
 `compose-down` disconnects external containers and removes both
 `control-plane_default` and legacy `deploy_default` networks.
 
@@ -174,15 +174,11 @@ Database, auth, and ACM pull-secret credentials are defined in `deploy/.env.exam
 | `POSTGRES_USER` / `POSTGRES_PASSWORD`      | _(in `.env.example`)        | PostgreSQL credentials (also `DB_USER`, `DB_PASS`, `DB_PASSWORD`)                                           |
 | `KEYCLOAK_ADMIN_PASSWORD`                  | _(in `.env.example`)        | Keycloak admin console password                                                                             |
 | `DCM_DEV_USER_PASSWORD`                     | _(in `.env.example`)        | Password for the `dcm-admin` dev user in Keycloak                                                           |
-| `KUBERNETES_NAMESPACE`                     | `default`                   | Kubernetes namespace for KubeVirt VMs                                                                       |
-| `KUBEVIRT_KUBECONFIG`                      | `~/.kube/config`            | Host path to kubeconfig for the kubevirt-service-provider                                                   |
-| `KUBEVIRT_PROVIDER_NAME`                   | `kubevirt-service-provider` | Provider name and Compose service `container_name`                                                          |
-| `K8S_CONTAINER_SP_KUBECONFIG`              | `~/.kube/config`            | Host path to kubeconfig for the k8s-container and three-tier service providers                              |
 | `AGENT_NAME`                               | `local-agent`               | Agent name for environment-agent profile                                                                    |
 | `AGENT_ENVIRONMENT`                        | `dev`                       | Environment classification for environment-agent                                                            |
 | `AGENT_COST`                               | `low`                       | Cost classification for environment-agent                                                                   |
 | `AGENT_PORT`                               | `8081`                      | Host port for environment-agent HTTP API                                                                    |
-| `AGENT_EMBEDDED_SPS`                       | `container,vm`              | Embedded SP types for environment-agent: `container`, `vm`, `cluster`, `storage`                            |
+| `AGENT_EMBEDDED_SPS`                       | _(empty)_                   | **Required in `deploy/.env`** when using the agent profile. Comma-separated: `container`, `vm`, `cluster`, `storage` |
 | `AGENT_KUBECONFIG_HOST`                    | `~/.kube/config`            | Host kubeconfig bind mount; use `.kube/config` in `deploy/.env` with Kind (`make kubeconfig-for-compose`) |
 | `SP_CONTAINER_NAMESPACE`                   | `default`                   | Container SP workload namespace (environment-agent)                                                         |
 | `SP_K8S_EXTERNAL_SVC_TYPE`                 | `NodePort`                  | Container SP external service type (environment-agent)                                                      |
@@ -194,30 +190,7 @@ Database, auth, and ACM pull-secret credentials are defined in `deploy/.env.exam
 | `SP_K8S_DEFAULT_STORAGE_CLASS`             | _(none)_                    | Default storage class for environment-agent storage SP                                                      |
 | `SP_K8S_DEFAULT_ACCESS_MODE`               | `ReadWriteOnce`             | Default PVC access mode for environment-agent storage SP                                                    |
 | `ENVIRONMENT_AGENT_VERSION`                | `main`                      | Image tag for environment-agent                                                                             |
-| `KUBEVIRT_PROVIDER_NAME`                   | `kubevirt-service-provider` | Provider name and Compose service `container_name` (legacy kubevirt profile)                                |
-| `K8S_CONTAINER_SP_KUBECONFIG`              | `~/.kube/config`            | Path to kubeconfig on the host for the k8s-container-service-provider                                       |
-| `K8S_CONTAINER_SP_NAMESPACE`               | `default`                   | Kubernetes namespace for k8s containers                                                                     |
-| `K8S_CONTAINER_SP_NAME`                    | `k8s-container-provider`    | Provider name for the k8s-container-service-provider                                                        |
-| `K8S_CONTAINER_SP_EXTERNAL_SVC_TYPE`       | `NodePort`                  | Kubernetes Service type for external ports (`NodePort` or `LoadBalancer`)                                   |
-| `K8S_STORAGE_SP_KUBECONFIG`                | `~/.kube/config`            | Host path to kubeconfig for the k8s-storage-service-provider                                                |
-| `K8S_STORAGE_SP_NAMESPACE`                 | `default`                   | Kubernetes namespace used by the k8s-storage-service-provider                                               |
-| `K8S_STORAGE_SP_NAME`                      | `k8s-storage-provider`      | Provider name for the k8s-storage-service-provider                                                          |
-| `K8S_STORAGE_SP_DEFAULT_STORAGE_CLASS`     | _(empty)_                   | Optional fallback StorageClass when request hints do not set one                                            |
-| `K8S_STORAGE_SP_DEFAULT_ACCESS_MODE`       | `ReadWriteOnce`             | Optional fallback access mode when request hints do not set one                                             |
-| `ACM_CLUSTER_SP_KUBECONFIG`                | `~/.kube/config`            | Host path to kubeconfig for the acm-cluster-service-provider                                                |
-| `ACM_CLUSTER_SP_NAMESPACE`                 | `default`                   | Kubernetes namespace for ACM hosted clusters                                                                |
-| `ACM_CLUSTER_SP_NAME`                      | `acm-cluster-sp`            | Provider name for the acm-cluster-service-provider                                                          |
-| `ACM_CLUSTER_SP_BASE_DOMAIN`               | _(none)_                    | Base DNS domain for hosted clusters; can be overridden per-request via `provider_hints.acm.base_domain`     |
-| `ACM_CLUSTER_SP_PULL_SECRET`               | _(in `.env`)                | Base64-encoded dockerconfigjson pull secret for ACM hosted clusters (required for `acm-cluster` profile)    |
-| `ACM_CLUSTER_SP_DEFAULT_INFRA_ENV`         | _(none)_                    | **BareMetal only.** Default InfraEnv name; can be overridden per-request via `provider_hints.acm.infra_env` |
-| `ACM_CLUSTER_SP_AGENT_NAMESPACE`           | _(none)_                    | **BareMetal only.** Namespace where Agent resources are located                                             |
 | `CONTROL_PLANE_VERSION`                    | `main`                      | Image tag for control-plane monolith                                                                        |
-| `KUBEVIRT_SERVICE_PROVIDER_VERSION`        | `main`                      | Image tag for kubevirt-service-provider                                                                     |
-| `K8S_CONTAINER_SERVICE_PROVIDER_VERSION`   | `main`                      | Image tag for k8s-container-service-provider                                                                |
-| `K8S_STORAGE_SERVICE_PROVIDER_VERSION`     | `main`                      | Image tag for k8s-storage-service-provider                                                                  |
-| `ACM_CLUSTER_SERVICE_PROVIDER_VERSION`     | `main`                      | Image tag for acm-cluster-service-provider                                                                  |
-| `THREE_TIER_DEMO_SERVICE_PROVIDER_VERSION` | `main`                      | Image tag for three-tier-demo-service-provider                                                              |
-| `THREE_TIER_SP_NAME`                       | `three-tier-provider`       | Provider name for the three-tier-demo-service-provider                                                      |
 | `DCM_UI_VERSION`                           | `main`                      | Image tag for dcm-ui                                                                                        |
 
 See [Image versions](../README.md#image-versions) in the README for available tag formats and how to update.
