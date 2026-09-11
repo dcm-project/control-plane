@@ -61,6 +61,10 @@ type ServiceTypeInstance interface { //nolint:interfacebloat
 	ReassignAndReset(ctx context.Context, id string, agentName string, expectedCurrentAgent string) error
 	MarkForDeletion(ctx context.Context, id string) error
 	ListPendingDeletions(ctx context.Context) ([]model.ServiceTypeInstance, error)
+	// ClaimPendingDeletions atomically leases due SCHEDULED deletions for this
+	// worker. Only one replica wins each row (DB-backed claiming).
+	ClaimPendingDeletions(ctx context.Context, now, claimUntil time.Time, limit int) ([]model.ServiceTypeInstance, error)
+	ReleaseDeletionClaim(ctx context.Context, id string) error
 	IncrementDeletionRetry(ctx context.Context, id string) error
 	MarkDeletionFailed(ctx context.Context, id string) error
 	MarkDeletionComplete(ctx context.Context, id string) error
@@ -326,10 +330,11 @@ func (s *ServiceTypeInstanceStore) MarkForDeletion(ctx context.Context, id strin
 		Model(&model.ServiceTypeInstance{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
-			"deletion_status":       DeletionStatusScheduled,
-			"deletion_requested_at": now,
-			"retry_count":           0,
-			"last_deletion_attempt": nil,
+			"deletion_status":        DeletionStatusScheduled,
+			"deletion_requested_at":  now,
+			"retry_count":            0,
+			"last_deletion_attempt":  nil,
+			"deletion_claimed_until": nil,
 		})
 	if result.Error != nil {
 		return result.Error
@@ -349,6 +354,87 @@ func (s *ServiceTypeInstanceStore) ListPendingDeletions(ctx context.Context) ([]
 		return nil, err
 	}
 	return instances, nil
+}
+
+// ClaimPendingDeletions leases up to limit SCHEDULED deletions that are not
+// already claimed. On Postgres this uses FOR UPDATE SKIP LOCKED; elsewhere a
+// conditional UPDATE loop (SQLite-friendly) ensures only one winner per row.
+func (s *ServiceTypeInstanceStore) ClaimPendingDeletions(ctx context.Context, now, claimUntil time.Time, limit int) ([]model.ServiceTypeInstance, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if isPostgres(s.db) {
+		return s.claimPendingDeletionsSkipLocked(ctx, now, claimUntil, limit)
+	}
+	return s.claimPendingDeletionsOptimistic(ctx, now, claimUntil, limit)
+}
+
+func (s *ServiceTypeInstanceStore) claimPendingDeletionsSkipLocked(ctx context.Context, now, claimUntil time.Time, limit int) ([]model.ServiceTypeInstance, error) {
+	var claimed []model.ServiceTypeInstance
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var rows []model.ServiceTypeInstance
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("deletion_status = ? AND (deletion_claimed_until IS NULL OR deletion_claimed_until <= ?)",
+				DeletionStatusScheduled, now).
+			Order("deletion_requested_at ASC").
+			Limit(limit).
+			Find(&rows).Error; err != nil {
+			return err
+		}
+		for i := range rows {
+			if err := tx.Model(&rows[i]).Update("deletion_claimed_until", claimUntil).Error; err != nil {
+				return err
+			}
+			until := claimUntil
+			rows[i].DeletionClaimedUntil = &until
+		}
+		claimed = rows
+		return nil
+	})
+	return claimed, err
+}
+
+func (s *ServiceTypeInstanceStore) claimPendingDeletionsOptimistic(ctx context.Context, now, claimUntil time.Time, limit int) ([]model.ServiceTypeInstance, error) {
+	var candidates []model.ServiceTypeInstance
+	if err := s.db.WithContext(ctx).
+		Where("deletion_status = ? AND (deletion_claimed_until IS NULL OR deletion_claimed_until <= ?)",
+			DeletionStatusScheduled, now).
+		Order("deletion_requested_at ASC").
+		Limit(limit).
+		Find(&candidates).Error; err != nil {
+		return nil, err
+	}
+
+	claimed := make([]model.ServiceTypeInstance, 0, len(candidates))
+	for _, inst := range candidates {
+		result := s.db.WithContext(ctx).
+			Model(&model.ServiceTypeInstance{}).
+			Where("id = ? AND deletion_status = ? AND (deletion_claimed_until IS NULL OR deletion_claimed_until <= ?)",
+				inst.ID, DeletionStatusScheduled, now).
+			Update("deletion_claimed_until", claimUntil)
+		if result.Error != nil {
+			return claimed, result.Error
+		}
+		if result.RowsAffected == 1 {
+			until := claimUntil
+			inst.DeletionClaimedUntil = &until
+			claimed = append(claimed, inst)
+		}
+	}
+	return claimed, nil
+}
+
+// ReleaseDeletionClaim drops a deletion lease so another worker or the next
+// cleanup cycle can pick the row up. No-op when the row is not SCHEDULED.
+func (s *ServiceTypeInstanceStore) ReleaseDeletionClaim(ctx context.Context, id string) error {
+	result := s.db.WithContext(ctx).
+		Model(&model.ServiceTypeInstance{}).
+		Where("id = ? AND deletion_status = ?", id, DeletionStatusScheduled).
+		Update("deletion_claimed_until", nil)
+	if result.Error != nil {
+		return result.Error
+	}
+	return nil
 }
 
 func (s *ServiceTypeInstanceStore) IncrementDeletionRetry(ctx context.Context, id string) error {
@@ -373,7 +459,10 @@ func (s *ServiceTypeInstanceStore) MarkDeletionFailed(ctx context.Context, id st
 	result := s.db.WithContext(ctx).
 		Model(&model.ServiceTypeInstance{}).
 		Where("id = ? AND deletion_status <> ?", id, DeletionStatusDeleted).
-		Update("deletion_status", DeletionStatusFailed)
+		Updates(map[string]any{
+			"deletion_status":        DeletionStatusFailed,
+			"deletion_claimed_until": nil,
+		})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -396,7 +485,10 @@ func (s *ServiceTypeInstanceStore) MarkDeletionComplete(ctx context.Context, id 
 	result := s.db.WithContext(ctx).
 		Model(&model.ServiceTypeInstance{}).
 		Where("id = ?", id).
-		Update("deletion_status", DeletionStatusDeleted)
+		Updates(map[string]any{
+			"deletion_status":        DeletionStatusDeleted,
+			"deletion_claimed_until": nil,
+		})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -417,7 +509,10 @@ func (s *ServiceTypeInstanceStore) MarkDeletionCompleteFromAgent(ctx context.Con
 	result := s.db.WithContext(ctx).
 		Model(&model.ServiceTypeInstance{}).
 		Where("id = ? AND agent_name = ?", id, agentName).
-		Update("deletion_status", DeletionStatusDeleted)
+		Updates(map[string]any{
+			"deletion_status":        DeletionStatusDeleted,
+			"deletion_claimed_until": nil,
+		})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -468,9 +563,10 @@ func (s *ServiceTypeInstanceStore) ResetRetryCount(ctx context.Context, id strin
 		Model(&model.ServiceTypeInstance{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
-			"deletion_status":       DeletionStatusScheduled,
-			"retry_count":           0,
-			"last_deletion_attempt": nil,
+			"deletion_status":        DeletionStatusScheduled,
+			"retry_count":            0,
+			"last_deletion_attempt":  nil,
+			"deletion_claimed_until": nil,
 		})
 	if result.Error != nil {
 		return result.Error

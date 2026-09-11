@@ -1,4 +1,8 @@
 // Package cleanup implements stale instance cleanup scheduling.
+//
+// Multi-instance safety uses DB-backed claiming (not leader election): each
+// replica leases SCHEDULED deletion rows before processing so only one
+// instance handles a given deletion at a time.
 package cleanup
 
 import (
@@ -14,6 +18,10 @@ import (
 	"github.com/dcm-project/control-plane/internal/sp/store"
 	"github.com/dcm-project/control-plane/internal/sp/store/model"
 )
+
+// deletionClaimTTL keeps a claimed deletion off other replicas while this
+// worker publishes to the agent. Expired leases become claimable again.
+const deletionClaimTTL = 5 * time.Minute
 
 type Scheduler struct {
 	store      store.Store
@@ -79,17 +87,24 @@ func (s *Scheduler) runCycle(ctx context.Context) {
 	s.ProcessPendingDeletions(cycleCtx)
 }
 
+// ProcessPendingDeletions claims and attempts deferred deletions.
 func (s *Scheduler) ProcessPendingDeletions(ctx context.Context) {
 	log := logging.FromContext(ctx)
-	pending, err := s.store.ServiceTypeInstance().ListPendingDeletions(ctx)
+	now := time.Now()
+	pending, err := s.store.ServiceTypeInstance().ClaimPendingDeletions(ctx, now, now.Add(deletionClaimTTL), 0)
 	if err != nil {
-		log.Error("Error listing pending deletions", "error", err)
+		log.Error("Error claiming pending deletions", "error", err)
 		return
 	}
 
-	for _, instance := range pending {
+	for i, instance := range pending {
 		select {
 		case <-ctx.Done():
+			for j := i; j < len(pending); j++ {
+				if err := s.store.ServiceTypeInstance().ReleaseDeletionClaim(ctx, pending[j].ID); err != nil {
+					log.Error("Failed to release deletion claim after cycle cancel", "instance_id", pending[j].ID, "error", err)
+				}
+			}
 			return
 		default:
 			s.processOne(ctx, instance)
@@ -126,6 +141,9 @@ func (s *Scheduler) processOne(ctx context.Context, instance model.ServiceTypeIn
 			return
 		}
 		log.Error("cleanup: agent lookup failed, will retry next cycle", "instance_id", instance.ID, "error", err)
+		if err := s.store.ServiceTypeInstance().ReleaseDeletionClaim(ctx, instance.ID); err != nil {
+			log.Error("Failed to release deletion claim after agent lookup error", "instance_id", instance.ID, "error", err)
+		}
 		return
 	}
 
@@ -142,18 +160,23 @@ func (s *Scheduler) processOne(ctx context.Context, instance model.ServiceTypeIn
 		ResourceID:  instance.ID,
 		ServiceType: instance.ServiceType,
 	})
-	if pubErr != nil {
-		log.Warn("cleanup: delete publish failed, will retry next cycle", "instance_id", instance.ID, "error", pubErr)
-	} else {
-		log.Info("cleanup: delete published, awaiting agent acknowledgement", "instance_id", instance.ID)
-	}
-
 	// Every attempt counts toward maxRetries whether or not the publish
 	// itself succeeded, so a permanently unreachable NATS/agent eventually
 	// trips the retries-exhausted branch above instead of retrying forever.
 	if err := s.store.ServiceTypeInstance().IncrementDeletionRetry(ctx, instance.ID); err != nil {
 		log.Error("Failed to record deletion retry attempt", "instance_id", instance.ID, "error", err)
+		return
 	}
+
+	if pubErr != nil {
+		log.Warn("cleanup: delete publish failed, will retry next cycle", "instance_id", instance.ID, "error", pubErr)
+		if err := s.store.ServiceTypeInstance().ReleaseDeletionClaim(ctx, instance.ID); err != nil {
+			log.Error("Failed to release deletion claim after publish failure", "instance_id", instance.ID, "error", err)
+		}
+		return
+	}
+
+	log.Info("cleanup: delete published, awaiting agent acknowledgement", "instance_id", instance.ID)
 }
 
 // auditGiveUp marks an instance DELETED without ever confirming the physical

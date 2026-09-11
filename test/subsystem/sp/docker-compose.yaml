@@ -1,6 +1,25 @@
 # SP subsystem test stack. Credentials: set POSTGRES_USER and POSTGRES_PASSWORD
 # in the environment or in a .env file (see ../../../.env.example).
 
+x-control-plane-env: &control-plane-env
+  BIND_ADDRESS: ":8080"
+  DB_TYPE: pgsql
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_NAME: service-provider
+  DB_USER: ${POSTGRES_USER:-admin}
+  DB_PASSWORD: ${POSTGRES_PASSWORD:-adminpass}
+  NATS_URL: "nats://nats:4222"
+  AUTH_DISABLED: "true"
+  DCM_ADMIN_SUBJECT: "test-admin-sub"
+  # Tuned down from production defaults so HA/self-heal subsystem tests
+  # do not wait minutes for sweep/cleanup cycles.
+  CLEANUP_INTERVAL: "5s"
+  HEALTH_CHECK_INTERVAL: "5s"
+  AGENT_PENDING_REQUEST_TIMEOUT: "5s"
+  AGENT_SWEEP_INTERVAL: "2s"
+  AGENT_PENDING_REQUEST_MAX_RETRIES: "1"
+
 services:
   postgres:
     image: quay.io/sclorg/postgresql-16-c9s:latest
@@ -47,29 +66,35 @@ services:
       context: ../../..
       dockerfile: Containerfile
     environment:
-      BIND_ADDRESS: ":8080"
-      DB_TYPE: pgsql
-      DB_HOST: postgres
-      DB_PORT: "5432"
-      DB_NAME: service-provider
-      DB_USER: ${POSTGRES_USER:-admin}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-adminpass}
-      NATS_URL: "nats://nats:4222"
-      AUTH_DISABLED: "true"
-      DCM_ADMIN_SUBJECT: "test-admin-sub"
-      # Tuned down from the 2m/10s production defaults so the self-heal
-      # subsystem test doesn't have to wait minutes for a real sweep cycle.
-      AGENT_PENDING_REQUEST_TIMEOUT: "5s"
-      AGENT_SWEEP_INTERVAL: "2s"
-      # Tuned down from the default of 3 so the retries-exhausted test
-      # (single agent, no fallback) reaches "failed" in ~10-15s instead of
-      # ~25-30s. Verified this doesn't change the outcome of the existing
-      # two-agent self-heal tests: they resolve on their first retry
-      # attempt, well under either limit.
-      AGENT_PENDING_REQUEST_MAX_RETRIES: "1"
+      <<: *control-plane-env
     ports:
       - "8080:8080"
     depends_on:
+      postgres:
+        condition: service_healthy
+      provider-wiremock:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1alpha1/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # HA worker tests only (profile "ha"); default stack stays single-replica for self-heal.
+  control-plane-2:
+    profiles: ["ha"]
+    build:
+      context: ../../..
+      dockerfile: Containerfile
+    environment:
+      <<: *control-plane-env
+    ports:
+      - "8081:8080"
+    depends_on:
+      control-plane:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       provider-wiremock:

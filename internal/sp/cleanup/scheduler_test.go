@@ -176,6 +176,56 @@ var _ = Describe("Scheduler", func() {
 			Expect(found.RetryCount).To(Equal(1))
 		})
 
+		It("keeps the deletion lease after a successful publish so another replica cannot reclaim it", func() {
+			agentName := "audit-agent"
+			pub := messaging.NewPublisher(&stubJetStream{})
+			schedulerWithAgent := cleanup.NewScheduler(dataStore, pub, agentstore.NewAgent(db), &config.CleanupConfig{MaxRetries: 3})
+
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "deleting",
+				InstanceName: "leased-after-publish",
+				Spec:         map[string]any{"cpu": 1},
+				AgentName:    &agentName,
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+			Expect(dataStore.ServiceTypeInstance().MarkForDeletion(ctx, inst.ID)).To(Succeed())
+
+			schedulerWithAgent.ProcessPendingDeletions(ctx)
+
+			now := time.Now()
+			secondClaim, err := dataStore.ServiceTypeInstance().ClaimPendingDeletions(ctx, now, now.Add(5*time.Minute), 0)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(secondClaim).To(BeEmpty())
+		})
+
+		It("releases the deletion lease when publish fails so the next cycle can retry", func() {
+			agentName := "audit-agent"
+			pub := messaging.NewPublisher(&stubJetStream{publishErr: context.Canceled})
+			schedulerWithAgent := cleanup.NewScheduler(dataStore, pub, agentstore.NewAgent(db), &config.CleanupConfig{MaxRetries: 3})
+
+			inst := model.ServiceTypeInstance{
+				ID:           uuid.New().String(),
+				ServiceType:  "vm",
+				Status:       "deleting",
+				InstanceName: "publish-fail-release",
+				Spec:         map[string]any{"cpu": 1},
+				AgentName:    &agentName,
+			}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+			Expect(dataStore.ServiceTypeInstance().MarkForDeletion(ctx, inst.ID)).To(Succeed())
+
+			schedulerWithAgent.ProcessPendingDeletions(ctx)
+
+			now := time.Now()
+			secondClaim, err := dataStore.ServiceTypeInstance().ClaimPendingDeletions(ctx, now, now.Add(5*time.Minute), 0)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(secondClaim).To(HaveLen(1))
+			Expect(secondClaim[0].ID).To(Equal(inst.ID))
+			Expect(secondClaim[0].RetryCount).To(Equal(1))
+		})
+
 		It("marks FAILED for manual intervention once retries are exhausted", func() {
 			agentName := "audit-agent"
 			pub := messaging.NewPublisher(&stubJetStream{})
