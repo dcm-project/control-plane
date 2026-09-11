@@ -1,4 +1,8 @@
 // Package consumer subscribes to NATS JetStream status events.
+//
+// Multiple control-plane instances may bind the same durable consumer name.
+// JetStream load-shares messages across active subscribers on that durable, so
+// each status event is processed by a single instance (no extra leader election).
 package consumer
 
 import (

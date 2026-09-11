@@ -6,9 +6,13 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 
 	agentapi "github.com/dcm-project/control-plane/api/agent/v1alpha1"
 	catalogapi "github.com/dcm-project/control-plane/api/catalog/v1alpha1"
@@ -54,6 +58,74 @@ func natsURL() string {
 		return url
 	}
 	return "nats://localhost:4222"
+}
+
+func controlPlane2BaseURL() string {
+	if url := os.Getenv("CONTROL_PLANE_2_URL"); url != "" {
+		return url
+	}
+	return "http://localhost:8081/api/v1alpha1"
+}
+
+func subsystemRepoRoot() string {
+	if root := os.Getenv("SUBSYSTEM_REPO_ROOT"); root != "" {
+		return root
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	if strings.HasSuffix(wd, filepath.Join("test", "subsystem", "sp")) {
+		return filepath.Clean(filepath.Join(wd, "..", "..", ".."))
+	}
+	return wd
+}
+
+func controlPlane2Healthy() bool {
+	resp, err := http.Get(controlPlane2BaseURL() + "/health")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+// ensureControlPlane2Replica starts the optional second replica for HA specs.
+func ensureControlPlane2Replica() {
+	if controlPlane2Healthy() {
+		return
+	}
+	cmd := exec.Command("make", "-C", subsystemRepoRoot(), "sp-subsystem-ha-replica-up")
+	out, err := cmd.CombinedOutput()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "start control-plane-2:\n%s", out)
+}
+
+// stopControlPlane2Replica stops the HA profile replica so later self-heal
+// specs are not racing a second pending sweep.
+func stopControlPlane2Replica() {
+	if !controlPlane2Healthy() {
+		return
+	}
+	cmd := exec.Command("make", "-C", subsystemRepoRoot(), "sp-subsystem-ha-replica-down")
+	_, _ = cmd.CombinedOutput()
+}
+
+// requireTwoControlPlaneReplicas waits until both control-plane replicas are
+// healthy. cp2 may still be booting right after ensureControlPlane2Replica.
+func requireTwoControlPlaneReplicas() {
+	for _, healthURL := range []string{apiBaseURL() + "/health", controlPlane2BaseURL() + "/health"} {
+		Eventually(func() error {
+			resp, err := http.Get(healthURL)
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("health check returned %d", resp.StatusCode)
+			}
+			return nil
+		}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+	}
 }
 
 // publishResponseEvent simulates a real agent's response for resourceID,
