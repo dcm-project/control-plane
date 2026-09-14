@@ -19,7 +19,7 @@ var _ = Describe("error response mappers", func() {
 			Expect(err).NotTo(HaveOccurred())
 			typed, ok := resp.(server.CreateAgent400ApplicationProblemPlusJSONResponse)
 			Expect(ok).To(BeTrue())
-			Expect(typed.Type).To(Equal("validation-error"))
+			Expect(typed.Type).To(Equal(server.INVALIDARGUMENT))
 		})
 
 		It("maps a conflict error to a typed 409, not the generic default", func() {
@@ -27,7 +27,7 @@ var _ = Describe("error response mappers", func() {
 			Expect(err).NotTo(HaveOccurred())
 			typed, ok := resp.(server.CreateAgent409ApplicationProblemPlusJSONResponse)
 			Expect(ok).To(BeTrue())
-			Expect(typed.Type).To(Equal("conflict"))
+			Expect(typed.Type).To(Equal(server.ALREADYEXISTS))
 		})
 
 		It("still maps unrecognized errors to the generic 500 default", func() {

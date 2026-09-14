@@ -95,6 +95,6 @@ func expectInvalidJSONRejected(validators *openAPIValidators, path string) {
 	Expect(body).To(HaveKey("status"))
 	Expect(body).To(HaveKey("title"))
 	Expect(body).To(HaveKey("detail"))
-	Expect(body["type"]).To(Equal("INVALID_ARGUMENT"))
+	Expect(body["type"]).To(Equal("https://dcm-project.github.io/problems/invalid-argument"))
 	Expect(body["status"]).To(BeEquivalentTo(http.StatusBadRequest))
 }

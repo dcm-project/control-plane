@@ -16,7 +16,7 @@ var _ = Describe("handleDeleteInstanceError", func() {
 
 		typedResp, ok := resp.(server.DeleteInstance422ApplicationProblemPlusJSONResponse)
 		Expect(ok).To(BeTrue())
-		Expect(typedResp.Type).To(Equal("provisioning-error"))
+		Expect(typedResp.Type).To(Equal(server.UNPROCESSABLEENTITY))
 	})
 
 	It("still maps unrecognized errors to the generic 500 default", func() {

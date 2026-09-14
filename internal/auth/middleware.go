@@ -7,6 +7,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+
+	"github.com/dcm-project/control-plane/pkg/problem"
 )
 
 const (
@@ -109,31 +111,17 @@ type authErrorResponse struct {
 }
 
 func writeAuthError(w http.ResponseWriter, status int, detail string) {
-	var errType, title string
-	switch {
-	case status == http.StatusForbidden:
-		errType = "PERMISSION_DENIED"
-		title = "Forbidden"
-	case status == http.StatusConflict:
-		errType = "CONFLICT"
-		title = "Conflict"
-	case status >= 500:
-		errType = "INTERNAL_ERROR"
-		title = "Internal Server Error"
-	default:
-		errType = "UNAUTHENTICATED"
-		title = "Unauthorized"
-	}
+	fields := problem.AuthErrorFields(status, detail)
 	w.Header().Set("Content-Type", "application/problem+json")
 	if status == http.StatusUnauthorized {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 	}
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(authErrorResponse{
-		Type:   errType,
-		Status: status,
-		Title:  title,
-		Detail: detail,
+		Type:   fields.Type,
+		Status: fields.Status,
+		Title:  fields.Title,
+		Detail: fields.Detail,
 	}); err != nil {
 		slog.Warn("Failed to write auth error response", "error", err)
 	}

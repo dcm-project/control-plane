@@ -438,7 +438,7 @@ components:
     Error:
       type: object
       description: |
-        Error response following RFC 7807 Problem Details for HTTP APIs
+        Error response following RFC 9457 Problem Details for HTTP APIs
         and AEP-193 Error Responses specification.
       required:
         - type
@@ -447,22 +447,34 @@ components:
       properties:
         type:
           type: string
+          format: uri-reference
           description: |
-            Machine-readable error code.
+            URI reference identifying the error type
           enum:
-            - INVALID_ARGUMENT
+            - https://dcm-project.github.io/problems/invalid-argument
+            - https://dcm-project.github.io/problems/unauthenticated
+            - https://dcm-project.github.io/problems/not-found
+            - https://dcm-project.github.io/problems/already-exists
+            - https://dcm-project.github.io/problems/permission-denied
+            - https://dcm-project.github.io/problems/failed-precondition
+            - https://dcm-project.github.io/problems/internal
+            - https://dcm-project.github.io/problems/unavailable
+          x-enum-varnames:
+            - INVALIDARGUMENT
             - UNAUTHENTICATED
-            - NOT_FOUND
-            - ALREADY_EXISTS
-            - PERMISSION_DENIED
-            - FAILED_PRECONDITION
+            - NOTFOUND
+            - ALREADYEXISTS
+            - PERMISSIONDENIED
+            - FAILEDPRECONDITION
             - INTERNAL
             - UNAVAILABLE
-          example: INVALID_ARGUMENT
+          example: https://dcm-project.github.io/problems/invalid-argument
 
         status:
           type: integer
           format: int32
+          minimum: 100
+          maximum: 599
           description: HTTP status code (matches the response status)
           example: 400
 
@@ -492,7 +504,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: INVALID_ARGUMENT
+            type: https://dcm-project.github.io/problems/invalid-argument
             status: 400
             title: Invalid request parameters
             detail: Field 'spec.url' must not be empty
@@ -505,7 +517,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: UNAUTHENTICATED
+            type: https://dcm-project.github.io/problems/unauthenticated
             status: 401
             title: Authentication required
             detail: Valid authentication credentials are required to access this resource
@@ -518,7 +530,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: PERMISSION_DENIED
+            type: https://dcm-project.github.io/problems/permission-denied
             status: 403
             title: Access forbidden
             detail: User does not have permission to access this resource
@@ -531,7 +543,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: NOT_FOUND
+            type: https://dcm-project.github.io/problems/not-found
             status: 404
             title: Resource not found
             detail: GitRepository 'production-apps' does not exist
@@ -544,7 +556,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: ALREADY_EXISTS
+            type: https://dcm-project.github.io/problems/already-exists
             status: 409
             title: Resource already exists
             detail: GitRepository with id 'production-apps' already exists
@@ -557,7 +569,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: INTERNAL
+            type: https://dcm-project.github.io/problems/internal
             status: 500
             title: Internal server error
             detail: An unexpected error occurred while processing the request

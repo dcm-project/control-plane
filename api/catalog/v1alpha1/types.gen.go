@@ -13,19 +13,19 @@ const (
 
 // Defines values for ErrorType.
 const (
-	ABORTED            ErrorType = "https://dcm.example.com/errors/aborted"
-	ALREADYEXISTS      ErrorType = "https://dcm.example.com/errors/already-exists"
-	DEADLINEEXCEEDED   ErrorType = "https://dcm.example.com/errors/deadline-exceeded"
-	FAILEDPRECONDITION ErrorType = "https://dcm.example.com/errors/failed-precondition"
-	INTERNAL           ErrorType = "https://dcm.example.com/errors/internal"
-	INVALIDARGUMENT    ErrorType = "https://dcm.example.com/errors/invalid-argument"
-	NOTFOUND           ErrorType = "https://dcm.example.com/errors/not-found"
-	OUTOFRANGE         ErrorType = "https://dcm.example.com/errors/out-of-range"
-	PERMISSIONDENIED   ErrorType = "https://dcm.example.com/errors/permission-denied"
-	RESOURCEEXHAUSTED  ErrorType = "https://dcm.example.com/errors/resource-exhausted"
-	UNAUTHENTICATED    ErrorType = "https://dcm.example.com/errors/unauthenticated"
-	UNAVAILABLE        ErrorType = "https://dcm.example.com/errors/unavailable"
-	UNIMPLEMENTED      ErrorType = "https://dcm.example.com/errors/unimplemented"
+	ABORTED            ErrorType = "https://dcm-project.github.io/problems/aborted"
+	ALREADYEXISTS      ErrorType = "https://dcm-project.github.io/problems/already-exists"
+	DEADLINEEXCEEDED   ErrorType = "https://dcm-project.github.io/problems/deadline-exceeded"
+	FAILEDPRECONDITION ErrorType = "https://dcm-project.github.io/problems/failed-precondition"
+	INTERNAL           ErrorType = "https://dcm-project.github.io/problems/internal"
+	INVALIDARGUMENT    ErrorType = "https://dcm-project.github.io/problems/invalid-argument"
+	NOTFOUND           ErrorType = "https://dcm-project.github.io/problems/not-found"
+	OUTOFRANGE         ErrorType = "https://dcm-project.github.io/problems/out-of-range"
+	PERMISSIONDENIED   ErrorType = "https://dcm-project.github.io/problems/permission-denied"
+	RESOURCEEXHAUSTED  ErrorType = "https://dcm-project.github.io/problems/resource-exhausted"
+	UNAUTHENTICATED    ErrorType = "https://dcm-project.github.io/problems/unauthenticated"
+	UNAVAILABLE        ErrorType = "https://dcm-project.github.io/problems/unavailable"
+	UNIMPLEMENTED      ErrorType = "https://dcm-project.github.io/problems/unimplemented"
 )
 
 // Valid indicates whether the value is a known member of the ErrorType enum.
@@ -189,7 +189,7 @@ type CatalogResource struct {
 	ServiceType string `json:"service_type"`
 }
 
-// Error Error response following RFC 7807 Problem Details for HTTP APIs
+// Error Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type Error struct {
 	// Detail Human-readable explanation specific to this occurrence of the error.
@@ -345,43 +345,43 @@ type CatalogItemInstanceIdPath = string
 // ServiceTypeIdPath defines model for ServiceTypeIdPath.
 type ServiceTypeIdPath = string
 
-// AlreadyExists Error response following RFC 7807 Problem Details for HTTP APIs
+// AlreadyExists Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type AlreadyExists = Error
 
-// BadRequest Error response following RFC 7807 Problem Details for HTTP APIs
+// BadRequest Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type BadRequest = Error
 
-// Forbidden Error response following RFC 7807 Problem Details for HTTP APIs
+// Forbidden Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type Forbidden = Error
 
-// HasInstances Error response following RFC 7807 Problem Details for HTTP APIs
+// HasInstances Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type HasInstances = Error
 
-// InternalServerError Error response following RFC 7807 Problem Details for HTTP APIs
+// InternalServerError Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type InternalServerError = Error
 
-// NotFound Error response following RFC 7807 Problem Details for HTTP APIs
+// NotFound Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type NotFound = Error
 
-// PolicyDependency Error response following RFC 7807 Problem Details for HTTP APIs
+// PolicyDependency Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type PolicyDependency = Error
 
-// PolicyRejected Error response following RFC 7807 Problem Details for HTTP APIs
+// PolicyRejected Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type PolicyRejected = Error
 
-// ProviderError Error response following RFC 7807 Problem Details for HTTP APIs
+// ProviderError Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type ProviderError = Error
 
-// Unauthorized Error response following RFC 7807 Problem Details for HTTP APIs
+// Unauthorized Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type Unauthorized = Error
 

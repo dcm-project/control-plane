@@ -1013,4 +1013,3 @@ func ParseUpdateGitRepositoryResponse(rsp *http.Response) (*UpdateGitRepositoryR
 
 	return response, nil
 }
-

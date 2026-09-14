@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dcm-project/control-plane/internal/auth"
+	"github.com/dcm-project/control-plane/pkg/problem"
 
 	agentapi "github.com/dcm-project/control-plane/api/agent/v1alpha1"
 	catalogapi "github.com/dcm-project/control-plane/api/catalog/v1alpha1"
@@ -77,17 +78,14 @@ func oapiRequestValidator(spec *openapi3.T) func(http.Handler) http.Handler {
 }
 
 func oapiErrorHandler(w http.ResponseWriter, message string, statusCode int) {
-	errType := "INVALID_ARGUMENT"
-	if statusCode == http.StatusUnauthorized {
-		errType = "UNAUTHENTICATED"
-	}
+	fields := problem.ValidationErrorFields(statusCode, message)
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(oapiErrorBody{
-		Type:   errType,
-		Status: statusCode,
-		Title:  http.StatusText(statusCode),
-		Detail: message,
+		Type:   fields.Type,
+		Status: fields.Status,
+		Title:  fields.Title,
+		Detail: fields.Detail,
 	}); err != nil {
 		slog.Warn("Failed to write error response", "error", err)
 	}

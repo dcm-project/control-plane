@@ -7,14 +7,14 @@ import (
 
 type ErrorCode string
 
-// Error codes are RFC 7807 "type" URIs, matching the convention used by
+// Error codes are RFC 9457 problem type URIs, matching the convention used by
 // internal/sp/service/errors.go, so the agent and SP domains don't diverge
 // on error identifier format.
 const (
-	ErrCodeNotFound       ErrorCode = "https://dcm.example.com/errors/not-found"
-	ErrCodeValidation     ErrorCode = "https://dcm.example.com/errors/validation"
-	ErrCodeConflict       ErrorCode = "https://dcm.example.com/errors/conflict"
-	ErrCodeNotImplemented ErrorCode = "https://dcm.example.com/errors/not-implemented"
+	ErrCodeNotFound       ErrorCode = "https://dcm-project.github.io/problems/not-found"
+	ErrCodeValidation     ErrorCode = "https://dcm-project.github.io/problems/validation"
+	ErrCodeConflict       ErrorCode = "https://dcm-project.github.io/problems/conflict"
+	ErrCodeNotImplemented ErrorCode = "https://dcm-project.github.io/problems/not-implemented"
 )
 
 type ServiceError struct {
