@@ -1318,7 +1318,7 @@ var _ = Describe("PlacementService", func() {
 			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
 		})
 
-		It("returns validation error when run has multiple resources", func() {
+		It("rehydrates a run with multiple resources", func() {
 			req := &types.CreateRunRequest{
 				CatalogItemInstanceId: "catalog-rehydrate-multi",
 				RunId:                 uuid.New().String(),
@@ -1331,14 +1331,43 @@ var _ = Describe("PlacementService", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(created.Resources).To(HaveLen(2))
 
-			result, err := placementSvc.RehydrateResource(ctx, created.RunId, "new-run-multi")
+			var oldDBID, oldAppID string
+			nameByID := make(map[string]string, 2)
+			for _, r := range created.Resources {
+				nameByID[*r.Id] = r.Name
+				switch r.Name {
+				case "db":
+					oldDBID = *r.Id
+				case "app":
+					oldAppID = *r.Id
+				}
+			}
 
-			Expect(err).To(HaveOccurred())
-			Expect(result).To(BeNil())
-			var svcErr *service.ServiceError
-			Expect(errors.As(err, &svcErr)).To(BeTrue())
-			Expect(svcErr.Code).To(Equal(service.ErrCodeValidation))
-			Expect(svcErr.Message).To(ContainSubstring("single-resource"))
+			deferredDeleteOrder := make([]string, 0, 2)
+			mockSPRM.DeleteResourceDeferredFunc = func(_ context.Context, resourceID string) error {
+				deferredDeleteOrder = append(deferredDeleteOrder, nameByID[resourceID])
+				return nil
+			}
+
+			newRunID := "new-run-multi"
+			result, err := placementSvc.RehydrateResource(ctx, created.RunId, newRunID)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RunId).To(Equal(newRunID))
+			Expect(result.Name).To(Equal("db"))
+			Expect(deferredDeleteOrder).To(Equal([]string{"app", "db"}))
+
+			expectStoredResourceMissing(ctx, dataStore, oldDBID)
+			expectStoredResourceMissing(ctx, dataStore, oldAppID)
+
+			rehydrated, err := placementSvc.GetRun(ctx, newRunID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rehydrated.Resources).To(HaveLen(2))
+			for _, r := range rehydrated.Resources {
+				Expect(*r.Id).NotTo(Equal(oldDBID))
+				Expect(*r.Id).NotTo(Equal(oldAppID))
+			}
 		})
 
 		It("returns error when policy rejects re-evaluation (406)", func() {

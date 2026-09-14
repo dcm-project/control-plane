@@ -256,11 +256,12 @@ func (s *PlacementService) DeleteRun(ctx context.Context, runID string) error {
 	return s.progressRunDeletion(ctx, runID)
 }
 
-// RehydrateResource re-evaluates an existing resource against current policies
-// and creates a new resource under newRunID. The old resource is deleted after
-// the new one is successfully provisioned.
-// TODO: Rehydrate all resources in the run (e.g. via CreateRun), then delete the
-// old run in reverse DAG order (similar to DeleteRun) instead of migrating run_id.
+// RehydrateResource re-evaluates an existing run against current policies,
+// creates replacement resources under newRunID, and removes the old run.
+//
+// TODO: Use CreateRun for single-resource rehydrate too, and tear down the old
+// run via DeleteRun/progressRunDeletion instead of deferred SPRM delete plus
+// immediate DB delete.
 func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunID string) (*types.Resource, error) {
 	log := logging.FromContext(ctx)
 	log.Debug("Rehydrating run",
@@ -282,8 +283,8 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 	if len(resources) == 0 {
 		return nil, NewNotFoundError(fmt.Sprintf("run %s not found", runID))
 	}
-	if len(resources) != 1 {
-		return nil, NewValidationError(fmt.Sprintf("rehydrate currently supports only single-resource runs, got %d resources", len(resources)))
+	if len(resources) > 1 {
+		return s.rehydrateMultiResourceRun(ctx, runID, newRunID, resources)
 	}
 
 	// Step 1: Retrieve the old resource
@@ -349,20 +350,7 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 		return nil, handleSPRMError(err)
 	}
 
-	// Step 5: Delete old resource from SPRM (deferred - non-blocking)
-	if err := s.sprm.DeleteResourceDeferred(ctx, resourceID); err != nil {
-		log.Error("SPRM deferred deletion failed during rehydration (non-blocking)",
-			"resource_id", resourceID,
-			"error", err,
-		)
-	}
-	// Step 6: Delete old resource from DB
-	if err := s.store.Resource().Delete(ctx, resourceID); err != nil {
-		log.Error("Failed to delete old resource from DB during rehydration (non-blocking)",
-			"resource_id", resourceID,
-			"error", err,
-		)
-	}
+	s.deleteRehydratedOldResources(ctx, resources)
 
 	log.Info("Run rehydrated successfully",
 		"old_run_id", runID,
@@ -376,6 +364,81 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 
 	res := storeModelToResource(created)
 	return &res, nil
+}
+
+func (s *PlacementService) rehydrateMultiResourceRun(ctx context.Context, oldRunID, newRunID string, oldResources model.ResourceList) (*types.Resource, error) {
+	log := logging.FromContext(ctx)
+	catalogID := oldResources[0].CatalogItemInstanceId
+	inputs := make([]types.ResourceInput, 0, len(oldResources))
+	for _, r := range oldResources {
+		inputs = append(inputs, types.ResourceInput{
+			Name:              r.Name,
+			Spec:              r.Spec,
+			RequiresResources: append([]string(nil), r.RequiresResources...),
+		})
+	}
+
+	created, err := s.CreateRun(ctx, &types.CreateRunRequest{
+		CatalogItemInstanceId: catalogID,
+		RunId:                 newRunID,
+		Resources:             inputs,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	s.deleteRehydratedOldResources(ctx, oldResources)
+
+	log.Info("Run rehydrated successfully",
+		"old_run_id", oldRunID,
+		"new_run_id", newRunID,
+		"resource_count", len(created.Resources),
+		"catalog_item_instance_id", catalogID,
+	)
+
+	return rehydrateReturnResource(created.Resources), nil
+}
+
+func rehydrateReturnResource(resources []types.Resource) *types.Resource {
+	if len(resources) == 0 {
+		return nil
+	}
+	best := resources[0]
+	for _, r := range resources[1:] {
+		if r.DagLevel < best.DagLevel {
+			best = r
+			continue
+		}
+		if r.DagLevel == best.DagLevel && r.Name < best.Name {
+			best = r
+		}
+	}
+	return &best
+}
+
+func (s *PlacementService) deleteRehydratedOldResources(ctx context.Context, oldResources model.ResourceList) {
+	log := logging.FromContext(ctx)
+	sorted := append(model.ResourceList(nil), oldResources...)
+	slices.SortFunc(sorted, func(a, b model.Resource) int {
+		if a.DagLevel != b.DagLevel {
+			return cmp.Compare(b.DagLevel, a.DagLevel)
+		}
+		return cmp.Compare(a.Name, b.Name)
+	})
+	for _, old := range sorted {
+		if err := s.sprm.DeleteResourceDeferred(ctx, old.ID); err != nil {
+			log.Error("SPRM deferred deletion failed during rehydration (non-blocking)",
+				"resource_id", old.ID,
+				"error", err,
+			)
+		}
+		if err := s.store.Resource().Delete(ctx, old.ID); err != nil {
+			log.Error("Failed to delete old resource from DB during rehydration (non-blocking)",
+				"resource_id", old.ID,
+				"error", err,
+			)
+		}
+	}
 }
 
 func (s *PlacementService) rollbackProvisioned(resourceIDs []string) {
