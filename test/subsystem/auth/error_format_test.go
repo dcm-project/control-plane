@@ -8,9 +8,11 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	probpkg "github.com/dcm-project/control-plane/pkg/problem"
 )
 
-var _ = Describe("RFC 7807 error response format", func() {
+var _ = Describe("RFC 9457 error response format", func() {
 	It("returns well-formed problem+json on 401", func() {
 		resp := doRequest(http.MethodGet, "/catalog-items")
 		Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
@@ -18,7 +20,7 @@ var _ = Describe("RFC 7807 error response format", func() {
 		Expect(resp.Header.Get("WWW-Authenticate")).To(Equal("Bearer"))
 
 		problem := readProblemResponse(resp)
-		Expect(problem.Type).To(Equal("UNAUTHENTICATED"))
+		Expect(problem.Type).To(Equal(probpkg.TypeUnauthenticated))
 		Expect(problem.Status).To(Equal(401))
 		Expect(problem.Title).To(Equal("Unauthorized"))
 		Expect(problem.Detail).NotTo(BeEmpty())
@@ -45,7 +47,7 @@ var _ = Describe("RFC 7807 error response format", func() {
 		Expect(resp2.Header.Get("Content-Type")).To(Equal("application/problem+json"))
 
 		problem := readProblemResponse(resp2)
-		Expect(problem.Type).To(Equal("PERMISSION_DENIED"))
+		Expect(problem.Type).To(Equal(probpkg.TypePermissionDenied))
 		Expect(problem.Status).To(Equal(403))
 		Expect(problem.Title).To(Equal("Forbidden"))
 		Expect(problem.Detail).To(Equal("account suspended"))

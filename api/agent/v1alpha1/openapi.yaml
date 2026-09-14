@@ -343,7 +343,7 @@ components:
 
     Error:
       type: object
-      description: RFC 7807 compliant error response
+      description: RFC 9457 compliant error response
       required:
         - type
         - title
@@ -352,11 +352,23 @@ components:
           type: string
           format: uri-reference
           description: URI reference identifying the error type
+          enum:
+            - https://dcm-project.github.io/problems/invalid-argument
+            - https://dcm-project.github.io/problems/not-found
+            - https://dcm-project.github.io/problems/already-exists
+            - https://dcm-project.github.io/problems/internal
+          x-enum-varnames:
+            - INVALIDARGUMENT
+            - NOTFOUND
+            - ALREADYEXISTS
+            - INTERNAL
         title:
           type: string
           description: Short human-readable summary of the problem
         status:
           type: integer
+          minimum: 100
+          maximum: 599
           description: HTTP status code
         detail:
           type: string

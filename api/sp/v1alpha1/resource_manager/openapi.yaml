@@ -284,7 +284,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: UNAUTHENTICATED
+            type: https://dcm-project.github.io/problems/unauthenticated
             status: 401
             title: Authentication required
             detail: Valid authentication credentials are required to access this resource
@@ -295,7 +295,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: PERMISSION_DENIED
+            type: https://dcm-project.github.io/problems/permission-denied
             status: 403
             title: Access forbidden
             detail: User does not have permission to access this resource
@@ -380,7 +380,7 @@ components:
 
     Error:
       type: object
-      description: RFC 7807 compliant error response
+      description: RFC 9457 compliant error response
       required:
         - type
         - title
@@ -389,13 +389,29 @@ components:
           type: string
           format: uri-reference
           description: URI reference identifying the error type
-          example: "https://dcm.example.com/errors/invalid-input"
+          enum:
+            - https://dcm-project.github.io/problems/invalid-argument
+            - https://dcm-project.github.io/problems/not-found
+            - https://dcm-project.github.io/problems/already-exists
+            - https://dcm-project.github.io/problems/unprocessable-entity
+            - https://dcm-project.github.io/problems/internal
+            - https://dcm-project.github.io/problems/unavailable
+          x-enum-varnames:
+            - INVALIDARGUMENT
+            - NOTFOUND
+            - ALREADYEXISTS
+            - UNPROCESSABLEENTITY
+            - INTERNAL
+            - UNAVAILABLE
+          example: "https://dcm-project.github.io/problems/invalid-argument"
         title:
           type: string
           description: Short human-readable summary of the problem
-          example: "Invalid Input"
+          example: "Invalid argument"
         status:
           type: integer
+          minimum: 100
+          maximum: 599
           description: HTTP status code
           example: 400
         detail:

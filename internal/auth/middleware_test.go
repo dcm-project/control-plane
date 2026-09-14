@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/dcm-project/control-plane/pkg/problem"
 )
 
 // mockResolver implements ActorResolver for testing.
@@ -81,7 +83,7 @@ func TestMiddleware_MissingProxySecretHeaderReturns401(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	assertErrorResponse(t, rec, http.StatusUnauthorized, "UNAUTHENTICATED")
+	assertErrorResponse(t, rec, http.StatusUnauthorized, problem.TypeUnauthenticated)
 }
 
 func TestMiddleware_InvalidProxySecretReturns401(t *testing.T) {
@@ -94,7 +96,7 @@ func TestMiddleware_InvalidProxySecretReturns401(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	assertErrorResponse(t, rec, http.StatusUnauthorized, "UNAUTHENTICATED")
+	assertErrorResponse(t, rec, http.StatusUnauthorized, problem.TypeUnauthenticated)
 }
 
 func TestMiddleware_MissingForwardedUserReturns401(t *testing.T) {
@@ -107,7 +109,7 @@ func TestMiddleware_MissingForwardedUserReturns401(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	assertErrorResponse(t, rec, http.StatusUnauthorized, "UNAUTHENTICATED")
+	assertErrorResponse(t, rec, http.StatusUnauthorized, problem.TypeUnauthenticated)
 }
 
 func TestMiddleware_CacheHitSkipsResolver(t *testing.T) {
@@ -194,35 +196,35 @@ func TestMiddleware_ResolverErrors(t *testing.T) {
 			name:       "ErrActorSuspended returns 403",
 			err:        ErrActorSuspended,
 			wantStatus: http.StatusForbidden,
-			wantType:   "PERMISSION_DENIED",
+			wantType:   problem.TypePermissionDenied,
 			wantDetail: "account suspended",
 		},
 		{
 			name:       "ErrActorDeactivated returns 403",
 			err:        ErrActorDeactivated,
 			wantStatus: http.StatusForbidden,
-			wantType:   "PERMISSION_DENIED",
+			wantType:   problem.TypePermissionDenied,
 			wantDetail: "account deactivated",
 		},
 		{
 			name:       "ErrUsernameConflict returns 409",
 			err:        ErrUsernameConflict,
 			wantStatus: http.StatusConflict,
-			wantType:   "CONFLICT",
+			wantType:   problem.TypeAlreadyExists,
 			wantDetail: "username already in use by another account",
 		},
 		{
 			name:       "generic error returns 500",
 			err:        errors.New("database timeout"),
 			wantStatus: http.StatusInternalServerError,
-			wantType:   "INTERNAL_ERROR",
+			wantType:   problem.TypeInternal,
 			wantDetail: "internal error during authentication",
 		},
 		{
 			name:       "wrapped ErrActorSuspended returns 403",
 			err:        fmt.Errorf("db: %w", ErrActorSuspended),
 			wantStatus: http.StatusForbidden,
-			wantType:   "PERMISSION_DENIED",
+			wantType:   problem.TypePermissionDenied,
 			wantDetail: "account suspended",
 		},
 	}
@@ -255,7 +257,7 @@ func TestMiddleware_NoAuthHeadersReturns401(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	assertErrorResponse(t, rec, http.StatusUnauthorized, "UNAUTHENTICATED")
+	assertErrorResponse(t, rec, http.StatusUnauthorized, problem.TypeUnauthenticated)
 }
 
 func TestMiddleware_PropagatesPreferredUsername(t *testing.T) {
@@ -293,7 +295,7 @@ func TestMiddleware_EmptyForwardedUserReturns401(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	assertErrorResponse(t, rec, http.StatusUnauthorized, "UNAUTHENTICATED")
+	assertErrorResponse(t, rec, http.StatusUnauthorized, problem.TypeUnauthenticated)
 }
 
 func TestDisabledMiddleware_IgnoresAuthHeaders(t *testing.T) {
@@ -390,7 +392,7 @@ func TestMiddleware_BearerTokenInvalidReturns401(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	assertErrorResponse(t, rec, http.StatusUnauthorized, "UNAUTHENTICATED")
+	assertErrorResponse(t, rec, http.StatusUnauthorized, problem.TypeUnauthenticated)
 }
 
 func TestMiddleware_BearerTokenNoValidatorFallsToProxy(t *testing.T) {

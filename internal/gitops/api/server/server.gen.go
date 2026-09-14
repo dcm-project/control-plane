@@ -994,4 +994,3 @@ func (sh *strictHandler) UpdateGitRepository(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
 	}
 }
-

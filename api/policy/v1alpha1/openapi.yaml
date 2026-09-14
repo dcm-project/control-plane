@@ -492,7 +492,7 @@ components:
     Error:
       type: object
       description: |
-        Error response following RFC 7807 Problem Details and AEP-193.
+        Error response following RFC 9457 Problem Details and AEP-193.
 
         Provides structured error information for API failures.
       required:
@@ -506,19 +506,19 @@ components:
           description: |
             URI reference identifying the error type
           enum:
-            - https://dcm.example.com/errors/invalid-argument
-            - https://dcm.example.com/errors/not-found
-            - https://dcm.example.com/errors/already-exists
-            - https://dcm.example.com/errors/resource-exhausted
-            - https://dcm.example.com/errors/failed-precondition
-            - https://dcm.example.com/errors/aborted
-            - https://dcm.example.com/errors/out-of-range
-            - https://dcm.example.com/errors/unimplemented
-            - https://dcm.example.com/errors/internal
-            - https://dcm.example.com/errors/unavailable
-            - https://dcm.example.com/errors/deadline-exceeded
-            - https://dcm.example.com/errors/unauthenticated
-            - https://dcm.example.com/errors/permission-denied
+            - https://dcm-project.github.io/problems/invalid-argument
+            - https://dcm-project.github.io/problems/not-found
+            - https://dcm-project.github.io/problems/already-exists
+            - https://dcm-project.github.io/problems/resource-exhausted
+            - https://dcm-project.github.io/problems/failed-precondition
+            - https://dcm-project.github.io/problems/aborted
+            - https://dcm-project.github.io/problems/out-of-range
+            - https://dcm-project.github.io/problems/unimplemented
+            - https://dcm-project.github.io/problems/internal
+            - https://dcm-project.github.io/problems/unavailable
+            - https://dcm-project.github.io/problems/deadline-exceeded
+            - https://dcm-project.github.io/problems/unauthenticated
+            - https://dcm-project.github.io/problems/permission-denied
           x-enum-varnames:
             - INVALIDARGUMENT
             - NOTFOUND
@@ -533,10 +533,12 @@ components:
             - DEADLINEEXCEEDED
             - UNAUTHENTICATED
             - PERMISSIONDENIED
-          example: https://dcm.example.com/errors/invalid-argument
+          example: https://dcm-project.github.io/problems/invalid-argument
         status:
           type: integer
           format: int32
+          minimum: 100
+          maximum: 599
           description: HTTP status code
           example: 400
         title:
@@ -571,7 +573,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: https://dcm.example.com/errors/invalid-argument
+            type: https://dcm-project.github.io/problems/invalid-argument
             status: 400
             title: Invalid request parameters
             detail: Field 'rego_code' must not be empty
@@ -584,7 +586,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: https://dcm.example.com/errors/unauthenticated
+            type: https://dcm-project.github.io/problems/unauthenticated
             status: 401
             title: Authentication required
             detail: Valid authentication credentials are required to access this resource
@@ -597,7 +599,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: https://dcm.example.com/errors/permission-denied
+            type: https://dcm-project.github.io/problems/permission-denied
             status: 403
             title: Permission denied
             detail: You do not have sufficient permissions to perform this operation
@@ -610,7 +612,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: https://dcm.example.com/errors/not-found
+            type: https://dcm-project.github.io/problems/not-found
             status: 404
             title: Resource not found
             detail: Policy 'global-auth-policy' does not exist
@@ -623,7 +625,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: https://dcm.example.com/errors/already-exists
+            type: https://dcm-project.github.io/problems/already-exists
             status: 409
             title: Resource already exists
             detail: Policy with ID 'global-auth-policy' already exists
@@ -636,7 +638,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: https://dcm.example.com/errors/failed-precondition
+            type: https://dcm-project.github.io/problems/failed-precondition
             status: 422
             title: Validation error
             detail: Invalid Rego syntax in 'rego_code' field
@@ -649,7 +651,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
           example:
-            type: https://dcm.example.com/errors/internal
+            type: https://dcm-project.github.io/problems/internal
             status: 500
             title: Internal server error
             detail: An unexpected error occurred while processing the request

@@ -9,14 +9,14 @@ import (
 
 // Defines values for ErrorType.
 const (
-	ALREADYEXISTS      ErrorType = "ALREADY_EXISTS"
-	FAILEDPRECONDITION ErrorType = "FAILED_PRECONDITION"
-	INTERNAL           ErrorType = "INTERNAL"
-	INVALIDARGUMENT    ErrorType = "INVALID_ARGUMENT"
-	NOTFOUND           ErrorType = "NOT_FOUND"
-	PERMISSIONDENIED   ErrorType = "PERMISSION_DENIED"
-	UNAUTHENTICATED    ErrorType = "UNAUTHENTICATED"
-	UNAVAILABLE        ErrorType = "UNAVAILABLE"
+	ALREADYEXISTS      ErrorType = "https://dcm-project.github.io/problems/already-exists"
+	FAILEDPRECONDITION ErrorType = "https://dcm-project.github.io/problems/failed-precondition"
+	INTERNAL           ErrorType = "https://dcm-project.github.io/problems/internal"
+	INVALIDARGUMENT    ErrorType = "https://dcm-project.github.io/problems/invalid-argument"
+	NOTFOUND           ErrorType = "https://dcm-project.github.io/problems/not-found"
+	PERMISSIONDENIED   ErrorType = "https://dcm-project.github.io/problems/permission-denied"
+	UNAUTHENTICATED    ErrorType = "https://dcm-project.github.io/problems/unauthenticated"
+	UNAVAILABLE        ErrorType = "https://dcm-project.github.io/problems/unavailable"
 )
 
 // Valid indicates whether the value is a known member of the ErrorType enum.
@@ -67,7 +67,7 @@ func (e GitRepositoryStatusSyncState) Valid() bool {
 	}
 }
 
-// Error Error response following RFC 7807 Problem Details for HTTP APIs
+// Error Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type Error struct {
 	// Detail Human-readable explanation specific to this occurrence of the error.
@@ -82,11 +82,11 @@ type Error struct {
 	// Title Short, human-readable summary of the error type.
 	Title string `json:"title"`
 
-	// Type Machine-readable error code.
+	// Type URI reference identifying the error type
 	Type ErrorType `json:"type"`
 }
 
-// ErrorType Machine-readable error code.
+// ErrorType URI reference identifying the error type
 type ErrorType string
 
 // GitRepository defines model for GitRepository.
@@ -192,27 +192,27 @@ type GitRepositoryStatusSyncState string
 // GitRepositoryIdPath defines model for GitRepositoryIdPath.
 type GitRepositoryIdPath = string
 
-// AlreadyExists Error response following RFC 7807 Problem Details for HTTP APIs
+// AlreadyExists Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type AlreadyExists = Error
 
-// BadRequest Error response following RFC 7807 Problem Details for HTTP APIs
+// BadRequest Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type BadRequest = Error
 
-// Forbidden Error response following RFC 7807 Problem Details for HTTP APIs
+// Forbidden Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type Forbidden = Error
 
-// InternalServerError Error response following RFC 7807 Problem Details for HTTP APIs
+// InternalServerError Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type InternalServerError = Error
 
-// NotFound Error response following RFC 7807 Problem Details for HTTP APIs
+// NotFound Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type NotFound = Error
 
-// Unauthorized Error response following RFC 7807 Problem Details for HTTP APIs
+// Unauthorized Error response following RFC 9457 Problem Details for HTTP APIs
 // and AEP-193 Error Responses specification.
 type Unauthorized = Error
 

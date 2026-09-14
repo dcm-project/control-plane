@@ -12,17 +12,17 @@ import (
 
 // Error codes returned by service operations.
 const (
-	ErrCodeNotFound            = "https://dcm.example.com/errors/not-found"
-	ErrCodeConflict            = "https://dcm.example.com/errors/conflict"
-	ErrCodeValidation          = "https://dcm.example.com/errors/validation"
-	ErrCodeProvisioningError   = "https://dcm.example.com/errors/provisioning-error"
-	ErrCodeInternal            = "https://dcm.example.com/errors/internal-error"
-	ErrCodePolicyError         = "https://dcm.example.com/errors/policy-error"
-	ErrCodePolicyInternalError = "https://dcm.example.com/errors/policy-internal-error"
-	ErrCodePolicyRejected      = "https://dcm.example.com/errors/policy-rejected"
-	ErrCodePolicyConflict      = "https://dcm.example.com/errors/policy-conflict"
-	ErrCodeSPRMError           = "https://dcm.example.com/errors/sprm-error"
-	ErrCodeUnavailable         = "https://dcm.example.com/errors/unavailable"
+	ErrCodeNotFound            = "https://dcm-project.github.io/problems/not-found"
+	ErrCodeConflict            = "https://dcm-project.github.io/problems/conflict"
+	ErrCodeValidation          = "https://dcm-project.github.io/problems/validation"
+	ErrCodeProvisioningError   = "https://dcm-project.github.io/problems/provisioning-error"
+	ErrCodeInternal            = "https://dcm-project.github.io/problems/internal-error"
+	ErrCodePolicyError         = "https://dcm-project.github.io/problems/policy-error"
+	ErrCodePolicyInternalError = "https://dcm-project.github.io/problems/policy-internal-error"
+	ErrCodePolicyRejected      = "https://dcm-project.github.io/problems/policy-rejected"
+	ErrCodePolicyConflict      = "https://dcm-project.github.io/problems/policy-conflict"
+	ErrCodeSPRMError           = "https://dcm-project.github.io/problems/sprm-error"
+	ErrCodeUnavailable         = "https://dcm-project.github.io/problems/unavailable"
 )
 
 // ServiceError represents a business logic error with a code for HTTP mapping.

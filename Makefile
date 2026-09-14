@@ -116,6 +116,16 @@ test:
 tidy:
 	go mod tidy
 
+check-problem-uris:
+	@output=$$(find api internal pkg cmd -type f \( -name '*.go' -o -name '*.yaml' \) \
+		-exec grep -nE 'about:blank|dcm\.example\.com/errors' {} + 2>&1) || true; \
+	if [ -n "$$output" ]; then \
+		printf '%s\n' "$$output"; \
+		echo "ERROR: Legacy problem type URIs found. Use https://dcm-project.github.io/problems/*"; \
+		exit 1; \
+	fi
+
 .PHONY: build build-gitops run run-dev compose-up compose-up-with-providers compose-down image-build \
 	clean fmt vet lint test test-catalog test-placement test-policy test-sp test-gitops tidy \
+	check-problem-uris \
 	helm-chart-sync helm-chart-verify-sync helm-chart-verify-admin-subject helm-chart-verify helm-chart-verify-schema helm-chart-lint helm-chart-template helm-chart-check

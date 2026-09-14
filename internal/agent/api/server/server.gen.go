@@ -95,6 +95,30 @@ func (e AgentRegistrationRequestCost) Valid() bool {
 	}
 }
 
+// Defines values for ErrorType.
+const (
+	ALREADYEXISTS   ErrorType = "https://dcm-project.github.io/problems/already-exists"
+	INTERNAL        ErrorType = "https://dcm-project.github.io/problems/internal"
+	INVALIDARGUMENT ErrorType = "https://dcm-project.github.io/problems/invalid-argument"
+	NOTFOUND        ErrorType = "https://dcm-project.github.io/problems/not-found"
+)
+
+// Valid indicates whether the value is a known member of the ErrorType enum.
+func (e ErrorType) Valid() bool {
+	switch e {
+	case ALREADYEXISTS:
+		return true
+	case INTERNAL:
+		return true
+	case INVALIDARGUMENT:
+		return true
+	case NOTFOUND:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListAgentsParamsHealthStatus.
 const (
 	ListAgentsParamsHealthStatusCongested   ListAgentsParamsHealthStatus = "congested"
@@ -184,7 +208,7 @@ type AgentRegistrationRequest struct {
 // AgentRegistrationRequestCost Relative cost weight for placement decisions
 type AgentRegistrationRequestCost string
 
-// Error RFC 7807 compliant error response
+// Error RFC 9457 compliant error response
 type Error struct {
 	// Detail Human-readable explanation specific to this occurrence
 	Detail *string `json:"detail,omitempty"`
@@ -199,8 +223,11 @@ type Error struct {
 	Title string `json:"title"`
 
 	// Type URI reference identifying the error type
-	Type string `json:"type"`
+	Type ErrorType `json:"type"`
 }
+
+// ErrorType URI reference identifying the error type
+type ErrorType string
 
 // HeartbeatRequest Request body for agent heartbeat
 type HeartbeatRequest struct {

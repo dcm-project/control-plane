@@ -22,8 +22,8 @@ func logServiceError(ctx context.Context, msg string, err error, attrs ...any) {
 	}
 }
 
-// newError creates an RFC 7807 compliant error response.
-func newError(errType, title, detail string, status int) server.Error {
+// newError creates an RFC 9457 compliant error response.
+func newError(errType server.ErrorType, title, detail string, status int) server.Error {
 	return server.Error{
 		Type:   errType,
 		Title:  title,
@@ -43,10 +43,10 @@ const internalErrorDetail = "an internal error occurred"
 func handleListInstancesError(err error) server.ListInstancesResponseObject {
 	var svcErr *service.ServiceError
 	if errors.As(err, &svcErr) && svcErr.Code == service.ErrCodeValidation {
-		return server.ListInstances400ApplicationProblemPlusJSONResponse(newError("validation-error", "Invalid request", svcErr.Message, 400))
+		return server.ListInstances400ApplicationProblemPlusJSONResponse(newError(server.INVALIDARGUMENT, "Invalid request", svcErr.Message, 400))
 	}
 	return server.ListInstancesdefaultApplicationProblemPlusJSONResponse{
-		Body:       newError("list-error", "Failed to list instances", internalErrorDetail, 500),
+		Body:       newError(server.INTERNAL, "Failed to list instances", internalErrorDetail, 500),
 		StatusCode: 500,
 	}
 }
@@ -57,24 +57,24 @@ func handleCreateInstanceError(err error) server.CreateInstanceResponseObject {
 	if errors.As(err, &svcErr) {
 		switch svcErr.Code {
 		case service.ErrCodeValidation:
-			return server.CreateInstance400ApplicationProblemPlusJSONResponse(newError("validation-error", "Validation failed", svcErr.Message, 400))
+			return server.CreateInstance400ApplicationProblemPlusJSONResponse(newError(server.INVALIDARGUMENT, "Validation failed", svcErr.Message, 400))
 		case service.ErrCodeNotFound:
-			return server.CreateInstance404ApplicationProblemPlusJSONResponse(newError("not-found", "Resource not found", svcErr.Message, 404))
+			return server.CreateInstance404ApplicationProblemPlusJSONResponse(newError(server.NOTFOUND, "Resource not found", svcErr.Message, 404))
 		case service.ErrCodeConflict:
-			return server.CreateInstance409ApplicationProblemPlusJSONResponse(newError("conflict", "Resource conflict", svcErr.Message, 409))
+			return server.CreateInstance409ApplicationProblemPlusJSONResponse(newError(server.ALREADYEXISTS, "Resource conflict", svcErr.Message, 409))
 		case service.ErrCodeProvisioningError:
-			return server.CreateInstance422ApplicationProblemPlusJSONResponse(newError("provisioning-error", "Provisioning error", svcErr.Message, 422))
+			return server.CreateInstance422ApplicationProblemPlusJSONResponse(newError(server.UNPROCESSABLEENTITY, "Provisioning error", svcErr.Message, 422))
 		case service.ErrCodeInternal:
 			return server.CreateInstancedefaultApplicationProblemPlusJSONResponse{
-				Body:       newError("internal-error", "Internal error", internalErrorDetail, 500),
+				Body:       newError(server.INTERNAL, "Internal error", internalErrorDetail, 500),
 				StatusCode: 500,
 			}
 		case service.ErrCodeUnavailable:
-			return server.CreateInstance503ApplicationProblemPlusJSONResponse(newError("unavailable", "Service unavailable", "service temporarily unavailable", 503))
+			return server.CreateInstance503ApplicationProblemPlusJSONResponse(newError(server.UNAVAILABLE, "Service unavailable", "service temporarily unavailable", 503))
 		}
 	}
 	return server.CreateInstancedefaultApplicationProblemPlusJSONResponse{
-		Body:       newError("create-error", "Failed to create instance", internalErrorDetail, 500),
+		Body:       newError(server.INTERNAL, "Failed to create instance", internalErrorDetail, 500),
 		StatusCode: 500,
 	}
 }
@@ -85,13 +85,13 @@ func handleGetInstanceError(err error) server.GetInstanceResponseObject {
 	if errors.As(err, &svcErr) {
 		switch svcErr.Code {
 		case service.ErrCodeValidation:
-			return server.GetInstance400ApplicationProblemPlusJSONResponse(newError("validation-error", "Invalid request", svcErr.Message, 400))
+			return server.GetInstance400ApplicationProblemPlusJSONResponse(newError(server.INVALIDARGUMENT, "Invalid request", svcErr.Message, 400))
 		case service.ErrCodeNotFound:
-			return server.GetInstance404ApplicationProblemPlusJSONResponse(newError("not-found", "Instance not found", svcErr.Message, 404))
+			return server.GetInstance404ApplicationProblemPlusJSONResponse(newError(server.NOTFOUND, "Instance not found", svcErr.Message, 404))
 		}
 	}
 	return server.GetInstancedefaultApplicationProblemPlusJSONResponse{
-		Body:       newError("get-error", "Failed to get instance", internalErrorDetail, 500),
+		Body:       newError(server.INTERNAL, "Failed to get instance", internalErrorDetail, 500),
 		StatusCode: 500,
 	}
 }
@@ -102,17 +102,17 @@ func handleDeleteInstanceError(err error) server.DeleteInstanceResponseObject {
 	if errors.As(err, &svcErr) {
 		switch svcErr.Code {
 		case service.ErrCodeValidation:
-			return server.DeleteInstance400ApplicationProblemPlusJSONResponse(newError("validation-error", "Invalid request", svcErr.Message, 400))
+			return server.DeleteInstance400ApplicationProblemPlusJSONResponse(newError(server.INVALIDARGUMENT, "Invalid request", svcErr.Message, 400))
 		case service.ErrCodeNotFound:
-			return server.DeleteInstance404ApplicationProblemPlusJSONResponse(newError("not-found", "Instance not found", svcErr.Message, 404))
+			return server.DeleteInstance404ApplicationProblemPlusJSONResponse(newError(server.NOTFOUND, "Instance not found", svcErr.Message, 404))
 		case service.ErrCodeProvisioningError:
 			// A transient, client-actionable failure to publish the delete,
 			// not an internal server bug - map to 422 like CreateInstance.
-			return server.DeleteInstance422ApplicationProblemPlusJSONResponse(newError("provisioning-error", "Provisioning error", svcErr.Message, 422))
+			return server.DeleteInstance422ApplicationProblemPlusJSONResponse(newError(server.UNPROCESSABLEENTITY, "Provisioning error", svcErr.Message, 422))
 		}
 	}
 	return server.DeleteInstancedefaultApplicationProblemPlusJSONResponse{
-		Body:       newError("delete-error", "Failed to delete instance", internalErrorDetail, 500),
+		Body:       newError(server.INTERNAL, "Failed to delete instance", internalErrorDetail, 500),
 		StatusCode: 500,
 	}
 }

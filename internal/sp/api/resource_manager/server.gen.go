@@ -20,6 +20,36 @@ const (
 	BearerAuthScopes bearerAuthContextKey = "bearerAuth.Scopes"
 )
 
+// Defines values for ErrorType.
+const (
+	ALREADYEXISTS       ErrorType = "https://dcm-project.github.io/problems/already-exists"
+	INTERNAL            ErrorType = "https://dcm-project.github.io/problems/internal"
+	INVALIDARGUMENT     ErrorType = "https://dcm-project.github.io/problems/invalid-argument"
+	NOTFOUND            ErrorType = "https://dcm-project.github.io/problems/not-found"
+	UNAVAILABLE         ErrorType = "https://dcm-project.github.io/problems/unavailable"
+	UNPROCESSABLEENTITY ErrorType = "https://dcm-project.github.io/problems/unprocessable-entity"
+)
+
+// Valid indicates whether the value is a known member of the ErrorType enum.
+func (e ErrorType) Valid() bool {
+	switch e {
+	case ALREADYEXISTS:
+		return true
+	case INTERNAL:
+		return true
+	case INVALIDARGUMENT:
+		return true
+	case NOTFOUND:
+		return true
+	case UNAVAILABLE:
+		return true
+	case UNPROCESSABLEENTITY:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ServiceTypeInstanceDeletionStatus.
 const (
 	DELETED   ServiceTypeInstanceDeletionStatus = "DELETED"
@@ -41,7 +71,7 @@ func (e ServiceTypeInstanceDeletionStatus) Valid() bool {
 	}
 }
 
-// Error RFC 7807 compliant error response
+// Error RFC 9457 compliant error response
 type Error struct {
 	// Detail Human-readable explanation specific to this occurrence
 	Detail *string `json:"detail,omitempty"`
@@ -56,8 +86,11 @@ type Error struct {
 	Title string `json:"title"`
 
 	// Type URI reference identifying the error type
-	Type string `json:"type"`
+	Type ErrorType `json:"type"`
 }
+
+// ErrorType URI reference identifying the error type
+type ErrorType string
 
 // ServiceTypeInstance Full service type instance resource representation
 type ServiceTypeInstance struct {
@@ -110,10 +143,10 @@ type ServiceTypeInstanceList struct {
 // InstanceIdPath defines model for InstanceIdPath.
 type InstanceIdPath = string
 
-// Forbidden RFC 7807 compliant error response
+// Forbidden RFC 9457 compliant error response
 type Forbidden = Error
 
-// Unauthorized RFC 7807 compliant error response
+// Unauthorized RFC 9457 compliant error response
 type Unauthorized = Error
 
 // bearerAuthContextKey is the context key for bearerAuth security scheme

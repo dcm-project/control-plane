@@ -239,7 +239,7 @@ func (h *PolicyHandler) handleDeletePolicyError(err error, _ server.DeletePolicy
 	}
 }
 
-// buildErrorResponse builds an RFC 7807 error response
+// buildErrorResponse builds an RFC 9457 error response
 func buildErrorResponse(status int32, errorType v1alpha1.ErrorType, title string, detail *string) v1alpha1.Error {
 	return v1alpha1.Error{
 		Status: status,

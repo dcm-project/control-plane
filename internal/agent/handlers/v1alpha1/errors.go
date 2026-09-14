@@ -26,9 +26,7 @@ func logServiceError(ctx context.Context, msg string, err error, attrs ...any) {
 	slog.ErrorContext(ctx, msg, args...)
 }
 
-// newError builds an RFC 7807 error body. errType is a short slug for the
-// "type" field, distinct from svcErr.Code (the longer internal URI).
-func newError(errType, title, detail string, status int) server.Error {
+func newError(errType server.ErrorType, title, detail string, status int) server.Error {
 	return server.Error{Type: errType, Title: title, Detail: &detail, Status: &status}
 }
 
@@ -45,14 +43,14 @@ func createErrorResponse(err error) (server.CreateAgentResponseObject, error) {
 		switch svcErr.Code {
 		case service.ErrCodeValidation:
 			return server.CreateAgent400ApplicationProblemPlusJSONResponse(
-				newError("validation-error", "Invalid request", svcErr.Message, 400)), nil
+				newError(server.INVALIDARGUMENT, "Invalid request", svcErr.Message, 400)), nil
 		case service.ErrCodeConflict:
 			return server.CreateAgent409ApplicationProblemPlusJSONResponse(
-				newError("conflict", "Agent already registered", svcErr.Message, 409)), nil
+				newError(server.ALREADYEXISTS, "Agent already registered", svcErr.Message, 409)), nil
 		}
 	}
 	return server.CreateAgentdefaultApplicationProblemPlusJSONResponse{
-		Body:       newError("create-error", "Failed to register agent", internalErrorDetail, 500),
+		Body:       newError(server.INTERNAL, "Failed to register agent", internalErrorDetail, 500),
 		StatusCode: 500,
 	}, nil
 }
@@ -61,10 +59,10 @@ func getErrorResponse(err error) (server.GetAgentResponseObject, error) {
 	var svcErr *service.ServiceError
 	if errors.As(err, &svcErr) && svcErr.Code == service.ErrCodeNotFound {
 		return server.GetAgent404ApplicationProblemPlusJSONResponse(
-			newError("not-found", "Agent not found", svcErr.Message, 404)), nil
+			newError(server.NOTFOUND, "Agent not found", svcErr.Message, 404)), nil
 	}
 	return server.GetAgentdefaultApplicationProblemPlusJSONResponse{
-		Body:       newError("get-error", "Failed to get agent", internalErrorDetail, 500),
+		Body:       newError(server.INTERNAL, "Failed to get agent", internalErrorDetail, 500),
 		StatusCode: 500,
 	}, nil
 }
@@ -73,10 +71,10 @@ func hbErrorResponse(err error) (server.AgentHeartbeatResponseObject, error) {
 	var svcErr *service.ServiceError
 	if errors.As(err, &svcErr) && svcErr.Code == service.ErrCodeNotFound {
 		return server.AgentHeartbeat404ApplicationProblemPlusJSONResponse(
-			newError("not-found", "Agent not found", svcErr.Message, 404)), nil
+			newError(server.NOTFOUND, "Agent not found", svcErr.Message, 404)), nil
 	}
 	return server.AgentHeartbeatdefaultApplicationProblemPlusJSONResponse{
-		Body:       newError("heartbeat-error", "Failed to record heartbeat", internalErrorDetail, 500),
+		Body:       newError(server.INTERNAL, "Failed to record heartbeat", internalErrorDetail, 500),
 		StatusCode: 500,
 	}, nil
 }
@@ -85,10 +83,10 @@ func listErrorResponse(err error) (server.ListAgentsResponseObject, error) {
 	var svcErr *service.ServiceError
 	if errors.As(err, &svcErr) && svcErr.Code == service.ErrCodeValidation {
 		return server.ListAgents400ApplicationProblemPlusJSONResponse(
-			newError("validation-error", "Invalid request", svcErr.Message, 400)), nil
+			newError(server.INVALIDARGUMENT, "Invalid request", svcErr.Message, 400)), nil
 	}
 	return server.ListAgentsdefaultApplicationProblemPlusJSONResponse{
-		Body:       newError("list-error", "Failed to list agents", internalErrorDetail, 500),
+		Body:       newError(server.INTERNAL, "Failed to list agents", internalErrorDetail, 500),
 		StatusCode: 500,
 	}, nil
 }

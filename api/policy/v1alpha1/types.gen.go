@@ -13,19 +13,19 @@ const (
 
 // Defines values for ErrorType.
 const (
-	ABORTED            ErrorType = "https://dcm.example.com/errors/aborted"
-	ALREADYEXISTS      ErrorType = "https://dcm.example.com/errors/already-exists"
-	DEADLINEEXCEEDED   ErrorType = "https://dcm.example.com/errors/deadline-exceeded"
-	FAILEDPRECONDITION ErrorType = "https://dcm.example.com/errors/failed-precondition"
-	INTERNAL           ErrorType = "https://dcm.example.com/errors/internal"
-	INVALIDARGUMENT    ErrorType = "https://dcm.example.com/errors/invalid-argument"
-	NOTFOUND           ErrorType = "https://dcm.example.com/errors/not-found"
-	OUTOFRANGE         ErrorType = "https://dcm.example.com/errors/out-of-range"
-	PERMISSIONDENIED   ErrorType = "https://dcm.example.com/errors/permission-denied"
-	RESOURCEEXHAUSTED  ErrorType = "https://dcm.example.com/errors/resource-exhausted"
-	UNAUTHENTICATED    ErrorType = "https://dcm.example.com/errors/unauthenticated"
-	UNAVAILABLE        ErrorType = "https://dcm.example.com/errors/unavailable"
-	UNIMPLEMENTED      ErrorType = "https://dcm.example.com/errors/unimplemented"
+	ABORTED            ErrorType = "https://dcm-project.github.io/problems/aborted"
+	ALREADYEXISTS      ErrorType = "https://dcm-project.github.io/problems/already-exists"
+	DEADLINEEXCEEDED   ErrorType = "https://dcm-project.github.io/problems/deadline-exceeded"
+	FAILEDPRECONDITION ErrorType = "https://dcm-project.github.io/problems/failed-precondition"
+	INTERNAL           ErrorType = "https://dcm-project.github.io/problems/internal"
+	INVALIDARGUMENT    ErrorType = "https://dcm-project.github.io/problems/invalid-argument"
+	NOTFOUND           ErrorType = "https://dcm-project.github.io/problems/not-found"
+	OUTOFRANGE         ErrorType = "https://dcm-project.github.io/problems/out-of-range"
+	PERMISSIONDENIED   ErrorType = "https://dcm-project.github.io/problems/permission-denied"
+	RESOURCEEXHAUSTED  ErrorType = "https://dcm-project.github.io/problems/resource-exhausted"
+	UNAUTHENTICATED    ErrorType = "https://dcm-project.github.io/problems/unauthenticated"
+	UNAVAILABLE        ErrorType = "https://dcm-project.github.io/problems/unavailable"
+	UNIMPLEMENTED      ErrorType = "https://dcm-project.github.io/problems/unimplemented"
 )
 
 // Valid indicates whether the value is a known member of the ErrorType enum.
@@ -80,7 +80,7 @@ func (e PolicyPolicyType) Valid() bool {
 	}
 }
 
-// Error Error response following RFC 7807 Problem Details and AEP-193.
+// Error Error response following RFC 9457 Problem Details and AEP-193.
 //
 // Provides structured error information for API failures.
 type Error struct {
@@ -216,37 +216,37 @@ type PolicyList struct {
 // PolicyIdPath defines model for PolicyIdPath.
 type PolicyIdPath = string
 
-// AlreadyExists Error response following RFC 7807 Problem Details and AEP-193.
+// AlreadyExists Error response following RFC 9457 Problem Details and AEP-193.
 //
 // Provides structured error information for API failures.
 type AlreadyExists = Error
 
-// BadRequest Error response following RFC 7807 Problem Details and AEP-193.
+// BadRequest Error response following RFC 9457 Problem Details and AEP-193.
 //
 // Provides structured error information for API failures.
 type BadRequest = Error
 
-// Forbidden Error response following RFC 7807 Problem Details and AEP-193.
+// Forbidden Error response following RFC 9457 Problem Details and AEP-193.
 //
 // Provides structured error information for API failures.
 type Forbidden = Error
 
-// InternalServerError Error response following RFC 7807 Problem Details and AEP-193.
+// InternalServerError Error response following RFC 9457 Problem Details and AEP-193.
 //
 // Provides structured error information for API failures.
 type InternalServerError = Error
 
-// NotFound Error response following RFC 7807 Problem Details and AEP-193.
+// NotFound Error response following RFC 9457 Problem Details and AEP-193.
 //
 // Provides structured error information for API failures.
 type NotFound = Error
 
-// Unauthorized Error response following RFC 7807 Problem Details and AEP-193.
+// Unauthorized Error response following RFC 9457 Problem Details and AEP-193.
 //
 // Provides structured error information for API failures.
 type Unauthorized = Error
 
-// ValidationError Error response following RFC 7807 Problem Details and AEP-193.
+// ValidationError Error response following RFC 9457 Problem Details and AEP-193.
 //
 // Provides structured error information for API failures.
 type ValidationError = Error

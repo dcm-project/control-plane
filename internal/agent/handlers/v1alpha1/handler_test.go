@@ -93,7 +93,7 @@ var _ = Describe("Agent Handler", func() {
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
 
-		It("returns 409 with an RFC 7807 body when another agent already owns the topic_name (K)", func() {
+		It("returns 409 with an RFC 9457 body when another agent already owns the topic_name (K)", func() {
 			body1 := `{"name":"topic-owner","topic_name":"dcm.agent.shared-topic","service_types":["vm"]}`
 			req1 := httptest.NewRequest(http.MethodPost, "/agents", strings.NewReader(body1))
 			req1.Header.Set("Content-Type", "application/json")
@@ -156,7 +156,7 @@ var _ = Describe("Agent Handler", func() {
 			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 
-		It("returns an RFC 7807 problem body on internal failure instead of a raw error", func() {
+		It("returns an RFC 9457 problem body on internal failure instead of a raw error", func() {
 			// Force the store call inside List to fail with a plain (non-
 			// ServiceError) error, exercising the generic 500 fallback.
 			sqlDB, err := db.DB()
@@ -173,7 +173,7 @@ var _ = Describe("Agent Handler", func() {
 
 			var body server.Error
 			Expect(json.NewDecoder(rec.Body).Decode(&body)).To(Succeed())
-			Expect(body.Type).To(Equal("list-error"))
+			Expect(body.Type).To(Equal(server.INTERNAL))
 			Expect(body.Status).NotTo(BeNil())
 			Expect(*body.Status).To(Equal(500))
 		})
