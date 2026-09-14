@@ -1370,6 +1370,56 @@ var _ = Describe("PlacementService", func() {
 			}
 		})
 
+		It("returns error and rolls back when SPRM creation fails on multi-resource rehydrate", func() {
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-rehydrate-multi-sprm-fail",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var oldDBID, oldAppID string
+			for _, r := range created.Resources {
+				switch r.Name {
+				case "db":
+					oldDBID = *r.Id
+				case "app":
+					oldAppID = *r.Id
+				}
+			}
+
+			mockSPRM.CreateResourceFunc = func(_ context.Context, _ sprm.CreateResourceRequest) (*sprm.CreateResourceResponse, error) {
+				return nil, &sprm.HTTPError{StatusCode: 500, Body: "sprm error"}
+			}
+			deferredDeleteCalled := false
+			mockSPRM.DeleteResourceDeferredFunc = func(_ context.Context, _ string) error {
+				deferredDeleteCalled = true
+				return nil
+			}
+
+			newRunID := "new-run-multi-sprm-fail"
+			result, err := placementSvc.RehydrateResource(ctx, created.RunId, newRunID)
+
+			Expect(err).To(HaveOccurred())
+			Expect(result).To(BeNil())
+			var svcErr *service.ServiceError
+			Expect(errors.As(err, &svcErr)).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeSPRMError))
+			Expect(deferredDeleteCalled).To(BeFalse())
+
+			_ = getStoredResource(ctx, dataStore, oldDBID)
+			_ = getStoredResource(ctx, dataStore, oldAppID)
+
+			_, err = placementSvc.GetRun(ctx, newRunID)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.As(err, &svcErr)).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
+		})
+
 		It("returns error when policy rejects re-evaluation (406)", func() {
 			mockPolicy.EvaluateFunc = func(_ context.Context, _ policy.EvaluateRequest) (*policy.EvaluateResponse, error) {
 				return nil, &policy.HTTPError{StatusCode: 406, Body: "rejected"}
