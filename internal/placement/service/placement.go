@@ -393,8 +393,10 @@ func (s *PlacementService) loadRunStatusSnapshot(ctx context.Context, runID stri
 	return snapshotResourceStatus(resources), nil
 }
 
-// rollbackRehydrateOldRunAfterFailedDelete reverts teardown statuses only for resources
-// still in PENDING_DELETION or DELETING. Rows already DELETED are left unchanged.
+// rollbackRehydrateOldRunAfterFailedDelete undoes an in-progress DeleteRun when rehydrate
+// fails after the replacement run was created. prior must come from loadRunStatusSnapshot
+// immediately before DeleteRun so callbacks during CreateRun are preserved. Only resources
+// still in PENDING_DELETION or DELETING are reverted, never rows already marked DELETED.
 func (s *PlacementService) rollbackRehydrateOldRunAfterFailedDelete(ctx context.Context, oldRunID string, prior map[string]string) {
 	log := logging.FromContext(ctx)
 	resources, err := s.store.Resource().ListByRunID(ctx, oldRunID)

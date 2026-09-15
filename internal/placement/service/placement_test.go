@@ -1492,6 +1492,8 @@ var _ = Describe("PlacementService", func() {
 		})
 
 		It("returns error and rolls back new run when old-run delete fails after create", func() {
+			Expect(dataStore.Resource().UpdateStatus(ctx, oldResourceID, types.ResourceStatusRunning)).To(Succeed())
+
 			mockSPRM.DeleteResourceFunc = func(_ context.Context, resourceID string) error {
 				if resourceID == oldResourceID {
 					return &sprm.HTTPError{StatusCode: 500, Body: "delete failed"}
@@ -1515,7 +1517,55 @@ var _ = Describe("PlacementService", func() {
 			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
 
 			oldStored := getStoredResource(ctx, dataStore, oldResourceID)
-			Expect(oldStored.Status).To(Equal(types.ResourceStatusPending))
+			Expect(oldStored.Status).To(Equal(types.ResourceStatusRunning))
+		})
+
+		It("does not rewrite DELETED old resources when a later delete dispatch fails", func() {
+			req := &types.CreateRunRequest{
+				CatalogItemInstanceId: "catalog-rehydrate-partial-delete",
+				RunId:                 uuid.New().String(),
+				Resources: []types.ResourceInput{
+					{Name: "db", Spec: map[string]any{"kind": "db"}},
+					{Name: "app", Spec: map[string]any{"kind": "app"}, RequiresResources: []string{"db"}},
+				},
+			}
+			created, err := placementSvc.CreateRun(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var oldDBID, oldAppID string
+			for _, r := range created.Resources {
+				switch r.Name {
+				case "db":
+					oldDBID = *r.Id
+				case "app":
+					oldAppID = *r.Id
+				}
+			}
+
+			mockSPRM.DeleteResourceFunc = func(_ context.Context, resourceID string) error {
+				switch resourceID {
+				case oldAppID:
+					return &sprm.HTTPError{StatusCode: 404, Body: "not found"}
+				case oldDBID:
+					return &sprm.HTTPError{StatusCode: 500, Body: "delete failed"}
+				default:
+					return nil
+				}
+			}
+
+			newRunID := "new-run-partial-old-delete"
+			result, err := placementSvc.RehydrateResource(ctx, created.RunId, newRunID)
+
+			Expect(err).To(HaveOccurred())
+			Expect(result).To(BeNil())
+
+			app, err := dataStore.Resource().Get(ctx, oldAppID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(app.Status).To(Equal(types.ResourceStatusDeleted))
+
+			db, err := dataStore.Resource().Get(ctx, oldDBID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(db.Status).To(Equal(types.ResourceStatusPending))
 		})
 	})
 
