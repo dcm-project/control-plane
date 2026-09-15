@@ -286,14 +286,14 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 	if len(resources) > 1 {
 		return s.rehydrateMultiResourceRun(ctx, runID, newRunID, resources)
 	}
+	return s.rehydrateSingleResourceRun(ctx, runID, newRunID, resources[0])
+}
 
-	// Step 1: Retrieve the old resource
-	oldResource := resources[0]
+func (s *PlacementService) rehydrateSingleResourceRun(ctx context.Context, oldRunID, newRunID string, oldResource model.Resource) (*types.Resource, error) {
+	log := logging.FromContext(ctx)
 	resourceID := oldResource.ID
-	// Generate UUID for the replacement resource
 	newResourceID := uuid.New().String()
 
-	// Step 2: Re-evaluate the original spec through policy
 	availableAgents, err := s.listAvailableAgents(ctx)
 	if err != nil {
 		log.Error("Failed to list available agents for rehydration", "error", err)
@@ -304,7 +304,7 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 	if err != nil {
 		return nil, err
 	}
-	// Step 3: Create new resource in DB
+
 	newPath := fmt.Sprintf("resources/%s", newResourceID)
 	newResource := model.Resource{
 		ID:                    newResourceID,
@@ -320,7 +320,6 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 		AgentName:             &evaluated.SelectedAgent,
 	}
 
-	// Step 3: Create new resource in DB
 	created, err := s.store.Resource().Create(ctx, newResource)
 	if err != nil {
 		if errors.Is(err, store.ErrResourceIdExist) {
@@ -331,7 +330,6 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 		return nil, NewInternalError(fmt.Sprintf("failed to create database record for resource %s: %v", newResourceID, err))
 	}
 
-	// Step 4: Provision new resource in SPRM
 	sprmRequest := sprm.CreateResourceRequest{
 		ID:        newResourceID,
 		Spec:      evaluated.EvaluatedSpec,
@@ -339,7 +337,6 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 	}
 	if _, err = s.sprm.CreateResource(ctx, sprmRequest); err != nil {
 		log.Error("SPRM provisioning failed during rehydration, rolling back", "new_resource_id", newResourceID, "error", err)
-		// Rollback the new DB record
 		if delErr := s.rollbackResourceDelete(newResourceID); delErr != nil {
 			log.Error("Failed to rollback new resource after SPRM error",
 				"new_resource_id", newResourceID,
@@ -350,10 +347,11 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 		return nil, handleSPRMError(err)
 	}
 
-	s.deleteRehydratedOldResources(ctx, resources)
+	// Each rehydration path removes the old run only after replacement create succeeds.
+	s.deleteRehydratedOldResources(ctx, model.ResourceList{oldResource})
 
 	log.Info("Run rehydrated successfully",
-		"old_run_id", runID,
+		"old_run_id", oldRunID,
 		"new_run_id", newRunID,
 		"old_resource_id", resourceID,
 		"new_resource_id", newResourceID,
@@ -369,6 +367,13 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 func (s *PlacementService) rehydrateMultiResourceRun(ctx context.Context, oldRunID, newRunID string, oldResources model.ResourceList) (*types.Resource, error) {
 	log := logging.FromContext(ctx)
 	catalogID := oldResources[0].CatalogItemInstanceId
+	for _, r := range oldResources[1:] {
+		if r.CatalogItemInstanceId != catalogID {
+			return nil, NewInternalError(fmt.Sprintf(
+				"run %s has inconsistent catalog_item_instance_id values", oldRunID,
+			))
+		}
+	}
 	inputs := make([]types.ResourceInput, 0, len(oldResources))
 	for _, r := range oldResources {
 		inputs = append(inputs, types.ResourceInput{
@@ -387,6 +392,7 @@ func (s *PlacementService) rehydrateMultiResourceRun(ctx context.Context, oldRun
 		return nil, err
 	}
 
+	// Each rehydration path removes the old run only after replacement create succeeds.
 	s.deleteRehydratedOldResources(ctx, oldResources)
 
 	log.Info("Run rehydrated successfully",
