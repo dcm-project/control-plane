@@ -311,7 +311,18 @@ func (s *PlacementService) rehydrateRun(ctx context.Context, oldRunID, newRunID 
 		return nil, err
 	}
 
-	priorStatus := snapshotResourceStatus(oldResources)
+	priorStatus, err := s.loadRunStatusSnapshot(ctx, oldRunID)
+	if err != nil {
+		s.rollbackProvisioned(resourceIDsFromRun(created.Resources))
+		if rbErr := s.rollbackRunDelete(newRunID); rbErr != nil {
+			log.Error("Failed to rollback new run after status snapshot error",
+				"new_run_id", newRunID,
+				"error", rbErr,
+			)
+		}
+		return nil, err
+	}
+
 	if err := s.DeleteRun(ctx, oldRunID); err != nil {
 		log.Error("Failed to delete old run after rehydrate create",
 			"old_run_id", oldRunID,
@@ -325,7 +336,7 @@ func (s *PlacementService) rehydrateRun(ctx context.Context, oldRunID, newRunID 
 				"error", rbErr,
 			)
 		}
-		s.restoreResourceStatuses(ctx, priorStatus)
+		s.rollbackRehydrateOldRunAfterFailedDelete(ctx, oldRunID, priorStatus)
 		return nil, err
 	}
 
@@ -374,13 +385,38 @@ func snapshotResourceStatus(resources model.ResourceList) map[string]string {
 	return prior
 }
 
-func (s *PlacementService) restoreResourceStatuses(ctx context.Context, prior map[string]string) {
+func (s *PlacementService) loadRunStatusSnapshot(ctx context.Context, runID string) (map[string]string, error) {
+	resources, err := s.store.Resource().ListByRunID(ctx, runID)
+	if err != nil {
+		return nil, NewInternalError(fmt.Sprintf("failed to load run %s for status snapshot: %v", runID, err))
+	}
+	return snapshotResourceStatus(resources), nil
+}
+
+// rollbackRehydrateOldRunAfterFailedDelete reverts teardown statuses only for resources
+// still in PENDING_DELETION or DELETING. Rows already DELETED are left unchanged.
+func (s *PlacementService) rollbackRehydrateOldRunAfterFailedDelete(ctx context.Context, oldRunID string, prior map[string]string) {
 	log := logging.FromContext(ctx)
-	for id, status := range prior {
-		if err := s.store.Resource().UpdateStatus(ctx, id, status); err != nil {
+	resources, err := s.store.Resource().ListByRunID(ctx, oldRunID)
+	if err != nil {
+		log.Error("Failed to load old run for status rollback after rehydrate delete error",
+			"old_run_id", oldRunID,
+			"error", err,
+		)
+		return
+	}
+	for _, r := range resources {
+		if r.Status != types.ResourceStatusPendingDeletion && r.Status != types.ResourceStatusDeleting {
+			continue
+		}
+		priorStatus := prior[r.ID]
+		if priorStatus == "" {
+			continue
+		}
+		if err := s.store.Resource().UpdateStatus(ctx, r.ID, priorStatus); err != nil {
 			log.Error("Failed to restore resource status after aborted rehydrate",
-				"resource_id", id,
-				"status", status,
+				"resource_id", r.ID,
+				"status", priorStatus,
 				"error", err,
 			)
 		}
