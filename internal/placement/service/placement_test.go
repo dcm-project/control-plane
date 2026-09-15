@@ -1230,7 +1230,9 @@ var _ = Describe("PlacementService", func() {
 			Expect(result.AgentName).NotTo(BeNil())
 			Expect(*result.AgentName).To(Equal("test-agent"))
 
-			// Verify old resource is gone
+			oldStored := getStoredResource(ctx, dataStore, oldResourceID)
+			Expect(oldStored.Status).To(Equal(types.ResourceStatusDeleting))
+			Expect(placementSvc.OnResourceDeleted(ctx, oldResourceID)).To(Succeed())
 			expectStoredResourceMissing(ctx, dataStore, oldResourceID)
 			// Verify new resource exists
 			stored := getStoredResource(ctx, dataStore, *result.Id)
@@ -1343,9 +1345,9 @@ var _ = Describe("PlacementService", func() {
 				}
 			}
 
-			deferredDeleteOrder := make([]string, 0, 2)
-			mockSPRM.DeleteResourceDeferredFunc = func(_ context.Context, resourceID string) error {
-				deferredDeleteOrder = append(deferredDeleteOrder, nameByID[resourceID])
+			deleteOrder := make([]string, 0, 2)
+			mockSPRM.DeleteResourceFunc = func(_ context.Context, resourceID string) error {
+				deleteOrder = append(deleteOrder, nameByID[resourceID])
 				return nil
 			}
 
@@ -1356,8 +1358,11 @@ var _ = Describe("PlacementService", func() {
 			Expect(result).NotTo(BeNil())
 			Expect(result.RunId).To(Equal(newRunID))
 			Expect(result.Name).To(Equal("db"))
-			Expect(deferredDeleteOrder).To(Equal([]string{"app", "db"}))
+			Expect(deleteOrder).To(Equal([]string{"app"}))
 
+			Expect(placementSvc.OnResourceDeleted(ctx, oldAppID)).To(Succeed())
+			Expect(deleteOrder).To(Equal([]string{"app", "db"}))
+			Expect(placementSvc.OnResourceDeleted(ctx, oldDBID)).To(Succeed())
 			expectStoredResourceMissing(ctx, dataStore, oldDBID)
 			expectStoredResourceMissing(ctx, dataStore, oldAppID)
 
@@ -1395,9 +1400,9 @@ var _ = Describe("PlacementService", func() {
 			mockSPRM.CreateResourceFunc = func(_ context.Context, _ sprm.CreateResourceRequest) (*sprm.CreateResourceResponse, error) {
 				return nil, &sprm.HTTPError{StatusCode: 500, Body: "sprm error"}
 			}
-			deferredDeleteCalled := false
-			mockSPRM.DeleteResourceDeferredFunc = func(_ context.Context, _ string) error {
-				deferredDeleteCalled = true
+			deleteCalled := false
+			mockSPRM.DeleteResourceFunc = func(_ context.Context, _ string) error {
+				deleteCalled = true
 				return nil
 			}
 
@@ -1409,7 +1414,7 @@ var _ = Describe("PlacementService", func() {
 			var svcErr *service.ServiceError
 			Expect(errors.As(err, &svcErr)).To(BeTrue())
 			Expect(svcErr.Code).To(Equal(service.ErrCodeSPRMError))
-			Expect(deferredDeleteCalled).To(BeFalse())
+			Expect(deleteCalled).To(BeFalse())
 
 			_ = getStoredResource(ctx, dataStore, oldDBID)
 			_ = getStoredResource(ctx, dataStore, oldAppID)
@@ -1486,18 +1491,28 @@ var _ = Describe("PlacementService", func() {
 			_ = getStoredResource(ctx, dataStore, oldResourceID)
 		})
 
-		It("succeeds even when SPRM deferred delete fails", func() {
-			mockSPRM.DeleteResourceDeferredFunc = func(_ context.Context, _ string) error {
-				return &sprm.HTTPError{StatusCode: 500, Body: "delete failed"}
+		It("returns error and rolls back new run when old-run delete fails after create", func() {
+			mockSPRM.DeleteResourceFunc = func(_ context.Context, resourceID string) error {
+				if resourceID == oldResourceID {
+					return &sprm.HTTPError{StatusCode: 500, Body: "delete failed"}
+				}
+				return nil
 			}
 
-			result, err := placementSvc.RehydrateResource(ctx, oldRunID, "new-run-deferred-fail")
+			newRunID := "new-run-delete-fail"
+			result, err := placementSvc.RehydrateResource(ctx, oldRunID, newRunID)
 
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			Expect(result.RunId).To(Equal("new-run-deferred-fail"))
+			Expect(err).To(HaveOccurred())
+			Expect(result).To(BeNil())
+			var svcErr *service.ServiceError
+			Expect(errors.As(err, &svcErr)).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeSPRMError))
 
-			_ = getStoredResource(ctx, dataStore, *result.Id)
+			_ = getStoredResource(ctx, dataStore, oldResourceID)
+			_, err = placementSvc.GetRun(ctx, newRunID)
+			Expect(err).To(HaveOccurred())
+			Expect(errors.As(err, &svcErr)).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
 		})
 	})
 
