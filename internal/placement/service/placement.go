@@ -311,7 +311,7 @@ func (s *PlacementService) rehydrateRun(ctx context.Context, oldRunID, newRunID 
 		return nil, err
 	}
 
-	priorStatus, err := s.loadRunStatusSnapshot(ctx, oldRunID)
+	statusBeforeDeleteByID, err := s.loadRunStatusSnapshot(ctx, oldRunID)
 	if err != nil {
 		s.rollbackProvisioned(resourceIDsFromRun(created.Resources))
 		if rbErr := s.rollbackRunDelete(newRunID); rbErr != nil {
@@ -336,7 +336,7 @@ func (s *PlacementService) rehydrateRun(ctx context.Context, oldRunID, newRunID 
 				"error", rbErr,
 			)
 		}
-		s.rollbackRehydrateOldRunAfterFailedDelete(ctx, oldRunID, priorStatus)
+		s.rollbackRehydrateOldRunAfterFailedDelete(ctx, oldRunID, statusBeforeDeleteByID)
 		return nil, err
 	}
 
@@ -350,6 +350,9 @@ func (s *PlacementService) rehydrateRun(ctx context.Context, oldRunID, newRunID 
 	return rehydrateReturnResource(created.Resources), nil
 }
 
+// rehydrateReturnResource selects one resource from the rehydrated run for the
+// RehydrateResource API return value. It picks the lowest DagLevel, breaking ties
+// by Name. Catalog ignores the return value today and only checks errors.
 func rehydrateReturnResource(resources []types.Resource) *types.Resource {
 	if len(resources) == 0 {
 		return nil
@@ -378,11 +381,11 @@ func resourceIDsFromRun(resources []types.Resource) []string {
 }
 
 func snapshotResourceStatus(resources model.ResourceList) map[string]string {
-	prior := make(map[string]string, len(resources))
+	statusByID := make(map[string]string, len(resources))
 	for _, r := range resources {
-		prior[r.ID] = r.Status
+		statusByID[r.ID] = r.Status
 	}
-	return prior
+	return statusByID
 }
 
 func (s *PlacementService) loadRunStatusSnapshot(ctx context.Context, runID string) (map[string]string, error) {
@@ -394,10 +397,11 @@ func (s *PlacementService) loadRunStatusSnapshot(ctx context.Context, runID stri
 }
 
 // rollbackRehydrateOldRunAfterFailedDelete undoes an in-progress DeleteRun when rehydrate
-// fails after the replacement run was created. prior must come from loadRunStatusSnapshot
-// immediately before DeleteRun so callbacks during CreateRun are preserved. Only resources
-// still in PENDING_DELETION or DELETING are reverted, never rows already marked DELETED.
-func (s *PlacementService) rollbackRehydrateOldRunAfterFailedDelete(ctx context.Context, oldRunID string, prior map[string]string) {
+// fails after the replacement run was created. statusBeforeDeleteByID must come from
+// loadRunStatusSnapshot immediately before DeleteRun so callbacks during CreateRun are
+// preserved. Only resources still in PENDING_DELETION or DELETING are reverted, never
+// rows already marked DELETED.
+func (s *PlacementService) rollbackRehydrateOldRunAfterFailedDelete(ctx context.Context, oldRunID string, statusBeforeDeleteByID map[string]string) {
 	log := logging.FromContext(ctx)
 	resources, err := s.store.Resource().ListByRunID(ctx, oldRunID)
 	if err != nil {
@@ -411,14 +415,14 @@ func (s *PlacementService) rollbackRehydrateOldRunAfterFailedDelete(ctx context.
 		if r.Status != types.ResourceStatusPendingDeletion && r.Status != types.ResourceStatusDeleting {
 			continue
 		}
-		priorStatus := prior[r.ID]
-		if priorStatus == "" {
+		statusBeforeDelete := statusBeforeDeleteByID[r.ID]
+		if statusBeforeDelete == "" {
 			continue
 		}
-		if err := s.store.Resource().UpdateStatus(ctx, r.ID, priorStatus); err != nil {
+		if err := s.store.Resource().UpdateStatus(ctx, r.ID, statusBeforeDelete); err != nil {
 			log.Error("Failed to restore resource status after aborted rehydrate",
 				"resource_id", r.ID,
-				"status", priorStatus,
+				"status", statusBeforeDelete,
 				"error", err,
 			)
 		}
