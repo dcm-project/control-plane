@@ -311,6 +311,7 @@ func (s *PlacementService) rehydrateRun(ctx context.Context, oldRunID, newRunID 
 		return nil, err
 	}
 
+	priorStatus := snapshotResourceStatus(oldResources)
 	if err := s.DeleteRun(ctx, oldRunID); err != nil {
 		log.Error("Failed to delete old run after rehydrate create",
 			"old_run_id", oldRunID,
@@ -324,6 +325,7 @@ func (s *PlacementService) rehydrateRun(ctx context.Context, oldRunID, newRunID 
 				"error", rbErr,
 			)
 		}
+		s.restoreResourceStatuses(ctx, priorStatus)
 		return nil, err
 	}
 
@@ -362,6 +364,27 @@ func resourceIDsFromRun(resources []types.Resource) []string {
 		}
 	}
 	return ids
+}
+
+func snapshotResourceStatus(resources model.ResourceList) map[string]string {
+	prior := make(map[string]string, len(resources))
+	for _, r := range resources {
+		prior[r.ID] = r.Status
+	}
+	return prior
+}
+
+func (s *PlacementService) restoreResourceStatuses(ctx context.Context, prior map[string]string) {
+	log := logging.FromContext(ctx)
+	for id, status := range prior {
+		if err := s.store.Resource().UpdateStatus(ctx, id, status); err != nil {
+			log.Error("Failed to restore resource status after aborted rehydrate",
+				"resource_id", id,
+				"status", status,
+				"error", err,
+			)
+		}
+	}
 }
 
 func (s *PlacementService) rollbackProvisioned(resourceIDs []string) {

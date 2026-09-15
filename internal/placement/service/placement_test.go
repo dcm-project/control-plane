@@ -1513,6 +1513,9 @@ var _ = Describe("PlacementService", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(errors.As(err, &svcErr)).To(BeTrue())
 			Expect(svcErr.Code).To(Equal(service.ErrCodeNotFound))
+
+			oldStored := getStoredResource(ctx, dataStore, oldResourceID)
+			Expect(oldStored.Status).To(Equal(types.ResourceStatusPending))
 		})
 	})
 
