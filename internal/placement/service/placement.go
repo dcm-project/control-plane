@@ -387,12 +387,6 @@ func (s *PlacementService) rollbackRunDelete(runID string) error {
 	return err
 }
 
-func (s *PlacementService) rollbackResourceDelete(id string) error {
-	rbCtx, cancel := context.WithTimeout(context.Background(), resourceRollbackTimeout)
-	defer cancel()
-	return s.store.Resource().Delete(rbCtx, id)
-}
-
 // ReEvaluateWithExclude re-evaluates placement for an existing resource,
 // excluding the given agents (typically an agent that just failed or timed
 // out), and re-provisions the resource against the newly selected agent.
