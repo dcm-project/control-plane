@@ -282,15 +282,23 @@ func (s *PlacementService) RehydrateResource(ctx context.Context, runID, newRunI
 	return s.rehydrateRun(ctx, runID, newRunID, resources)
 }
 
-func (s *PlacementService) rehydrateRun(ctx context.Context, oldRunID, newRunID string, oldResources model.ResourceList) (*types.Resource, error) {
-	log := logging.FromContext(ctx)
-	catalogID := oldResources[0].CatalogItemInstanceId
-	for _, r := range oldResources[1:] {
+func catalogItemInstanceIDForRehydrate(runID string, resources model.ResourceList) (string, error) {
+	catalogID := resources[0].CatalogItemInstanceId
+	for _, r := range resources[1:] {
 		if r.CatalogItemInstanceId != catalogID {
-			return nil, NewInternalError(fmt.Sprintf(
-				"run %s has inconsistent catalog_item_instance_id values", oldRunID,
+			return "", NewInternalError(fmt.Sprintf(
+				"run %s has inconsistent catalog_item_instance_id values", runID,
 			))
 		}
+	}
+	return catalogID, nil
+}
+
+func (s *PlacementService) rehydrateRun(ctx context.Context, oldRunID, newRunID string, oldResources model.ResourceList) (*types.Resource, error) {
+	log := logging.FromContext(ctx)
+	catalogID, err := catalogItemInstanceIDForRehydrate(oldRunID, oldResources)
+	if err != nil {
+		return nil, err
 	}
 
 	inputs := make([]types.ResourceInput, 0, len(oldResources))
@@ -311,11 +319,11 @@ func (s *PlacementService) rehydrateRun(ctx context.Context, oldRunID, newRunID 
 		return nil, err
 	}
 
-	statusBeforeDeleteByID, err := s.loadRunStatusSnapshot(ctx, oldRunID)
+	statusBeforeDeleteByID, err := s.loadResourceStatusesByRunID(ctx, oldRunID)
 	if err != nil {
 		s.rollbackProvisioned(resourceIDsFromRun(created.Resources))
 		if rbErr := s.rollbackRunDelete(newRunID); rbErr != nil {
-			log.Error("Failed to rollback new run after status snapshot error",
+			log.Error("Failed to rollback new run after old-run status load error",
 				"new_run_id", newRunID,
 				"error", rbErr,
 			)
@@ -347,27 +355,26 @@ func (s *PlacementService) rehydrateRun(ctx context.Context, oldRunID, newRunID 
 		"catalog_item_instance_id", catalogID,
 	)
 
-	return rehydrateReturnResource(created.Resources), nil
+	return getDAGRootResource(created.Resources), nil
 }
 
-// rehydrateReturnResource selects one resource from the rehydrated run for the
-// RehydrateResource API return value. It picks the lowest DagLevel, breaking ties
-// by Name. Catalog ignores the return value today and only checks errors.
-func rehydrateReturnResource(resources []types.Resource) *types.Resource {
+// getDAGRootResource picks a DAG root resource (lowest DagLevel, tie-break by Name)
+// from a run for the RehydrateResource API return value. Catalog ignores it today.
+func getDAGRootResource(resources []types.Resource) *types.Resource {
 	if len(resources) == 0 {
 		return nil
 	}
-	best := resources[0]
+	root := resources[0]
 	for _, r := range resources[1:] {
-		if r.DagLevel < best.DagLevel {
-			best = r
+		if r.DagLevel < root.DagLevel {
+			root = r
 			continue
 		}
-		if r.DagLevel == best.DagLevel && r.Name < best.Name {
-			best = r
+		if r.DagLevel == root.DagLevel && r.Name < root.Name {
+			root = r
 		}
 	}
-	return &best
+	return &root
 }
 
 func resourceIDsFromRun(resources []types.Resource) []string {
@@ -380,7 +387,7 @@ func resourceIDsFromRun(resources []types.Resource) []string {
 	return ids
 }
 
-func snapshotResourceStatus(resources model.ResourceList) map[string]string {
+func resourceStatusesByID(resources model.ResourceList) map[string]string {
 	statusByID := make(map[string]string, len(resources))
 	for _, r := range resources {
 		statusByID[r.ID] = r.Status
@@ -388,17 +395,17 @@ func snapshotResourceStatus(resources model.ResourceList) map[string]string {
 	return statusByID
 }
 
-func (s *PlacementService) loadRunStatusSnapshot(ctx context.Context, runID string) (map[string]string, error) {
+func (s *PlacementService) loadResourceStatusesByRunID(ctx context.Context, runID string) (map[string]string, error) {
 	resources, err := s.store.Resource().ListByRunID(ctx, runID)
 	if err != nil {
-		return nil, NewInternalError(fmt.Sprintf("failed to load run %s for status snapshot: %v", runID, err))
+		return nil, NewInternalError(fmt.Sprintf("failed to load run %s resource statuses: %v", runID, err))
 	}
-	return snapshotResourceStatus(resources), nil
+	return resourceStatusesByID(resources), nil
 }
 
 // rollbackRehydrateOldRunAfterFailedDelete undoes an in-progress DeleteRun when rehydrate
 // fails after the replacement run was created. statusBeforeDeleteByID must come from
-// loadRunStatusSnapshot immediately before DeleteRun so callbacks during CreateRun are
+// loadResourceStatusesByRunID immediately before DeleteRun so callbacks during CreateRun are
 // preserved. Only resources still in PENDING_DELETION or DELETING are reverted, never
 // rows already marked DELETED.
 func (s *PlacementService) rollbackRehydrateOldRunAfterFailedDelete(ctx context.Context, oldRunID string, statusBeforeDeleteByID map[string]string) {
