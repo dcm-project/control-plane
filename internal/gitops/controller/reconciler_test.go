@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -105,6 +106,22 @@ var _ = Describe("createInstance", func() {
 				Value:    "decl-backend-1",
 			},
 		}))
+	})
+
+	It("rejects user values for unknown catalog resources", func() {
+		itemSvc := &stubCatalogItemService{item: catalogItemWithFields(nil)}
+		instSvc := &stubCatalogItemInstanceService{}
+		r := NewReconciler(nil, instSvc, itemSvc, nil)
+
+		err := r.createInstance(context.Background(), "apps-repo", "abc123", DesiredInstance{
+			Name:          "decl-app",
+			CatalogItemID: "two-tier",
+			UserValues: []DesiredUserValue{
+				{Resource: "unknown-backend", Path: "metadata.labels", Value: map[string]string{"tier": "frontend"}},
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring("user value resource not found in catalog item: unknown-backend")))
+		Expect(errors.Is(err, catalogservice.ErrUserValueResourceNotFound)).To(BeTrue())
 	})
 
 	It("rejects metadata.labels user values with non-string entries", func() {

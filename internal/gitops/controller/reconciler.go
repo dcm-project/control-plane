@@ -185,6 +185,7 @@ func (r *Reconciler) createInstance(ctx context.Context, repoID, latestCommit st
 
 	// Inject labels for every resource in the catalog item
 	var userValues []catalogv1alpha1.UserValue
+	knownResources := make(map[string]bool, len(catalogItem.Spec.Resources))
 	for _, resource := range catalogItem.Spec.Resources {
 		// One metadata.labels per resource: user_values labels + gitopsLabels.
 		mergedLabels, err := mergeResourceLabels(resource.Name, desired.UserValues, gitopsLabels)
@@ -196,10 +197,17 @@ func (r *Reconciler) createInstance(ctx context.Context, repoID, latestCommit st
 			Path:     gitopsLabelsFieldPath,
 			Value:    mergedLabels,
 		})
+		knownResources[resource.Name] = true
 	}
 
 	// Append the user's original values
 	for _, uv := range desired.UserValues {
+		if uv.Resource == "" {
+			return fmt.Errorf("instance %s: %w", desired.Name, catalogservice.ErrUserValueResourceRequired)
+		}
+		if !knownResources[uv.Resource] {
+			return fmt.Errorf("instance %s: %w: %s", desired.Name, catalogservice.ErrUserValueResourceNotFound, uv.Resource)
+		}
 		if isMetadataLabelsPath(uv.Path) {
 			continue
 		}
