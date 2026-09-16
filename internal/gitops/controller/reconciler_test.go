@@ -1,0 +1,182 @@
+package controller_test
+
+import (
+	"context"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	catalogv1alpha1 "github.com/dcm-project/control-plane/api/catalog/v1alpha1"
+	catalogservice "github.com/dcm-project/control-plane/internal/catalog/service"
+	"github.com/dcm-project/control-plane/internal/gitops/controller"
+)
+
+func boolPtr(v bool) *bool { return &v }
+
+func catalogItemWithFields(resourceName string, fields []catalogv1alpha1.FieldConfiguration) *catalogv1alpha1.CatalogItem {
+	return &catalogv1alpha1.CatalogItem{
+		Spec: &catalogv1alpha1.CatalogItemSpec{
+			Resources: []catalogv1alpha1.CatalogResource{{
+				Name:   resourceName,
+				Fields: &fields,
+			}},
+		},
+	}
+}
+
+var _ = Describe("createInstance", func() {
+	It("injects gitops labels at metadata.labels and forwards the instance user values", func() {
+		var created *catalogservice.CreateCatalogItemInstanceRequest
+		itemSvc := &stubCatalogItemService{item: catalogItemWithFields("backend", []catalogv1alpha1.FieldConfiguration{
+			{Path: "metadata.name", Editable: boolPtr(true), Default: "decl-backend"},
+		})}
+		instSvc := &stubCatalogItemInstanceService{
+			createFn: func(_ context.Context, req *catalogservice.CreateCatalogItemInstanceRequest) (*catalogv1alpha1.CatalogItemInstance, error) {
+				created = req
+				return &catalogv1alpha1.CatalogItemInstance{}, nil
+			},
+		}
+		r := controller.NewReconciler(nil, instSvc, itemSvc, nil)
+
+		err := controller.CreateInstance(r, context.Background(), "apps-repo", "abc123", controller.DesiredInstance{
+			Name:          "decl-app",
+			CatalogItemID: "two-tier",
+			DisplayName:   "Decl App",
+			Labels:        map[string]string{"team": "platform"},
+			UserValues: []controller.DesiredUserValue{
+				{Resource: "backend", Path: "metadata.name", Value: "decl-backend-1"},
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(created).NotTo(BeNil())
+		Expect(*created.ID).To(Equal("decl-app"))
+		Expect(created.Spec.UserValues).To(Equal([]catalogv1alpha1.UserValue{
+			{
+				Resource: "backend",
+				Path:     "metadata.labels",
+				Value: map[string]string{
+					"gitops.dcm.io/repository": "apps-repo",
+					"gitops.dcm.io/commit":     "abc123",
+					"team":                     "platform",
+				},
+			},
+			{
+				Resource: "backend",
+				Path:     "metadata.name",
+				Value:    "decl-backend-1",
+			},
+		}))
+	})
+
+	It("merges existing metadata.labels user values with gitops labels into one entry", func() {
+		var created *catalogservice.CreateCatalogItemInstanceRequest
+		itemSvc := &stubCatalogItemService{item: catalogItemWithFields("backend", []catalogv1alpha1.FieldConfiguration{
+			{Path: "metadata.name", Editable: boolPtr(true)},
+		})}
+		instSvc := &stubCatalogItemInstanceService{
+			createFn: func(_ context.Context, req *catalogservice.CreateCatalogItemInstanceRequest) (*catalogv1alpha1.CatalogItemInstance, error) {
+				created = req
+				return &catalogv1alpha1.CatalogItemInstance{}, nil
+			},
+		}
+		r := controller.NewReconciler(nil, instSvc, itemSvc, nil)
+
+		err := controller.CreateInstance(r, context.Background(), "apps-repo", "abc123", controller.DesiredInstance{
+			Name:          "decl-app",
+			CatalogItemID: "two-tier",
+			UserValues: []controller.DesiredUserValue{
+				{Resource: "backend", Path: "metadata.name", Value: "decl-backend-1"},
+				{Resource: "backend", Path: "metadata.labels", Value: map[string]string{"tier": "frontend"}},
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(created.Spec.UserValues).To(Equal([]catalogv1alpha1.UserValue{
+			{
+				Resource: "backend",
+				Path:     "metadata.labels",
+				Value: map[string]string{
+					"tier":                     "frontend",
+					"gitops.dcm.io/repository": "apps-repo",
+					"gitops.dcm.io/commit":     "abc123",
+				},
+			},
+			{
+				Resource: "backend",
+				Path:     "metadata.name",
+				Value:    "decl-backend-1",
+			},
+		}))
+	})
+
+	It("merges metadata.labels user values unmarshaled as map[string]any", func() {
+		var created *catalogservice.CreateCatalogItemInstanceRequest
+		itemSvc := &stubCatalogItemService{item: catalogItemWithFields("backend", nil)}
+		instSvc := &stubCatalogItemInstanceService{
+			createFn: func(_ context.Context, req *catalogservice.CreateCatalogItemInstanceRequest) (*catalogv1alpha1.CatalogItemInstance, error) {
+				created = req
+				return &catalogv1alpha1.CatalogItemInstance{}, nil
+			},
+		}
+		r := controller.NewReconciler(nil, instSvc, itemSvc, nil)
+
+		err := controller.CreateInstance(r, context.Background(), "apps-repo", "abc123", controller.DesiredInstance{
+			Name:          "decl-app",
+			CatalogItemID: "two-tier",
+			UserValues: []controller.DesiredUserValue{
+				{Resource: "backend", Path: "metadata.labels", Value: map[string]any{"tier": "frontend"}},
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(created.Spec.UserValues).To(Equal([]catalogv1alpha1.UserValue{
+			{
+				Resource: "backend",
+				Path:     "metadata.labels",
+				Value: map[string]string{
+					"tier":                     "frontend",
+					"gitops.dcm.io/repository": "apps-repo",
+					"gitops.dcm.io/commit":     "abc123",
+				},
+			},
+		}))
+	})
+})
+
+type stubCatalogItemService struct {
+	item *catalogv1alpha1.CatalogItem
+	err  error
+}
+
+func (s *stubCatalogItemService) List(context.Context, catalogservice.CatalogItemListOptions) (*catalogservice.CatalogItemListResult, error) {
+	return nil, nil
+}
+func (s *stubCatalogItemService) Create(context.Context, *catalogservice.CreateCatalogItemRequest) (*catalogv1alpha1.CatalogItem, error) {
+	return nil, nil
+}
+func (s *stubCatalogItemService) Get(_ context.Context, _ string) (*catalogv1alpha1.CatalogItem, error) {
+	return s.item, s.err
+}
+func (s *stubCatalogItemService) Update(context.Context, string, *catalogservice.UpdateCatalogItemRequest) (*catalogv1alpha1.CatalogItem, error) {
+	return nil, nil
+}
+func (s *stubCatalogItemService) Delete(context.Context, string) error { return nil }
+
+type stubCatalogItemInstanceService struct {
+	createFn func(context.Context, *catalogservice.CreateCatalogItemInstanceRequest) (*catalogv1alpha1.CatalogItemInstance, error)
+}
+
+func (s *stubCatalogItemInstanceService) List(context.Context, catalogservice.CatalogItemInstanceListOptions) (*catalogservice.CatalogItemInstanceListResult, error) {
+	return nil, nil
+}
+func (s *stubCatalogItemInstanceService) Create(ctx context.Context, req *catalogservice.CreateCatalogItemInstanceRequest) (*catalogv1alpha1.CatalogItemInstance, error) {
+	if s.createFn != nil {
+		return s.createFn(ctx, req)
+	}
+	return &catalogv1alpha1.CatalogItemInstance{}, nil
+}
+func (s *stubCatalogItemInstanceService) Get(context.Context, string) (*catalogv1alpha1.CatalogItemInstance, error) {
+	return nil, nil
+}
+func (s *stubCatalogItemInstanceService) Delete(context.Context, string) error { return nil }
+func (s *stubCatalogItemInstanceService) Rehydrate(context.Context, string) (*catalogv1alpha1.CatalogItemInstance, error) {
+	return nil, nil
+}
