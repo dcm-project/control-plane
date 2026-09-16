@@ -187,10 +187,14 @@ func (r *Reconciler) createInstance(ctx context.Context, repoID, latestCommit st
 	var userValues []catalogv1alpha1.UserValue
 	for _, resource := range catalogItem.Spec.Resources {
 		// One metadata.labels per resource: user_values labels + gitopsLabels.
+		mergedLabels, err := mergeResourceLabels(resource.Name, desired.UserValues, gitopsLabels)
+		if err != nil {
+			return fmt.Errorf("instance %s: %w", desired.Name, err)
+		}
 		userValues = append(userValues, catalogv1alpha1.UserValue{
 			Resource: resource.Name,
 			Path:     gitopsLabelsFieldPath,
-			Value:    mergeResourceLabels(resource.Name, desired.UserValues, gitopsLabels),
+			Value:    mergedLabels,
 		})
 	}
 
@@ -221,34 +225,40 @@ func (r *Reconciler) createInstance(ctx context.Context, repoID, latestCommit st
 	return err
 }
 
-func mergeResourceLabels(resourceName string, userValues []DesiredUserValue, gitopsLabels map[string]string) map[string]string {
+func mergeResourceLabels(resourceName string, userValues []DesiredUserValue, gitopsLabels map[string]string) (map[string]string, error) {
 	mergedLabels := map[string]string{}
 	for _, uv := range userValues {
 		if uv.Resource != resourceName || !isMetadataLabelsPath(uv.Path) {
 			continue
 		}
-		maps.Copy(mergedLabels, labelMapFromUserValue(uv.Value))
+		labels, err := labelMapFromUserValue(uv.Value)
+		if err != nil {
+			return nil, fmt.Errorf("resource %s %s: %w", resourceName, gitopsLabelsFieldPath, err)
+		}
+		maps.Copy(mergedLabels, labels)
 	}
 	maps.Copy(mergedLabels, gitopsLabels)
-	return mergedLabels
+	return mergedLabels, nil
 }
 
-// labelMapFromValue coerces YAML-unmarshaled label maps into map[string]string.
+// labelMapFromUserValue coerces YAML-unmarshaled label maps into map[string]string.
 // Only used for metadata.labels.
-func labelMapFromUserValue(v any) map[string]string {
+func labelMapFromUserValue(v any) (map[string]string, error) {
 	switch m := v.(type) {
 	case map[string]string:
-		return m
+		return m, nil
 	case map[string]any:
 		labels := make(map[string]string, len(m))
 		for k, val := range m {
-			if s, ok := val.(string); ok {
-				labels[k] = s
+			s, ok := val.(string)
+			if !ok {
+				return nil, fmt.Errorf("label %q must be a string, got %T", k, val)
 			}
+			labels[k] = s
 		}
-		return labels
+		return labels, nil
 	default:
-		return nil
+		return nil, fmt.Errorf("value must be a map of strings, got %T", v)
 	}
 }
 

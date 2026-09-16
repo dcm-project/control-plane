@@ -12,11 +12,11 @@ import (
 
 func boolPtr(v bool) *bool { return &v }
 
-func catalogItemWithFields(resourceName string, fields []catalogv1alpha1.FieldConfiguration) *catalogv1alpha1.CatalogItem {
+func catalogItemWithFields(fields []catalogv1alpha1.FieldConfiguration) *catalogv1alpha1.CatalogItem {
 	return &catalogv1alpha1.CatalogItem{
 		Spec: &catalogv1alpha1.CatalogItemSpec{
 			Resources: []catalogv1alpha1.CatalogResource{{
-				Name:   resourceName,
+				Name:   "backend",
 				Fields: &fields,
 			}},
 		},
@@ -26,7 +26,7 @@ func catalogItemWithFields(resourceName string, fields []catalogv1alpha1.FieldCo
 var _ = Describe("createInstance", func() {
 	It("injects gitops labels at metadata.labels and forwards the instance user values", func() {
 		var created *catalogservice.CreateCatalogItemInstanceRequest
-		itemSvc := &stubCatalogItemService{item: catalogItemWithFields("backend", []catalogv1alpha1.FieldConfiguration{
+		itemSvc := &stubCatalogItemService{item: catalogItemWithFields([]catalogv1alpha1.FieldConfiguration{
 			{Path: "metadata.name", Editable: boolPtr(true), Default: "decl-backend"},
 		})}
 		instSvc := &stubCatalogItemInstanceService{
@@ -69,7 +69,7 @@ var _ = Describe("createInstance", func() {
 
 	It("merges existing metadata.labels user values with gitops labels into one entry", func() {
 		var created *catalogservice.CreateCatalogItemInstanceRequest
-		itemSvc := &stubCatalogItemService{item: catalogItemWithFields("backend", []catalogv1alpha1.FieldConfiguration{
+		itemSvc := &stubCatalogItemService{item: catalogItemWithFields([]catalogv1alpha1.FieldConfiguration{
 			{Path: "metadata.name", Editable: boolPtr(true)},
 		})}
 		instSvc := &stubCatalogItemInstanceService{
@@ -107,9 +107,24 @@ var _ = Describe("createInstance", func() {
 		}))
 	})
 
+	It("rejects metadata.labels user values with non-string entries", func() {
+		itemSvc := &stubCatalogItemService{item: catalogItemWithFields(nil)}
+		instSvc := &stubCatalogItemInstanceService{}
+		r := NewReconciler(nil, instSvc, itemSvc, nil)
+
+		err := r.createInstance(context.Background(), "apps-repo", "abc123", DesiredInstance{
+			Name:          "decl-app",
+			CatalogItemID: "two-tier",
+			UserValues: []DesiredUserValue{
+				{Resource: "backend", Path: "metadata.labels", Value: map[string]any{"tier": 1}},
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring(`resource backend metadata.labels: label "tier" must be a string, got int`)))
+	})
+
 	It("merges metadata.labels user values unmarshaled as map[string]any", func() {
 		var created *catalogservice.CreateCatalogItemInstanceRequest
-		itemSvc := &stubCatalogItemService{item: catalogItemWithFields("backend", nil)}
+		itemSvc := &stubCatalogItemService{item: catalogItemWithFields(nil)}
 		instSvc := &stubCatalogItemInstanceService{
 			createFn: func(_ context.Context, req *catalogservice.CreateCatalogItemInstanceRequest) (*catalogv1alpha1.CatalogItemInstance, error) {
 				created = req
