@@ -1,4 +1,4 @@
-package controller_test
+package controller
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 
 	catalogv1alpha1 "github.com/dcm-project/control-plane/api/catalog/v1alpha1"
 	catalogservice "github.com/dcm-project/control-plane/internal/catalog/service"
-	"github.com/dcm-project/control-plane/internal/gitops/controller"
 )
 
 func boolPtr(v bool) *bool { return &v }
@@ -36,14 +35,14 @@ var _ = Describe("createInstance", func() {
 				return &catalogv1alpha1.CatalogItemInstance{}, nil
 			},
 		}
-		r := controller.NewReconciler(nil, instSvc, itemSvc, nil)
+		r := NewReconciler(nil, instSvc, itemSvc, nil)
 
-		err := controller.CreateInstance(r, context.Background(), "apps-repo", "abc123", controller.DesiredInstance{
+		err := r.createInstance(context.Background(), "apps-repo", "abc123", DesiredInstance{
 			Name:          "decl-app",
 			CatalogItemID: "two-tier",
 			DisplayName:   "Decl App",
 			Labels:        map[string]string{"team": "platform"},
-			UserValues: []controller.DesiredUserValue{
+			UserValues: []DesiredUserValue{
 				{Resource: "backend", Path: "metadata.name", Value: "decl-backend-1"},
 			},
 		})
@@ -79,12 +78,12 @@ var _ = Describe("createInstance", func() {
 				return &catalogv1alpha1.CatalogItemInstance{}, nil
 			},
 		}
-		r := controller.NewReconciler(nil, instSvc, itemSvc, nil)
+		r := NewReconciler(nil, instSvc, itemSvc, nil)
 
-		err := controller.CreateInstance(r, context.Background(), "apps-repo", "abc123", controller.DesiredInstance{
+		err := r.createInstance(context.Background(), "apps-repo", "abc123", DesiredInstance{
 			Name:          "decl-app",
 			CatalogItemID: "two-tier",
-			UserValues: []controller.DesiredUserValue{
+			UserValues: []DesiredUserValue{
 				{Resource: "backend", Path: "metadata.name", Value: "decl-backend-1"},
 				{Resource: "backend", Path: "metadata.labels", Value: map[string]string{"tier": "frontend"}},
 			},
@@ -117,12 +116,12 @@ var _ = Describe("createInstance", func() {
 				return &catalogv1alpha1.CatalogItemInstance{}, nil
 			},
 		}
-		r := controller.NewReconciler(nil, instSvc, itemSvc, nil)
+		r := NewReconciler(nil, instSvc, itemSvc, nil)
 
-		err := controller.CreateInstance(r, context.Background(), "apps-repo", "abc123", controller.DesiredInstance{
+		err := r.createInstance(context.Background(), "apps-repo", "abc123", DesiredInstance{
 			Name:          "decl-app",
 			CatalogItemID: "two-tier",
-			UserValues: []controller.DesiredUserValue{
+			UserValues: []DesiredUserValue{
 				{Resource: "backend", Path: "metadata.labels", Value: map[string]any{"tier": "frontend"}},
 			},
 		})
@@ -149,12 +148,15 @@ type stubCatalogItemService struct {
 func (s *stubCatalogItemService) List(context.Context, catalogservice.CatalogItemListOptions) (*catalogservice.CatalogItemListResult, error) {
 	return nil, nil
 }
+
 func (s *stubCatalogItemService) Create(context.Context, *catalogservice.CreateCatalogItemRequest) (*catalogv1alpha1.CatalogItem, error) {
 	return nil, nil
 }
+
 func (s *stubCatalogItemService) Get(_ context.Context, _ string) (*catalogv1alpha1.CatalogItem, error) {
 	return s.item, s.err
 }
+
 func (s *stubCatalogItemService) Update(context.Context, string, *catalogservice.UpdateCatalogItemRequest) (*catalogv1alpha1.CatalogItem, error) {
 	return nil, nil
 }
@@ -167,12 +169,14 @@ type stubCatalogItemInstanceService struct {
 func (s *stubCatalogItemInstanceService) List(context.Context, catalogservice.CatalogItemInstanceListOptions) (*catalogservice.CatalogItemInstanceListResult, error) {
 	return nil, nil
 }
+
 func (s *stubCatalogItemInstanceService) Create(ctx context.Context, req *catalogservice.CreateCatalogItemInstanceRequest) (*catalogv1alpha1.CatalogItemInstance, error) {
 	if s.createFn != nil {
 		return s.createFn(ctx, req)
 	}
 	return &catalogv1alpha1.CatalogItemInstance{}, nil
 }
+
 func (s *stubCatalogItemInstanceService) Get(context.Context, string) (*catalogv1alpha1.CatalogItemInstance, error) {
 	return nil, nil
 }
