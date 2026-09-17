@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"strings"
 	"time"
 
 	catalogv1alpha1 "github.com/dcm-project/control-plane/api/catalog/v1alpha1"
@@ -271,7 +270,7 @@ func labelMapFromUserValue(v any) (map[string]string, error) {
 }
 
 func isMetadataLabelsPath(path string) bool {
-	return strings.TrimPrefix(path, "spec.") == gitopsLabelsFieldPath
+	return path == gitopsLabelsFieldPath
 }
 
 func (r *Reconciler) setSynced(ctx context.Context, repoID, commit string) {

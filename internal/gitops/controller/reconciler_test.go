@@ -14,12 +14,16 @@ import (
 func boolPtr(v bool) *bool { return &v }
 
 func catalogItemWithFields(fields []catalogv1alpha1.FieldConfiguration) *catalogv1alpha1.CatalogItem {
+	return catalogItemWithResources([]catalogv1alpha1.CatalogResource{{
+		Name:   "backend",
+		Fields: &fields,
+	}})
+}
+
+func catalogItemWithResources(resources []catalogv1alpha1.CatalogResource) *catalogv1alpha1.CatalogItem {
 	return &catalogv1alpha1.CatalogItem{
 		Spec: &catalogv1alpha1.CatalogItemSpec{
-			Resources: []catalogv1alpha1.CatalogResource{{
-				Name:   "backend",
-				Fields: &fields,
-			}},
+			Resources: resources,
 		},
 	}
 }
@@ -137,6 +141,73 @@ var _ = Describe("createInstance", func() {
 			},
 		})
 		Expect(err).To(MatchError(ContainSubstring(`resource backend metadata.labels: label "tier" must be a string, got int`)))
+	})
+
+	It("injects labels per resource and forwards user values to the matching resource only", func() {
+		var created *catalogservice.CreateCatalogItemInstanceRequest
+		itemSvc := &stubCatalogItemService{item: catalogItemWithResources([]catalogv1alpha1.CatalogResource{
+			{
+				Name: "backend",
+				Fields: &[]catalogv1alpha1.FieldConfiguration{
+					{Path: "metadata.name", Editable: boolPtr(true)},
+					{Path: "metadata.labels", Editable: boolPtr(true)},
+				},
+			},
+			{
+				Name: "frontend",
+				Fields: &[]catalogv1alpha1.FieldConfiguration{
+					{Path: "metadata.name", Editable: boolPtr(true)},
+					{Path: "metadata.labels", Editable: boolPtr(true)},
+				},
+			},
+		})}
+		instSvc := &stubCatalogItemInstanceService{
+			createFn: func(_ context.Context, req *catalogservice.CreateCatalogItemInstanceRequest) (*catalogv1alpha1.CatalogItemInstance, error) {
+				created = req
+				return &catalogv1alpha1.CatalogItemInstance{}, nil
+			},
+		}
+		r := NewReconciler(nil, instSvc, itemSvc, nil)
+
+		err := r.createInstance(context.Background(), "apps-repo", "abc123", DesiredInstance{
+			Name:          "decl-app",
+			CatalogItemID: "two-tier",
+			UserValues: []DesiredUserValue{
+				{Resource: "backend", Path: "metadata.name", Value: "decl-backend-1"},
+				{Resource: "frontend", Path: "metadata.name", Value: "decl-frontend-1"},
+				{Resource: "backend", Path: "metadata.labels", Value: map[string]string{"tier": "api"}},
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(created.Spec.UserValues).To(Equal([]catalogv1alpha1.UserValue{
+			{
+				Resource: "backend",
+				Path:     "metadata.labels",
+				Value: map[string]string{
+					"tier":                     "api",
+					"gitops.dcm.io/repository": "apps-repo",
+					"gitops.dcm.io/commit":     "abc123",
+				},
+			},
+			{
+				Resource: "frontend",
+				Path:     "metadata.labels",
+				Value: map[string]string{
+					"gitops.dcm.io/repository": "apps-repo",
+					"gitops.dcm.io/commit":     "abc123",
+				},
+			},
+			{
+				Resource: "backend",
+				Path:     "metadata.name",
+				Value:    "decl-backend-1",
+			},
+			{
+				Resource: "frontend",
+				Path:     "metadata.name",
+				Value:    "decl-frontend-1",
+			},
+		}))
 	})
 
 	It("merges metadata.labels user values unmarshaled as map[string]any", func() {
