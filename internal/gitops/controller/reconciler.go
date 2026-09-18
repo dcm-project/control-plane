@@ -176,18 +176,21 @@ func (r *Reconciler) createInstance(ctx context.Context, repoID, latestCommit st
 		return fmt.Errorf("catalog item %s has no spec", desired.CatalogItemID)
 	}
 
-	gitopsLabels := map[string]string{
-		gitopsRepositoryLabel: repoID,
-		gitopsCommitLabel:     latestCommit,
+	// Desired labels first
+	desiredAndGitopsLabels := maps.Clone(desired.Labels)
+	if desiredAndGitopsLabels == nil {
+		desiredAndGitopsLabels = map[string]string{}
 	}
-	maps.Copy(gitopsLabels, desired.Labels)
+	// Append GitOps labels
+	desiredAndGitopsLabels[gitopsRepositoryLabel] = repoID
+	desiredAndGitopsLabels[gitopsCommitLabel] = latestCommit
 
 	// Inject labels for every resource in the catalog item
 	var userValues []catalogv1alpha1.UserValue
 	knownResources := make(map[string]bool, len(catalogItem.Spec.Resources))
 	for _, resource := range catalogItem.Spec.Resources {
-		// One metadata.labels per resource: user_values labels + gitopsLabels.
-		mergedLabels, err := mergeResourceLabels(resource.Name, desired.UserValues, gitopsLabels)
+		// One metadata.labels per resource: user_values labels + desiredAndGitopsLabels.
+		mergedLabels, err := mergeResourceLabels(resource.Name, desired.UserValues, desiredAndGitopsLabels)
 		if err != nil {
 			return fmt.Errorf("instance %s: %w", desired.Name, err)
 		}
@@ -232,7 +235,7 @@ func (r *Reconciler) createInstance(ctx context.Context, repoID, latestCommit st
 	return err
 }
 
-func mergeResourceLabels(resourceName string, userValues []DesiredUserValue, gitopsLabels map[string]string) (map[string]string, error) {
+func mergeResourceLabels(resourceName string, userValues []DesiredUserValue, desiredAndGitopsLabels map[string]string) (map[string]string, error) {
 	mergedLabels := map[string]string{}
 	for _, uv := range userValues {
 		if uv.Resource != resourceName || !isMetadataLabelsPath(uv.Path) {
@@ -244,7 +247,7 @@ func mergeResourceLabels(resourceName string, userValues []DesiredUserValue, git
 		}
 		maps.Copy(mergedLabels, labels)
 	}
-	maps.Copy(mergedLabels, gitopsLabels)
+	maps.Copy(mergedLabels, desiredAndGitopsLabels)
 	return mergedLabels, nil
 }
 
