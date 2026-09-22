@@ -256,6 +256,34 @@
         }
       }
     },
+    "gitops": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Deploy the dcm-gitops controller, which reconciles catalog item instances declared in registered Git repositories."
+        },
+        "image": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string",
+          "description": "Image tag. Empty defaults to global.imageTag.",
+          "default": ""
+        },
+        "pollInterval": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 15,
+          "description": "Seconds between reloads of the repository list from the database."
+        },
+        "securityContext": {
+          "$ref": "#/definitions/securityContext"
+        }
+      }
+    },
     "auth": {
       "type": "object",
       "additionalProperties": false,

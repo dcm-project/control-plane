@@ -82,6 +82,17 @@ db_ref_count="$(printf '%s' "$db_ref_out" | grep -c 'name: dcm-db')"
 
 require_template_failure "acm without pullSecretRef" "acmClusterServiceProvider.pullSecretRef is required when enabled" --set acmClusterServiceProvider.enabled=true --set acmClusterServiceProvider.pullSecretRef=
 
+gitops_default_out="$(helm_out)"
+if printf '%s' "$gitops_default_out" | awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: dcm-gitops/ {found=1} END{exit !found}'; then
+	fail "gitops Deployment must not render when gitops.enabled=false"
+fi
+
+gitops_block="$(require_block "gitops Deployment when gitops.enabled=true" 'BEGIN{RS="---"} /kind: Deployment/ && /name: dcm-gitops/ {print; exit}' --set gitops.enabled=true --set gitops.pollInterval=30)"
+printf '%s' "$gitops_block" | grep -Fq -- "value: /data/gitops" || fail "gitops must set GIT_WORK_DIR"
+printf '%s' "$gitops_block" | grep -Fq -- 'mountPath: /data/gitops' || fail "gitops must mount a writable git work dir"
+printf '%s' "$gitops_block" | grep -Fq -- 'value: "30"' || fail "gitops must set POLL_INTERVAL from gitops.pollInterval"
+printf '%s' "$gitops_block" | grep -Fq -- 'name: dcm-db' || fail "gitops must reference postgres.dbSecretRef"
+
 require_external_kubeconfig() {
 	local name="$1"
 	local deployment="$2"

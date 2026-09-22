@@ -113,6 +113,51 @@ helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set threeTierDemoServiceProvider.enabled=true
 ```
 
+## Enabling the GitOps Controller
+
+The control-plane always serves the GitRepository API (`/api/v1alpha1/git-repositories`), but
+repositories are only polled and reconciled when the `dcm-gitops` controller is running. It is
+disabled by default:
+
+```bash
+helm upgrade dcm deploy/helm/dcm --reuse-values \
+  --set gitops.enabled=true
+```
+
+The controller runs as a single replica with no Service. It shares the `control-plane` database
+(using `postgres.dbSecretRef`) and clones repositories into an `emptyDir`, so clones are shallow and
+re-created after a restart.
+
+| Value | Default | Purpose |
+|-------|---------|---------|
+| `gitops.enabled` | `false` | Deploy the controller |
+| `gitops.image` | `quay.io/dcm-project/dcm-gitops` | Controller image |
+| `gitops.tag` | `""` | Empty defaults to `global.imageTag` |
+| `gitops.pollInterval` | `15` | Seconds between reloads of the repository list from the database |
+
+`gitops.pollInterval` controls how often the controller picks up repository *registrations*. How
+often each repository is fetched is per-repository, set by `spec.interval_seconds` on the
+GitRepository resource.
+
+Register a repository once the controller is up:
+
+```bash
+curl -X POST http://localhost:8080/api/v1alpha1/git-repositories \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "api_version": "v1alpha1",
+        "display_name": "Production Apps",
+        "spec": {
+          "url": "https://git.example.com/team/dcm-apps.git",
+          "ref": {"branch": "main"},
+          "path": "apps/production/",
+          "interval_seconds": 60
+        }
+      }'
+```
+
+Only public repositories over HTTPS are supported; the controller does not yet read Git credentials.
+
 ## Values schema and maintainability
 
 **Install-time validation**: `deploy/helm/dcm/values.schema.json` is the contract that helm validates against at install/upgrade/lint time.
