@@ -75,7 +75,7 @@ make compose-up AUTH=true
 
 Auth credentials live only in `deploy/.env` (see `deploy/.env.example`). Keycloak does
 not start with `make compose-up`; pass `AUTH=true` when auth is enabled in `.env`.
-With service providers: `make compose-up-with-providers PROFILES=kubevirt AUTH=true`.
+With the environment-agent: `make compose-up-with-agent AUTH=true`.
 
 For Helm chart installs, create the `dcm-auth` Secret and set `auth.enabled=true` — see
 [helm/dcm/README.md](helm/dcm/README.md#authentication).

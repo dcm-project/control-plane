@@ -4,7 +4,7 @@
 # Local dev: `make compose-up` builds control-plane from the repo Containerfile.
 #
 # Credentials: copy deploy/.env.example to deploy/.env before starting (see deploy/RUN.md).
-# Keycloak uses profile "auth" — pass AUTH=true to make compose-up / compose-up-with-providers.
+# Keycloak uses profile "auth" — pass AUTH=true to make compose-up / compose-up-with-agent.
 
 x-db-common: &db-common
   DB_TYPE: pgsql

@@ -75,15 +75,10 @@ make kind-connect KIND_SCRIPTS_DIR=/path/to/utilities/scripts/kind
 
 ### 5. Configure the agent
 
-**Required:** set `AGENT_EMBEDDED_SPS` in `deploy/.env`. Compose does not default this — an unset
-value means no embedded service providers.
+**Required:** set `AGENT_EMBEDDED_SPS` in `deploy/.env` (created in step 3). There is no default value
+and an unset value means no embedded service providers.
 
-```bash
-AGENT_EMBEDDED_SPS=container
-AGENT_KUBECONFIG_HOST=.kube/config
-```
-
-Add `vm`, `cluster`, or `storage` as needed (e.g. `container,vm`). Run `make install-kubevirt`
+Add `vm`, `cluster`, `container` or `storage` as needed (e.g. `container,vm`). Run `make install-kubevirt`
 when `vm` is included.
 
 ### 6. Start the agent (`compose-up-with-agent`)
