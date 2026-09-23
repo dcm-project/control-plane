@@ -180,6 +180,7 @@ Database, auth, and ACM pull-secret credentials are defined in `deploy/.env.exam
 | `AGENT_PORT`                               | `8081`                      | Host port for environment-agent HTTP API                                                                    |
 | `AGENT_EMBEDDED_SPS`                       | _(empty)_                   | **Required in `deploy/.env`** when using the agent profile. Comma-separated: `container`, `vm`, `cluster`, `storage` |
 | `AGENT_KUBECONFIG_HOST`                    | `~/.kube/config`            | Host kubeconfig bind mount; use `.kube/config` in `deploy/.env` with Kind (`make kubeconfig-for-compose`) |
+| `SP_DEFAULT_KUBECONFIG`                    | `/kubeconfig`               | In-container kubeconfig path for embedded SPs (set in `compose.yaml`; do not set in `.env`)               |
 | `SP_CONTAINER_NAMESPACE`                   | `default`                   | Container SP workload namespace (environment-agent)                                                         |
 | `SP_K8S_EXTERNAL_SVC_TYPE`                 | `NodePort`                  | Container SP external service type (environment-agent)                                                      |
 | `SP_VM_NAMESPACE`                          | `default`                   | VM SP workload namespace (environment-agent)                                                                  |
