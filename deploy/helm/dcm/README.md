@@ -124,9 +124,7 @@ helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set gitops.enabled=true
 ```
 
-The controller runs as a single replica with no Service. It shares the `control-plane` database
-(using `postgres.dbSecretRef`) and clones repositories into an `emptyDir`, so clones are shallow and
-re-created after a restart.
+Clones are ephemeral: repositories are cloned again after a controller restart.
 
 | Value | Default | Purpose |
 |-------|---------|---------|
