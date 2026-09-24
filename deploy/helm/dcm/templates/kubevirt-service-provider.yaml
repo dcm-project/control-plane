@@ -1,4 +1,44 @@
 {{- if .Values.kubevirtServiceProvider.enabled }}
+{{- if not .Values.kubevirtServiceProvider.kubeconfigRef }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "dcm.fullname" . }}-kubevirt-sp
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "dcm.fullname" . }}-kubevirt-sp
+  namespace: {{ .Values.kubevirtServiceProvider.namespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachines"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachineinstances"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "dcm.fullname" . }}-kubevirt-sp
+  namespace: {{ .Values.kubevirtServiceProvider.namespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "dcm.fullname" . }}-kubevirt-sp
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "dcm.fullname" . }}-kubevirt-sp
+    namespace: {{ .Release.Namespace }}
+---
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,6 +56,9 @@ spec:
       labels:
         {{- include "dcm.selectorLabels" (dict "context" . "component" "kubevirt-service-provider") | nindent 8 }}
     spec:
+      {{- if not .Values.kubevirtServiceProvider.kubeconfigRef }}
+      serviceAccountName: {{ include "dcm.fullname" . }}-kubevirt-sp
+      {{- end }}
       containers:
         - name: kubevirt-service-provider
           image: "{{ .Values.kubevirtServiceProvider.image }}:{{ include "dcm.imageTag" (dict "tag" .Values.kubevirtServiceProvider.tag "global" .Values.global) }}"

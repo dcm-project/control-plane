@@ -82,6 +82,38 @@ db_ref_count="$(printf '%s' "$db_ref_out" | grep -c 'name: dcm-db')"
 
 require_template_failure "acm without pullSecretRef" "acmClusterServiceProvider.pullSecretRef is required when enabled" --set acmClusterServiceProvider.enabled=true --set acmClusterServiceProvider.pullSecretRef=
 
+require_in_cluster_rbac() {
+	local name="$1"
+	local deployment="$2"
+	local sa="$3"
+	local namespace="$4"
+	shift 4
+
+	local out block
+	out="$(helm_out "$@")"
+	block="$(printf '%s' "$out" | awk -v deployment="$deployment" 'BEGIN{RS="---"} index($0, "kind: Deployment") && index($0, "name: dcm-" deployment) {print; exit}')"
+	[ -n "$block" ] || fail "missing $name Deployment"
+	printf '%s' "$block" | grep -Fq -- "serviceAccountName: $sa" || fail "$name must run as ServiceAccount $sa when kubeconfigRef is empty"
+	printf '%s' "$out" | awk -v sa="$sa" 'BEGIN{RS="---"} /kind: ServiceAccount/ && index($0, "name: " sa) {found=1} END{exit !found}' ||
+		fail "$name must render ServiceAccount $sa when kubeconfigRef is empty"
+	printf '%s' "$out" | awk -v sa="$sa" -v ns="$namespace" 'BEGIN{RS="---"} index($0, "kind: Role\n") && index($0, "name: " sa) && index($0, "namespace: " ns) {found=1} END{exit !found}' ||
+		fail "$name must render Role $sa in namespace $namespace"
+	printf '%s' "$out" | awk -v sa="$sa" -v ns="$namespace" 'BEGIN{RS="---"} index($0, "kind: RoleBinding\n") && index($0, "name: " sa) && index($0, "namespace: " ns) {found=1} END{exit !found}' ||
+		fail "$name must render RoleBinding $sa in namespace $namespace"
+}
+
+require_no_in_cluster_rbac() {
+	local name="$1"
+	local sa="$2"
+	shift 2
+
+	local out
+	out="$(helm_out "$@")"
+	if printf '%s' "$out" | awk -v sa="$sa" 'BEGIN{RS="---"} /kind: (ServiceAccount|Role|RoleBinding)/ && index($0, "name: " sa) {found=1} END{exit !found}'; then
+		fail "$name must not render ServiceAccount or RBAC $sa when kubeconfigRef is set"
+	fi
+}
+
 require_external_kubeconfig() {
 	local name="$1"
 	local deployment="$2"
@@ -106,3 +138,11 @@ require_external_kubeconfig "ACM provider" "acm-cluster-service-provider" "KUBEC
 require_external_kubeconfig "Kubernetes provider" "k8s-container-service-provider" "SP_K8S_KUBECONFIG" "k8s-kubeconfig" --set k8sContainerServiceProvider.enabled=true --set k8sContainerServiceProvider.kubeconfigRef=k8s-kubeconfig
 require_external_kubeconfig "KubeVirt provider" "kubevirt-service-provider" "KUBERNETES_KUBECONFIG" "kubevirt-kubeconfig" --set kubevirtServiceProvider.enabled=true --set kubevirtServiceProvider.kubeconfigRef=kubevirt-kubeconfig
 require_external_kubeconfig "three-tier provider" "three-tier-demo-sp" "SP_K8S_KUBECONFIG" "three-tier-kubeconfig" --set threeTierDemoServiceProvider.enabled=true --set threeTierDemoServiceProvider.kubeconfigRef=three-tier-kubeconfig
+
+require_in_cluster_rbac "Kubernetes provider" "k8s-container-service-provider" "dcm-k8s-container-sp" "apps" --set k8sContainerServiceProvider.enabled=true --set k8sContainerServiceProvider.namespace=apps
+require_in_cluster_rbac "KubeVirt provider" "kubevirt-service-provider" "dcm-kubevirt-sp" "vms" --set kubevirtServiceProvider.enabled=true --set kubevirtServiceProvider.namespace=vms
+require_no_in_cluster_rbac "KubeVirt provider" "dcm-kubevirt-sp" --set kubevirtServiceProvider.enabled=true --set kubevirtServiceProvider.kubeconfigRef=kubevirt-kubeconfig
+
+kubevirt_role="$(require_block "KubeVirt provider Role" 'BEGIN{RS="---"} index($0, "kind: Role\n") && index($0, "name: dcm-kubevirt-sp") {print; exit}' --set kubevirtServiceProvider.enabled=true)"
+printf '%s' "$kubevirt_role" | grep -Fq -- 'resources: ["virtualmachines"]' || fail "KubeVirt provider Role must grant virtualmachines"
+printf '%s' "$kubevirt_role" | grep -Fq -- 'resources: ["virtualmachineinstances"]' || fail "KubeVirt provider Role must grant virtualmachineinstances"
