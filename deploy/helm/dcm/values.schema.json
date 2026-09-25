@@ -221,6 +221,77 @@
           "type": "string"
         }
       }
+    },
+    "environmentAgentConfig": {
+      "title": "Optional Environment Agent Configuration",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Deploy the environment-agent with embedded Service Providers (in-cluster ServiceAccount auth)."
+        },
+        "image": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string",
+          "description": "Image tag. Empty defaults to global.imageTag.",
+          "default": ""
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "environment": {
+          "type": "string"
+        },
+        "cost": {
+          "type": "string"
+        },
+        "embeddedSps": {
+          "type": "string",
+          "description": "Comma-separated embedded SP identifiers: container, vm, storage, cluster.",
+          "default": "container"
+        },
+        "containerNamespace": {
+          "type": "string",
+          "default": "default"
+        },
+        "vmNamespace": {
+          "type": "string",
+          "default": "default"
+        },
+        "storageNamespace": {
+          "type": "string",
+          "default": "default"
+        },
+        "externalSvcType": {
+          "type": "string",
+          "default": "LoadBalancer",
+          "description": "Kubernetes Service type for container SP external services (NodePort for Kind/lab)."
+        },
+        "clusterNamespace": {
+          "type": "string",
+          "default": "clusters"
+        },
+        "baseDomain": {
+          "type": "string"
+        },
+        "pullSecretRef": {
+          "type": "string",
+          "description": "Name of an existing Secret with stringData key pull-secret. Required when embeddedSps includes cluster.",
+          "default": ""
+        },
+        "clusterInfraEnv": {
+          "type": "string",
+          "description": "Default InfraEnv for baremetal creates (SP_DEFAULT_INFRA_ENV)."
+        },
+        "clusterAgentNamespace": {
+          "type": "string",
+          "description": "ACM Agent CR namespace on the hub (not the environment-agent Pod namespace)."
+        }
+      }
     }
   },
   "properties": {
@@ -406,6 +477,9 @@
     },
     "threeTierDemoServiceProvider": {
       "$ref": "#/definitions/optionalServiceDefinition"
+    },
+    "environmentAgent": {
+      "$ref": "#/definitions/environmentAgentConfig"
     }
   }
 }

@@ -115,3 +115,22 @@ threeTierDemoServiceProvider:
   spName: three-tier-provider
   namespace: default
   kubeconfigRef: ""
+
+# -- Optional environment-agent (embedded SPs; in-cluster auth only)
+environmentAgent:
+  enabled: false
+  image: quay.io/dcm-project/environment-agent
+  tag: "main"
+  agentName: cluster-agent
+  environment: dev
+  cost: medium
+  embeddedSps: ""  # comma-separated: container, vm, storage, cluster
+  containerNamespace: default
+  vmNamespace: default
+  storageNamespace: default
+  externalSvcType: LoadBalancer  # NodePort for Kind/lab if needed
+  clusterNamespace: clusters
+  baseDomain: ""
+  pullSecretRef: ""  # required when embeddedSps includes cluster
+  clusterInfraEnv: ""  # baremetal default InfraEnv (SP_DEFAULT_INFRA_ENV)
+  clusterAgentNamespace: ""  # ACM Agent CR namespace (not the agent Pod namespace)
