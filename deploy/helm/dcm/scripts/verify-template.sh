@@ -106,3 +106,26 @@ require_external_kubeconfig "ACM provider" "acm-cluster-service-provider" "KUBEC
 require_external_kubeconfig "Kubernetes provider" "k8s-container-service-provider" "SP_K8S_KUBECONFIG" "k8s-kubeconfig" --set k8sContainerServiceProvider.enabled=true --set k8sContainerServiceProvider.kubeconfigRef=k8s-kubeconfig
 require_external_kubeconfig "KubeVirt provider" "kubevirt-service-provider" "KUBERNETES_KUBECONFIG" "kubevirt-kubeconfig" --set kubevirtServiceProvider.enabled=true --set kubevirtServiceProvider.kubeconfigRef=kubevirt-kubeconfig
 require_external_kubeconfig "three-tier provider" "three-tier-demo-sp" "SP_K8S_KUBECONFIG" "three-tier-kubeconfig" --set threeTierDemoServiceProvider.enabled=true --set threeTierDemoServiceProvider.kubeconfigRef=three-tier-kubeconfig
+
+# Environment agent
+require_block "environment-agent Deployment when enabled" 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Deployment/ {print; exit}' --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container >/dev/null
+require_block "environment-agent ServiceAccount when enabled" 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: ServiceAccount/ {print; exit}' --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container >/dev/null
+require_block "environment-agent workload Role when enabled" 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-workloads/ {print; exit}' --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container >/dev/null
+
+ea_out="$(helm_out --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container)"
+if printf '%s' "$ea_out" | grep -Fq 'SP_DEFAULT_KUBECONFIG'; then
+	fail "environment-agent must not set SP_DEFAULT_KUBECONFIG (in-cluster auth only)"
+fi
+if printf '%s' "$ea_out" | grep -Fq 'mountPath: /kubeconfig'; then
+	fail "environment-agent must not mount a kubeconfig"
+fi
+printf '%s' "$ea_out" | grep -Fq 'DCM_REGISTRATION_URL' || fail "environment-agent must set DCM_REGISTRATION_URL"
+printf '%s' "$ea_out" | grep -Fq 'http://dcm-control-plane:8080' || fail "environment-agent DCM_REGISTRATION_URL must be the control-plane base URL"
+
+require_template_failure "environment-agent cluster without pullSecretRef" \
+	"environmentAgent.pullSecretRef is required when embeddedSps includes cluster" \
+	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=cluster --set environmentAgent.pullSecretRef=
+
+require_block "environment-agent cluster Role when cluster embedded" \
+	'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-cluster/ {print; exit}' \
+	--set environmentAgent.enabled=true --set "environmentAgent.embeddedSps=container\,cluster" --set environmentAgent.pullSecretRef=acm-pull-secret >/dev/null

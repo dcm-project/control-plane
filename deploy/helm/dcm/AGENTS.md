@@ -4,7 +4,7 @@ Guidance for AI agents editing `deploy/helm/dcm/`. Humans installing or operatin
 
 ## Scope
 
-This chart deploys the DCM control plane stack (PostgreSQL, NATS, control-plane, optional UI, optional service providers, optional Keycloak auth). Chart path: `deploy/helm/dcm/`.
+This chart deploys the DCM control plane stack (PostgreSQL, NATS, control-plane, optional UI, optional environment-agent, optional Keycloak auth). Chart path: `deploy/helm/dcm/`.
 
 ## Source of truth
 

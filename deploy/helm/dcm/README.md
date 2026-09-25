@@ -10,9 +10,13 @@ AI agents maintaining this chart: see [AGENTS.md](AGENTS.md).
 
 ## Quick Start
 
-Create the database Secret in the target namespace before install (lab defaults):
+Create the target namespace and switch into it, then create the database Secret
+before install (lab defaults):
 
 ```bash
+kubectl create namespace dcm
+kubectl config set-context --current --namespace=dcm
+
 kubectl create secret generic dcm-db \
   --from-literal=POSTGRES_USER=admin \
   --from-literal=POSTGRES_PASSWORD=adminpass \
@@ -21,7 +25,9 @@ kubectl create secret generic dcm-db \
   --from-literal=DB_PASSWORD=adminpass
 ```
 
-Install all the components with a kubernetes provider using default namespace.
+Install all the components with a kubernetes provider. SP workload namespaces below
+stay `default` unless you change them. The release itself installs into the
+current context namespace (`dcm`).
 
 ### OpenShift
 
@@ -111,6 +117,52 @@ A demo provider for a three-tier application. Requires the Kubernetes Container 
 helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set k8sContainerServiceProvider.enabled=true \
   --set threeTierDemoServiceProvider.enabled=true
+```
+
+### Environment Agent
+
+Deploys the [environment-agent](https://github.com/dcm-project/environment-agent) with embedded
+Service Providers in-process. Uses a chart-created ServiceAccount and workload RBAC.
+
+```bash
+helm upgrade dcm deploy/helm/dcm --reuse-values \
+  --set environmentAgent.enabled=true \
+  --set environmentAgent.embeddedSps=container
+```
+
+To include `container` and `vm`
+
+```bash
+helm upgrade dcm deploy/helm/dcm --reuse-values \
+  --set environmentAgent.enabled=true \
+  --set environmentAgent.embeddedSps=container,vm \
+  --set environmentAgent.externalSvcType=LoadBalancer
+```
+
+When `embeddedSps` includes:
+
+1.  `vm`, ensure KubeVirt or CNV is installed and available on the cluster.
+2.  `container`, set `environmentAgent.externalSvcType=NodePort` on Kind.
+3.  `cluster`, create a pull-secret Secret and set `environmentAgent.pullSecretRef`:
+
+```bash
+PULL_SECRET=$(oc get secret pull-secret -n openshift-config -o jsonpath='{.data.\.dockerconfigjson}')
+kubectl create secret generic dcm-acm-pull-secret \
+  --from-literal=pull-secret="$PULL_SECRET"
+
+helm upgrade dcm deploy/helm/dcm --reuse-values \
+  --set environmentAgent.enabled=true \
+  --set environmentAgent.embeddedSps=container,cluster \
+  --set environmentAgent.pullSecretRef=dcm-acm-pull-secret \
+  --set environmentAgent.clusterNamespace=clusters \
+  --set environmentAgent.baseDomain=example.com
+```
+
+Agent API is ClusterIP. Port-forward to verify:
+
+```bash
+kubectl port-forward svc/dcm-environment-agent 8081:8080
+curl http://127.0.0.1:8081/api/v1alpha1/health
 ```
 
 ## Values schema and maintainability
