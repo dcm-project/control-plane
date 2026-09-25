@@ -97,7 +97,7 @@ var _ = Describe("Seed", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(network.ServiceType).To(Equal("network"))
 				Expect(network.Spec).To(HaveKey("ports"))
-				Expect(network.Spec).To(HaveKey("routing_level"))
+				Expect(network.Spec).ToNot(HaveKey("routing_level"))
 
 				err = svc.Seed(ctx)
 				Expect(err).ToNot(HaveOccurred())
@@ -105,6 +105,18 @@ var _ = Describe("Seed", func() {
 				err = db.Model(&model.ServiceType{}).Count(&count).Error
 				Expect(err).ToNot(HaveOccurred())
 				Expect(count).To(Equal(int64(7)))
+			})
+
+			It("omits routing_level from the freshly seeded network service type", func() {
+				ctx := context.Background()
+
+				err := svc.Seed(ctx)
+				Expect(err).ToNot(HaveOccurred())
+
+				network, err := dataStore.ServiceType().Get(ctx, "network")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(network.Spec).To(HaveKey("ports"))
+				Expect(network.Spec).ToNot(HaveKey("routing_level"))
 			})
 
 			DescribeTable("seeds service type with correct spec keys",
@@ -128,7 +140,7 @@ var _ = Describe("Seed", func() {
 				Entry("database", "database", []string{"engine", "version", "resources", "connection_string"}),
 				Entry("cluster", "cluster", []string{"version", "api_endpoint", "console_url", "kubeconfig"}),
 				Entry("storage", "storage", []string{"capacity", "volume_name"}),
-				Entry("network", "network", []string{"ports", "routing_level", "endpoints"}),
+				Entry("network", "network", []string{"ports", "endpoints"}),
 			)
 		})
 

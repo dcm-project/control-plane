@@ -166,6 +166,12 @@ func (b *specBuilder) buildResourceSpecFromFields(
 		}
 	}
 
+	if serviceTypeName == "network" {
+		if routingLevel, ok := specMap["routing_level"].(string); ok && routingLevel == "" {
+			delete(specMap, "routing_level")
+		}
+	}
+
 	return specMap, nil
 }
 
