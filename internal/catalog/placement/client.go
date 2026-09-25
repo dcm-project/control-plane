@@ -177,7 +177,7 @@ func (c *client) DeleteRun(ctx context.Context, runID string) error {
 			"run_id", runID,
 			"status", resp.StatusCode,
 		)
-		return fmt.Errorf("placement manager returned status %d: %s", resp.StatusCode, string(respBody))
+		return &PlacementError{StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 
 	c.logger.InfoContext(ctx, "Run deleted from placement manager", "run_id", runID)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -1021,6 +1022,21 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			Expect(deletedRunID).To(Equal(oldRunID))
 
 			// Verify local record deleted
+			_, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
+			Expect(getErr).To(Equal(service.ErrCatalogItemInstanceNotFound))
+		})
+
+		It("should delete the local record when PM run is already missing", func() {
+			instanceID := "pm-delete-missing-run"
+			seedCatalogItemInstance(ctx, str, instanceID)
+			mockPM.deleteFunc = func(_ context.Context, _ string) error {
+				return &placement.PlacementError{StatusCode: http.StatusNotFound, Body: "run not found"}
+			}
+
+			err := svc.CatalogItemInstance().Delete(ctx, instanceID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mockPM.deleteCalls).To(Equal(1))
+
 			_, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
 			Expect(getErr).To(Equal(service.ErrCatalogItemInstanceNotFound))
 		})
