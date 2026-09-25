@@ -266,7 +266,18 @@ func (s *stubCatalogItemService) Update(context.Context, string, *catalogservice
 func (s *stubCatalogItemService) Delete(context.Context, string) error { return nil }
 
 type stubCatalogItemInstanceService struct {
-	createFn func(context.Context, *catalogservice.CreateCatalogItemInstanceRequest) (*catalogv1alpha1.CatalogItemInstance, error)
+	createFn     func(context.Context, *catalogservice.CreateCatalogItemInstanceRequest) (*catalogv1alpha1.CatalogItemInstance, error)
+	validateFn   func(context.Context, catalogv1alpha1.CatalogItemInstanceSpec) error
+	deletedIDs   []string
+	validatedIDs []string
+}
+
+func (s *stubCatalogItemInstanceService) ValidateSpec(ctx context.Context, spec catalogv1alpha1.CatalogItemInstanceSpec) error {
+	s.validatedIDs = append(s.validatedIDs, spec.CatalogItemId)
+	if s.validateFn != nil {
+		return s.validateFn(ctx, spec)
+	}
+	return nil
 }
 
 func (s *stubCatalogItemInstanceService) List(context.Context, catalogservice.CatalogItemInstanceListOptions) (*catalogservice.CatalogItemInstanceListResult, error) {
@@ -283,7 +294,10 @@ func (s *stubCatalogItemInstanceService) Create(ctx context.Context, req *catalo
 func (s *stubCatalogItemInstanceService) Get(context.Context, string) (*catalogv1alpha1.CatalogItemInstance, error) {
 	return nil, nil
 }
-func (s *stubCatalogItemInstanceService) Delete(context.Context, string) error { return nil }
+func (s *stubCatalogItemInstanceService) Delete(_ context.Context, id string) error {
+	s.deletedIDs = append(s.deletedIDs, id)
+	return nil
+}
 func (s *stubCatalogItemInstanceService) Rehydrate(context.Context, string) (*catalogv1alpha1.CatalogItemInstance, error) {
 	return nil, nil
 }

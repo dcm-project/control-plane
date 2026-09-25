@@ -78,14 +78,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, repo model.GitRepository) er
 		return fmt.Errorf("all %d YAML files failed to parse", len(parseResult.Errors))
 	}
 
-	// 4. Get existing git-managed instance IDs for this repo
+	// 4. Validate the whole desired state before touching anything. This covers
+	// instances that already exist, whose edits produce no create/delete diff and
+	// would otherwise be reported as SYNCED without ever reaching the catalog.
+	// On failure nothing is applied and last_synced_commit is left untouched, so the
+	// last valid managed state is preserved and the bad commit is retried.
+	if validationErrors := r.validateDesiredInstances(ctx, repo.ID, latestCommit, parseResult.Instances); len(validationErrors) > 0 {
+		r.setError(ctx, repo.ID, fmt.Sprintf("invalid desired state at commit %s: %v", latestCommit, validationErrors))
+		return fmt.Errorf("%d invalid desired instances at commit %s", len(validationErrors), latestCommit)
+	}
+
+	// 5. Get existing git-managed instance IDs for this repo
 	managedIDs, err := r.gitopsStore.ManagedInstance().ListByRepo(ctx, repo.ID)
 	if err != nil {
 		r.setError(ctx, repo.ID, fmt.Sprintf("failed to list managed instances: %s", err.Error()))
 		return fmt.Errorf("list managed instances: %w", err)
 	}
 
-	// 5. Classify: create / delete
+	// 6. Classify: create / delete
 	desiredByName := make(map[string]DesiredInstance, len(parseResult.Instances))
 	for _, d := range parseResult.Instances {
 		desiredByName[d.Name] = d
@@ -117,10 +127,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, repo model.GitRepository) er
 		return nil
 	}
 
-	// 6. Set status IN_PROGRESS
+	// 7. Set status IN_PROGRESS
 	_ = r.gitopsStore.GitRepository().UpdateSyncStatus(ctx, repo.ID, "IN_PROGRESS", "Applying lifecycle changes", repo.LastSyncedCommit)
 
-	// 7. Apply creates
+	// 8. Apply creates
 	var reconcileErrors []string
 	for _, desired := range toCreate {
 		slog.InfoContext(ctx, "Creating instance from Git", "id", repo.ID, "instance_name", desired.Name)
@@ -135,7 +145,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, repo model.GitRepository) er
 		}
 	}
 
-	// 8. Apply deletes
+	// 9. Apply deletes
 	for _, instanceID := range toDelete {
 		slog.InfoContext(ctx, "Deleting instance removed from Git", "id", repo.ID, "instance_id", instanceID)
 		if err := r.catalogSvc.Delete(ctx, instanceID); err != nil {
@@ -149,7 +159,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, repo model.GitRepository) er
 		}
 	}
 
-	// 9. Update status
+	// 10. Update status
 	if len(reconcileErrors) > 0 {
 		r.setError(ctx, repo.ID, fmt.Sprintf("reconciliation errors: %v", reconcileErrors))
 		return fmt.Errorf("reconciliation had %d errors", len(reconcileErrors))
@@ -167,13 +177,36 @@ func (r *Reconciler) createInstance(ctx context.Context, repoID, latestCommit st
 		apiVersion = "v1alpha1"
 	}
 
+	userValues, err := r.buildUserValues(ctx, repoID, latestCommit, desired)
+	if err != nil {
+		return err
+	}
+
+	req := &catalogservice.CreateCatalogItemInstanceRequest{
+		ApiVersion:  apiVersion,
+		DisplayName: desired.DisplayName,
+		Spec: catalogv1alpha1.CatalogItemInstanceSpec{
+			CatalogItemId: desired.CatalogItemID,
+			UserValues:    userValues,
+		},
+	}
+	// Use the desired instance name as the ID
+	req.ID = &desired.Name
+
+	_, err = r.catalogSvc.Create(ctx, req)
+	return err
+}
+
+// buildUserValues turns a desired instance from Git into the user values that
+// would be submitted to the catalog service, injecting the GitOps labels.
+func (r *Reconciler) buildUserValues(ctx context.Context, repoID, latestCommit string, desired DesiredInstance) ([]catalogv1alpha1.UserValue, error) {
 	// Look up catalog item to get all resource names
 	catalogItem, err := r.catalogItemSvc.Get(ctx, desired.CatalogItemID)
 	if err != nil {
-		return fmt.Errorf("get catalog item %s: %w", desired.CatalogItemID, err)
+		return nil, fmt.Errorf("get catalog item %s: %w", desired.CatalogItemID, err)
 	}
 	if catalogItem.Spec == nil {
-		return fmt.Errorf("catalog item %s has no spec", desired.CatalogItemID)
+		return nil, fmt.Errorf("catalog item %s has no spec", desired.CatalogItemID)
 	}
 
 	// Desired labels first
@@ -192,7 +225,7 @@ func (r *Reconciler) createInstance(ctx context.Context, repoID, latestCommit st
 		// One metadata.labels per resource: user_values labels + desiredAndGitopsLabels.
 		mergedLabels, err := mergeResourceLabels(resource.Name, desired.UserValues, desiredAndGitopsLabels)
 		if err != nil {
-			return fmt.Errorf("instance %s: %w", desired.Name, err)
+			return nil, fmt.Errorf("instance %s: %w", desired.Name, err)
 		}
 		userValues = append(userValues, catalogv1alpha1.UserValue{
 			Resource: resource.Name,
@@ -205,10 +238,10 @@ func (r *Reconciler) createInstance(ctx context.Context, repoID, latestCommit st
 	// Append the user's original values
 	for _, uv := range desired.UserValues {
 		if uv.Resource == "" {
-			return fmt.Errorf("instance %s: %w", desired.Name, catalogservice.ErrUserValueResourceRequired)
+			return nil, fmt.Errorf("instance %s: %w", desired.Name, catalogservice.ErrUserValueResourceRequired)
 		}
 		if !knownResources[uv.Resource] {
-			return fmt.Errorf("instance %s: %w: %s", desired.Name, catalogservice.ErrUserValueResourceNotFound, uv.Resource)
+			return nil, fmt.Errorf("instance %s: %w: %s", desired.Name, catalogservice.ErrUserValueResourceNotFound, uv.Resource)
 		}
 		if isMetadataLabelsPath(uv.Path) {
 			continue
@@ -220,19 +253,37 @@ func (r *Reconciler) createInstance(ctx context.Context, repoID, latestCommit st
 		})
 	}
 
-	req := &catalogservice.CreateCatalogItemInstanceRequest{
-		ApiVersion:  apiVersion,
-		DisplayName: desired.DisplayName,
-		Spec: catalogv1alpha1.CatalogItemInstanceSpec{
-			CatalogItemId: desired.CatalogItemID,
-			UserValues:    userValues,
-		},
-	}
-	// Use the desired instance name as the ID
-	req.ID = &desired.Name
+	return userValues, nil
+}
 
-	_, err = r.catalogSvc.Create(ctx, req)
-	return err
+// validateDesired resolves every desired instance against the catalog without
+// persisting anything. A manifest the catalog cannot apply must fail the whole
+// cycle rather than be reported as synced; see validateDesiredInstances.
+func (r *Reconciler) validateDesired(ctx context.Context, repoID, latestCommit string, desired DesiredInstance) error {
+	userValues, err := r.buildUserValues(ctx, repoID, latestCommit, desired)
+	if err != nil {
+		return err
+	}
+	return r.catalogSvc.ValidateSpec(ctx, catalogv1alpha1.CatalogItemInstanceSpec{
+		CatalogItemId: desired.CatalogItemID,
+		UserValues:    userValues,
+	})
+}
+
+// validateDesiredInstances validates every instance in the desired state, including
+// ones already managed by this repository. Without this, a semantically invalid edit
+// to an existing instance produces an empty create/delete diff and the repository is
+// wrongly reported as SYNCED.
+func (r *Reconciler) validateDesiredInstances(ctx context.Context, repoID, latestCommit string, desired []DesiredInstance) []string {
+	var errs []string
+	for _, d := range desired {
+		if err := r.validateDesired(ctx, repoID, latestCommit, d); err != nil {
+			slog.ErrorContext(ctx, "Invalid desired instance", "id", repoID, "instance_name", d.Name,
+				"file", d.SourceFile, "error", err)
+			errs = append(errs, fmt.Sprintf("%s (%s): %s", d.Name, d.SourceFile, err.Error()))
+		}
+	}
+	return errs
 }
 
 func mergeResourceLabels(resourceName string, userValues []DesiredUserValue, desiredAndGitopsLabels map[string]string) (map[string]string, error) {

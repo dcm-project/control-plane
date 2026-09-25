@@ -44,6 +44,7 @@ type CatalogItemInstanceService interface {
 	Get(ctx context.Context, id string) (*v1alpha1.CatalogItemInstance, error)
 	Delete(ctx context.Context, id string) error
 	Rehydrate(ctx context.Context, id string) (*v1alpha1.CatalogItemInstance, error)
+	ValidateSpec(ctx context.Context, spec v1alpha1.CatalogItemInstanceSpec) error
 }
 
 type catalogItemInstanceService struct {
@@ -103,6 +104,20 @@ func (s *catalogItemInstanceService) Create(ctx context.Context, req *CreateCata
 	path := fmt.Sprintf("catalog-item-instances/%s", id)
 
 	return s.createInstance(ctx, id, path, req)
+}
+
+// ValidateSpec resolves the spec exactly as Create would, but persists nothing.
+// It lets callers that hold a desired spec (e.g. the GitOps reconciler) reject an
+// unapplyable spec instead of silently ignoring it.
+func (s *catalogItemInstanceService) ValidateSpec(ctx context.Context, spec v1alpha1.CatalogItemInstanceSpec) error {
+	resolved, err := s.specBuilder.BuildResourceGraph(ctx, spec.CatalogItemId, spec.UserValues)
+	if err != nil {
+		return err
+	}
+	if len(resolved) == 0 {
+		return fmt.Errorf("%w: catalog item has no resources", ErrCatalogItemSpecConflict)
+	}
+	return nil
 }
 
 func (s *catalogItemInstanceService) createInstance(ctx context.Context, id, path string, req *CreateCatalogItemInstanceRequest) (*v1alpha1.CatalogItemInstance, error) {
