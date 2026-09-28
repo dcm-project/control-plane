@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/dcm-project/control-plane/internal/sp/store/model"
 	"gorm.io/driver/sqlite"
@@ -43,16 +42,11 @@ func TestGormLogLevelFromString(t *testing.T) {
 
 func TestParameterizedQueriesRedactsBoundValues(t *testing.T) {
 	var buf bytes.Buffer
-	gormLogger := logger.New(
-		log.New(&buf, "", 0),
-		logger.Config{
-			SlowThreshold:             time.Second,
-			LogLevel:                  logger.Info,
-			IgnoreRecordNotFoundError: true,
-			ParameterizedQueries:      true,
-			Colorful:                  false,
-		},
-	)
+
+	// Use the same logger config as production InitDB so the test
+	// fails if ParameterizedQueries is removed from the shared config.
+	cfg := gormLoggerConfig(logger.Info)
+	gormLogger := logger.New(log.New(&buf, "", 0), cfg)
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
 		Logger: gormLogger,
@@ -78,13 +72,19 @@ func TestParameterizedQueriesRedactsBoundValues(t *testing.T) {
 
 	buf.Reset()
 
-	db.Model(&model.ServiceTypeInstance{}).
+	result := db.Model(&model.ServiceTypeInstance{}).
 		Where("id = ?", instance.ID).
 		Select("status", "status_message", "output_spec").
 		Updates(&model.ServiceTypeInstance{
 			Status:     "running",
 			OutputSpec: map[string]any{"connection_string": marker},
 		})
+	if result.Error != nil {
+		t.Fatalf("update failed: %v", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		t.Fatalf("expected 1 row affected, got %d", result.RowsAffected)
+	}
 
 	logged := buf.String()
 
