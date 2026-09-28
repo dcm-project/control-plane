@@ -132,7 +132,12 @@ authenticated request (JIT provisioning) — no manual DB setup is required.
 Check that all services are running:
 
 ```bash
-podman compose -f deploy/compose.yaml ps    # or: docker compose -f deploy/compose.yaml ps
+# Auth disabled (replace `podman compose` with `docker compose` when using Docker)
+podman compose --env-file deploy/.env -f deploy/compose.yaml ps
+
+# Auth enabled
+podman compose --env-file deploy/.env -f deploy/compose.yaml \
+  -f deploy/compose.auth.yaml --profile auth ps
 ```
 
 Check the health endpoint (unauthenticated, works regardless of `AUTH_DISABLED`):

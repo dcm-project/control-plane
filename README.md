@@ -82,7 +82,7 @@ in shared-workflows for tag behavior and version conventions.
 
 Full-stack Compose and Helm packaging live under `deploy/`:
 
-- **Compose:** control-plane, postgres, nats, keycloak, dcm-ui, and optional environment-agent profile
+- **Compose:** control-plane, postgres, nats, and dcm-ui; optional Keycloak auth and environment-agent profile
 - **Helm:** Kubernetes/OpenShift chart at `deploy/helm/dcm` (optional auth via `auth.enabled`)
 
 See [deploy/RUN.md](deploy/RUN.md) for local stack usage, authentication, and the environment-agent profile.
@@ -96,7 +96,7 @@ control plane.
 | Port | Service | Notes |
 |---|---|---|
 | `:8080` | control-plane API | Direct access; validates JWT bearer tokens when auth enabled |
-| `:8180` | Keycloak | Identity provider (OIDC issuer) |
+| `:8180` | Keycloak (optional) | Identity provider (OIDC issuer; enabled with `AUTH=true`) |
 | `:7007` | dcm-ui | Web UI |
 
 ### Image versions
