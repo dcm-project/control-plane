@@ -42,6 +42,7 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 			SlowThreshold:             time.Second,
 			LogLevel:                  gormLogLevel,
 			IgnoreRecordNotFoundError: true,
+			ParameterizedQueries:      true,
 			Colorful:                  false,
 		},
 	)
