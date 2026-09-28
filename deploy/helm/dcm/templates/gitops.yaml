@@ -1,0 +1,52 @@
+{{- if .Values.gitops.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dcm.fullname" . }}-gitops
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+    {{- include "dcm.selectorLabels" (dict "context" . "component" "gitops") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "dcm.selectorLabels" (dict "context" . "component" "gitops") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dcm.selectorLabels" (dict "context" . "component" "gitops") | nindent 8 }}
+    spec:
+      initContainers:
+        {{- include "dcm.waitForPostgres" . | nindent 8 }}
+      containers:
+        - name: gitops
+          image: "{{ .Values.gitops.image }}:{{ include "dcm.imageTag" (dict "tag" .Values.gitops.tag "global" .Values.global) }}"
+          securityContext:
+            {{- toYaml .Values.gitops.securityContext | nindent 12 }}
+          envFrom:
+            - secretRef:
+                name: {{ include "dcm.dbSecretName" . }}
+          env:
+            - name: DB_TYPE
+              value: pgsql
+            - name: DB_HOST
+              value: {{ include "dcm.fullname" . }}-postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: control-plane
+            - name: LOG_LEVEL
+              value: info
+            - name: GIT_WORK_DIR
+              value: /data/gitops
+            - name: POLL_INTERVAL
+              value: {{ .Values.gitops.pollInterval | quote }}
+          volumeMounts:
+            - name: git-work-dir
+              mountPath: /data/gitops
+      volumes:
+        - name: git-work-dir
+          emptyDir: {}
+{{- end }}

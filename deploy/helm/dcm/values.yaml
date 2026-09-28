@@ -36,6 +36,21 @@ controlPlane:
     tls: []
     annotations: {}
 
+# -- GitOps controller (reconciles catalog item instances declared in Git repositories)
+gitops:
+  enabled: false
+  image: quay.io/dcm-project/dcm-gitops
+  tag: ""  # defaults to global.imageTag
+  pollInterval: 15  # seconds between reloads of the repository list from the database
+  securityContext:
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+
 # -- Authentication (mirrors compose: Keycloak + control-plane JWT/proxy-header auth)
 auth:
   enabled: false
