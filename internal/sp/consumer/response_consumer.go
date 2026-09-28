@@ -40,7 +40,19 @@ type eventData struct {
 	// AgentName is checked against the instance's currently assigned
 	// agent_name before any status transition, rejecting late events from
 	// an agent superseded by self-healing.
-	AgentName string `json:"agent_name"`
+	AgentName string            `json:"agent_name"`
+	Error     string            `json:"error"`
+	Details   agentErrorDetails `json:"details"`
+}
+
+type agentErrorDetails struct {
+	Message       string               `json:"message"`
+	ProviderError providerErrorDetails `json:"provider_error"`
+}
+
+type providerErrorDetails struct {
+	StatusCode any    `json:"status_code"`
+	Message    string `json:"message"`
 }
 
 type ResponseConsumer struct {
@@ -208,6 +220,7 @@ func (c *ResponseConsumer) handleMessage(msg jetstream.Msg) {
 	// status has since cycled back into an allowed fromStatus under a new one.
 	var newStatus string
 	var fromStatuses []string
+	var statusMessage string
 	switch ce.Type {
 	case messaging.CETypeCreationAcknowledged:
 		newStatus = model.StatusProvisioning
@@ -215,6 +228,22 @@ func (c *ResponseConsumer) handleMessage(msg jetstream.Msg) {
 	case messaging.CETypeError:
 		newStatus = model.StatusFailed
 		fromStatuses = []string{model.StatusPending, model.StatusQueued, model.StatusProvisioning}
+		statusMessage = data.Details.ProviderError.Message
+		if statusMessage == "" {
+			statusMessage = data.Details.Message
+		}
+		if statusMessage == "" {
+			statusMessage = data.Error
+		}
+
+		attrs := []any{"instance_id", data.ResourceID, "event_type", ce.Type, "agent_name", data.AgentName, "error_classification", data.Error, "details_message", data.Details.Message}
+		if data.Details.ProviderError.StatusCode != nil {
+			attrs = append(attrs, "provider_status_code", data.Details.ProviderError.StatusCode)
+		}
+		if data.Details.ProviderError.Message != "" {
+			attrs = append(attrs, "provider_error_message", data.Details.ProviderError.Message)
+		}
+		slog.Error("agent reported error", attrs...)
 	case messaging.CETypeCancelAcknowledged:
 		newStatus = model.StatusCancelled
 		fromStatuses = []string{model.StatusQueued}
@@ -225,7 +254,7 @@ func (c *ResponseConsumer) handleMessage(msg jetstream.Msg) {
 	}
 
 	stiStore := c.store.ServiceTypeInstance()
-	applied, err := stiStore.UpdateStatusFrom(ctx, data.ResourceID, fromStatuses, data.AgentName, newStatus, "")
+	applied, err := stiStore.UpdateStatusFrom(ctx, data.ResourceID, fromStatuses, data.AgentName, newStatus, statusMessage)
 	if err != nil {
 		slog.Error("failed to update status, nacking", "instance_id", data.ResourceID, "event_type", ce.Type, "agent_name", data.AgentName, "error", err)
 		_ = msg.NakWithDelay(5 * time.Second)
