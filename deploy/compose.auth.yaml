@@ -1,0 +1,6 @@
+# Authentication-only dependency: load alongside compose.yaml with --profile auth.
+services:
+  control-plane:
+    depends_on:
+      keycloak:
+        condition: service_healthy

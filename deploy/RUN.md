@@ -28,7 +28,13 @@ make compose-up
 `deploy/.env.example`; copy and edit before first start.
 
 `make compose-up` and `docker compose --env-file deploy/.env -f deploy/compose.yaml up` are
-equivalent; the Makefile target is a thin wrapper around Compose.
+equivalent for auth-disabled startup. For authentication, use `make compose-up AUTH=true` or
+include the auth override and profile in the direct Compose invocation:
+
+```bash
+docker compose --env-file deploy/.env \
+  -f deploy/compose.yaml -f deploy/compose.auth.yaml --profile auth up
+```
 
 The control-plane API is at `http://localhost:8080`. DCM UI is at `http://localhost:7007`.
 
@@ -144,13 +150,20 @@ curl http://localhost:7007/api/dcm/health
 When authentication is enabled (`make compose-up AUTH=true`), verify Keycloak is ready:
 
 ```bash
-podman compose -f deploy/compose.yaml --profile auth exec keycloak curl -sf http://localhost:9000/health/ready | jq .
+podman compose --env-file deploy/.env -f deploy/compose.yaml -f deploy/compose.auth.yaml \
+  --profile auth exec keycloak curl -sf http://localhost:9000/health/ready | jq .
 ```
 
 ## Stopping services
 
 ```bash
 make compose-down
+```
+
+If authentication was enabled, pass `AUTH=true` so teardown uses the same Compose model:
+
+```bash
+make compose-down AUTH=true
 ```
 
 This stops all compose services and removes volumes. If Kind was connected to
