@@ -82,7 +82,7 @@ dcmUi:
 environmentAgent:
   enabled: false
   image: quay.io/dcm-project/environment-agent
-  tag: "main"
+  tag: ""  # defaults to global.imageTag
   agentName: cluster-agent
   environment: dev
   cost: medium

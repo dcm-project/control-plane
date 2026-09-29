@@ -64,6 +64,10 @@ Then open:
 Deploys the [environment-agent](https://github.com/dcm-project/environment-agent) with embedded
 Service Providers in-process. Uses a chart-created ServiceAccount and workload RBAC.
 
+Escape commas in `--set` values (for example `container\,vm`). Workload namespaces default to
+`default`. If you change `containerNamespace`, `vmNamespace`,
+`storageNamespace`, or `clusterNamespace`, create those namespaces before install/upgrade.
+
 ```bash
 helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set environmentAgent.enabled=true \
@@ -75,7 +79,7 @@ To include `container` and `vm`:
 ```bash
 helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set environmentAgent.enabled=true \
-  --set environmentAgent.embeddedSps=container,vm \
+  --set environmentAgent.embeddedSps=container\,vm \
   --set environmentAgent.externalSvcType=LoadBalancer
 ```
 
@@ -92,7 +96,7 @@ kubectl create secret generic dcm-acm-pull-secret \
 
 helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set environmentAgent.enabled=true \
-  --set environmentAgent.embeddedSps=container,cluster \
+  --set environmentAgent.embeddedSps=container\,cluster \
   --set environmentAgent.pullSecretRef=dcm-acm-pull-secret \
   --set environmentAgent.clusterNamespace=clusters \
   --set environmentAgent.baseDomain=example.com
@@ -224,7 +228,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1alpha1/provid
 helm uninstall dcm
 ```
 
-Note: PersistentVolumeClaims for PostgreSQL and NATS are not deleted automatically. To remove them:
+Note: PersistentVolumeClaims for PostgreSQL, NATS, and the environment-agent are not deleted automatically. To remove them:
 
 ```bash
 kubectl delete pvc -l app.kubernetes.io/instance=dcm

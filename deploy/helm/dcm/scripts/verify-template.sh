@@ -94,11 +94,30 @@ if printf '%s' "$ea_out" | grep -Fq 'mountPath: /kubeconfig'; then
 fi
 printf '%s' "$ea_out" | grep -Fq 'DCM_REGISTRATION_URL' || fail "environment-agent must set DCM_REGISTRATION_URL"
 printf '%s' "$ea_out" | grep -Fq 'http://dcm-control-plane:8080' || fail "environment-agent DCM_REGISTRATION_URL must be the control-plane base URL"
+if printf '%s' "$ea_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Deployment/ && /emptyDir:/ {found=1} END{exit !found}'; then
+	fail "environment-agent must not use emptyDir for registrations"
+fi
+printf '%s' "$ea_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: PersistentVolumeClaim/ && /environment-agent-data/ {found=1} END{exit !found}' \
+	|| fail "environment-agent must render a registrations PVC"
 
 require_template_failure "environment-agent cluster without pullSecretRef" \
 	"environmentAgent.pullSecretRef is required when embeddedSps includes cluster" \
 	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=cluster --set environmentAgent.pullSecretRef=
 
-require_block "environment-agent cluster Role when cluster embedded" \
-	'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-cluster/ {print; exit}' \
-	--set environmentAgent.enabled=true --set "environmentAgent.embeddedSps=container\,cluster" --set environmentAgent.pullSecretRef=acm-pull-secret >/dev/null
+cluster_out="$(helm_out --set environmentAgent.enabled=true --set "environmentAgent.embeddedSps=container\,cluster" --set environmentAgent.pullSecretRef=acm-pull-secret)"
+printf '%s' "$cluster_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-cluster/ {found=1} END{exit !found}' \
+	|| fail "missing environment-agent cluster Role when cluster embedded"
+printf '%s' "$cluster_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Deployment/ && /name: SP_PULL_SECRET/ && /name: acm-pull-secret/ {found=1} END{exit !found}' \
+	|| fail "environment-agent cluster Deployment must reference pullSecretRef via SP_PULL_SECRET"
+
+# Separate-namespace Roles for vm / storage
+require_block "environment-agent vm Role when vmNamespace differs" \
+	'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-vm/ && /namespace: kubevirt/ {print; exit}' \
+	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=vm \
+	--set environmentAgent.vmNamespace=kubevirt --set environmentAgent.containerNamespace=default >/dev/null
+
+require_block "environment-agent storage Role when storageNamespace differs" \
+	'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-storage/ && /namespace: storage-ns/ {print; exit}' \
+	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=storage \
+	--set environmentAgent.storageNamespace=storage-ns --set environmentAgent.containerNamespace=default >/dev/null
+

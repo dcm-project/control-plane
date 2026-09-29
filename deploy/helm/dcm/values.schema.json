@@ -203,7 +203,7 @@
         "embeddedSps": {
           "type": "string",
           "description": "Comma-separated embedded SP identifiers: container, vm, storage, cluster.",
-          "default": "container"
+          "default": ""
         },
         "containerNamespace": {
           "type": "string",

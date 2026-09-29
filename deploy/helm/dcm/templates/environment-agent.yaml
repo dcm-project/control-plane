@@ -190,6 +190,19 @@ subjects:
     namespace: {{ .Release.Namespace }}
 ---
 {{- end }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-data
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+    {{- include "dcm.selectorLabels" (dict "context" . "component" "environment-agent") | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 100Mi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -264,7 +277,8 @@ spec:
               mountPath: /var/lib/environment-agent/data
       volumes:
         - name: registrations
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: {{ include "dcm.fullname" . }}-environment-agent-data
 ---
 apiVersion: v1
 kind: Service
