@@ -173,55 +173,6 @@
         "storage"
       ]
     },
-    "optionalServiceDefinition": {
-      "title": "Optional Service Provider Configuration",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "image": {
-          "type": "string"
-        },
-        "tag": {
-          "type": "string",
-          "description": "Image tag. Empty defaults to global.imageTag.",
-          "default": ""
-        },
-        "namespace": {
-          "type": "string"
-        },
-        "providerName": {
-          "type": "string"
-        },
-        "spName": {
-          "type": "string"
-        },
-        "baseDomain": {
-          "type": "string"
-        },
-        "externalSvcType": {
-          "type": "string"
-        },
-        "kubeconfigRef": {
-          "type": "string",
-          "description": "Name of an existing Secret in the release namespace with key kubeconfig.",
-          "default": ""
-        },
-        "pullSecretRef": {
-          "type": "string",
-          "description": "Name of an existing Secret in the release namespace with stringData key pull-secret (base64-encoded .dockerconfigjson).",
-          "default": "dcm-acm-pull-secret"
-        },
-        "defaultInfraEnv": {
-          "type": "string"
-        },
-        "agentNamespace": {
-          "type": "string"
-        }
-      }
-    },
     "environmentAgentConfig": {
       "title": "Optional Environment Agent Configuration",
       "type": "object",
@@ -465,18 +416,6 @@
           "$ref": "#/definitions/ingress"
         }
       }
-    },
-    "kubevirtServiceProvider": {
-      "$ref": "#/definitions/optionalServiceDefinition"
-    },
-    "k8sContainerServiceProvider": {
-      "$ref": "#/definitions/optionalServiceDefinition"
-    },
-    "acmClusterServiceProvider": {
-      "$ref": "#/definitions/optionalServiceDefinition"
-    },
-    "threeTierDemoServiceProvider": {
-      "$ref": "#/definitions/optionalServiceDefinition"
     },
     "environmentAgent": {
       "$ref": "#/definitions/environmentAgentConfig"

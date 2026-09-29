@@ -15,7 +15,7 @@ This chart deploys the DCM control plane stack (PostgreSQL, NATS, control-plane,
 | `templates/` | Rendered Kubernetes manifests; template `fail` for render-time rules |
 | `scripts/verify-template.sh` | Positive and negative render-time tests |
 | `scripts/verify-schema.sh` | Negative schema validation tests |
-| `README.md` | User-facing install, auth, and service-provider docs |
+| `README.md` | User-facing install, auth, and environment-agent docs |
 
 Do not auto-generate `values.schema.json`. Hand-maintain it to mirror `values.yaml`.
 
