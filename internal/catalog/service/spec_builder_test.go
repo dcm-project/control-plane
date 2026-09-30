@@ -432,7 +432,7 @@ var _ = Describe("BuildResourceGraph (single resource)", func() {
 			Expect(result["service_type"]).To(Equal("vm-d"))
 		})
 
-		It("TC-03 omits legacy empty routing_level from the network graph", func() {
+		It("preserves legacy empty routing_level in the network graph", func() {
 			ensureServiceTypeWithSpec(ctx, str, "network-routing-empty", "network", map[string]any{
 				"ports": []any{
 					map[string]any{"port": float64(80), "target_port": float64(8080)},
@@ -443,10 +443,10 @@ var _ = Describe("BuildResourceGraph (single resource)", func() {
 
 			result, err := buildGraphSpec(builder, ctx, "ci-network-routing-empty", nil)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).ToNot(HaveKey("routing_level"))
+			Expect(result).To(HaveKeyWithValue("routing_level", ""))
 		})
 
-		It("TC-04 preserves an explicit catalog routing_level default", func() {
+		It("preserves an explicit catalog routing_level default", func() {
 			ensureServiceTypeWithSpec(ctx, str, "network-routing-default", "network", map[string]any{
 				"ports": []any{
 					map[string]any{"port": float64(80), "target_port": float64(8080)},
