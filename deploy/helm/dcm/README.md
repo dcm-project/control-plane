@@ -67,6 +67,16 @@ Service Providers in-process. Uses a chart-created ServiceAccount and workload R
 With `auth.enabled=true`, registration and heartbeats use Keycloak client credentials
 (`dcm-proxy` by default).
 
+Environment Agent's embedded SP mapping to a backend platform :
+
+| Embedded SP | Backend |
+|---|---|
+| `container` | Kubernetes Deployments\|Pods\|Services |
+| `vm` | KubeVirt VirtualMachines |
+| `storage` | Kubernetes PersistentVolumeClaims |
+| `network` | Kubernetes Services |
+| `cluster` | ACM/MCE HyperShift |
+
 Escape commas in `--set` values (for example `container\,vm`). Workload namespaces default to
 `default`. If you change `containerNamespace`, `vmNamespace`, `storageNamespace`,
 `networkNamespace`, or `clusterNamespace`, create those namespaces before install/upgrade.
