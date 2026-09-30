@@ -64,6 +64,9 @@ Then open:
 Deploys the [environment-agent](https://github.com/dcm-project/environment-agent) with embedded
 Service Providers in-process. Uses a chart-created ServiceAccount and workload RBAC.
 
+With `auth.enabled=true`, registration and heartbeats use Keycloak client credentials
+(`dcm-proxy` by default).
+
 Escape commas in `--set` values (for example `container\,vm`). Workload namespaces default to
 `default`. If you change `containerNamespace`, `vmNamespace`,
 `storageNamespace`, or `clusterNamespace`, create those namespaces before install/upgrade.
@@ -169,9 +172,9 @@ chart bundles a copy under `files/`; after editing the source, run `make helm-ch
 and commit both files. `make helm-chart-verify-sync` catches drift; CI runs
 `make helm-chart-check` (verify, lint, template).
 
-> **Warning:** Service providers do not forward authentication headers yet, so enabling
-> auth can break SP workflows. The CLI (`dcm login` / bearer token) and direct API
-> calls with a valid Keycloak JWT work.
+When `auth.enabled=true` with the environment-agent, the chart sets `DCM_AUTH_*` using
+the Keycloak `dcm-proxy` client (`AUTH_PROXY_SECRET` in `auth.authSecretRef`). Override
+the client with `environmentAgent.authClientID` if needed.
 
 ### Auth values
 

@@ -241,6 +241,11 @@
         "clusterAgentNamespace": {
           "type": "string",
           "description": "ACM Agent CR namespace on the hub (not the environment-agent Pod namespace)."
+        },
+        "authClientID": {
+          "type": "string",
+          "default": "dcm-proxy",
+          "description": "Keycloak client ID for DCM registration."
         }
       }
     }

@@ -121,3 +121,14 @@ require_block "environment-agent storage Role when storageNamespace differs" \
 	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=storage \
 	--set environmentAgent.storageNamespace=storage-ns --set environmentAgent.containerNamespace=default >/dev/null
 
+# Environment-agent DCM auth when auth.enabled
+ea_auth_out="$(helm_out --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container --set auth.enabled=true)"
+printf '%s' "$ea_auth_out" | grep -Fq 'DCM_AUTH_TOKEN_ENDPOINT' || fail "environment-agent must set DCM_AUTH_TOKEN_ENDPOINT when auth.enabled"
+printf '%s' "$ea_auth_out" | grep -Fq 'DCM_AUTH_CLIENT_ID' || fail "environment-agent must set DCM_AUTH_CLIENT_ID when auth.enabled"
+printf '%s' "$ea_auth_out" | grep -Fq 'DCM_AUTH_CLIENT_SECRET' || fail "environment-agent must set DCM_AUTH_CLIENT_SECRET when auth.enabled"
+printf '%s' "$ea_auth_out" | grep -Fq 'openid-connect/token' || fail "environment-agent DCM_AUTH_TOKEN_ENDPOINT must be the Keycloak token URL"
+printf '%s' "$ea_auth_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Deployment/ && /key: AUTH_PROXY_SECRET/ {found=1} END{exit !found}' \
+	|| fail "environment-agent must reference AUTH_PROXY_SECRET for DCM_AUTH_CLIENT_SECRET"
+if printf '%s' "$ea_out" | grep -Fq 'DCM_AUTH_TOKEN_ENDPOINT'; then
+	fail "environment-agent must not set DCM_AUTH_* when auth.enabled=false"
+fi

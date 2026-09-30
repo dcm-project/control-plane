@@ -221,6 +221,10 @@ spec:
         {{- include "dcm.selectorLabels" (dict "context" . "component" "environment-agent") | nindent 8 }}
     spec:
       serviceAccountName: {{ $saName }}
+      {{- if .Values.auth.enabled }}
+      initContainers:
+        {{ include "dcm.waitForKeycloak" . | nindent 8 }}
+      {{- end }}
       containers:
         - name: environment-agent
           image: "{{ $ea.image }}:{{ include "dcm.imageTag" (dict "tag" $ea.tag "global" .Values.global) }}"
@@ -239,6 +243,17 @@ spec:
               value: {{ $ea.embeddedSps | quote }}
             - name: DCM_REGISTRATION_URL
               value: "http://{{ include "dcm.fullname" . }}-control-plane:8080"
+            {{- if .Values.auth.enabled }}
+            - name: DCM_AUTH_TOKEN_ENDPOINT
+              value: "{{ include "dcm.authIssuerURL" . }}/protocol/openid-connect/token"
+            - name: DCM_AUTH_CLIENT_ID
+              value: {{ $ea.authClientID | quote }}
+            - name: DCM_AUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dcm.authSecretName" . }}
+                  key: AUTH_PROXY_SECRET
+            {{- end }}
             - name: AGENT_MESSAGING_URL
               value: "nats://{{ include "dcm.fullname" . }}-nats:4222"
             - name: SP_CONTAINER_NAMESPACE

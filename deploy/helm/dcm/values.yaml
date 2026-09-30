@@ -96,3 +96,4 @@ environmentAgent:
   pullSecretRef: ""  # required when embeddedSps includes cluster
   clusterInfraEnv: ""  # baremetal default InfraEnv (SP_DEFAULT_INFRA_ENV)
   clusterAgentNamespace: ""  # ACM Agent CR namespace (not the agent Pod namespace)
+  authClientID: dcm-proxy  # Keycloak client for DCM registration when auth.enabled
