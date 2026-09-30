@@ -4,6 +4,7 @@
 {{- $hasContainer := contains ",container," $sps }}
 {{- $hasVM := contains ",vm," $sps }}
 {{- $hasStorage := contains ",storage," $sps }}
+{{- $hasNetwork := contains ",network," $sps }}
 {{- $hasCluster := contains ",cluster," $sps }}
 {{- if and $hasCluster (not $ea.pullSecretRef) }}
   {{- fail "environmentAgent.pullSecretRef is required when embeddedSps includes cluster (pre-created Secret with stringData key pull-secret)" }}
@@ -16,8 +17,8 @@ metadata:
   labels:
     {{- include "dcm.labels" . | nindent 4 }}
 ---
-{{- /* Workload Role in containerNamespace when container and/or vm/storage share it */ -}}
-{{- if or $hasContainer (and $hasVM (eq $ea.vmNamespace $ea.containerNamespace)) (and $hasStorage (eq $ea.storageNamespace $ea.containerNamespace)) }}
+{{- /* Workload Role in containerNamespace when container/vm/storage/network share it */ -}}
+{{- if or $hasContainer (and $hasVM (eq $ea.vmNamespace $ea.containerNamespace)) (and $hasStorage (eq $ea.storageNamespace $ea.containerNamespace)) (and $hasNetwork (eq $ea.networkNamespace $ea.containerNamespace)) }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -32,6 +33,10 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- else if and $hasNetwork (eq $ea.networkNamespace $ea.containerNamespace) }}
+  - apiGroups: [""]
+    resources: ["services", "events"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   {{- end }}
   {{- if and $hasVM (eq $ea.vmNamespace $ea.containerNamespace) }}
@@ -116,6 +121,37 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: {{ include "dcm.fullname" . }}-environment-agent-storage
+subjects:
+  - kind: ServiceAccount
+    name: {{ $saName }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- end }}
+{{- /* Separate network Role when networkNamespace differs from containerNamespace */ -}}
+{{- if and $hasNetwork (ne $ea.networkNamespace $ea.containerNamespace) }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-network
+  namespace: {{ $ea.networkNamespace }}
+  labels:
+    {{- include "dcm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services", "events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "dcm.fullname" . }}-environment-agent-network
+  namespace: {{ $ea.networkNamespace }}
+  labels:
+    {{ include "dcm.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "dcm.fullname" . }}-environment-agent-network
 subjects:
   - kind: ServiceAccount
     name: {{ $saName }}
@@ -264,6 +300,8 @@ spec:
               value: {{ $ea.vmNamespace | quote }}
             - name: SP_STORAGE_NAMESPACE
               value: {{ $ea.storageNamespace | quote }}
+            - name: SP_NETWORK_NAMESPACE
+              value: {{ $ea.networkNamespace | quote }}
             - name: AGENT_SP_PERSISTENCE_PATH
               value: /var/lib/environment-agent/data/registrations.json
             {{- if $hasCluster }}

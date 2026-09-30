@@ -86,10 +86,11 @@ environmentAgent:
   agentName: cluster-agent
   environment: dev
   cost: medium
-  embeddedSps: ""  # comma-separated: container, vm, storage, cluster
+  embeddedSps: ""  # comma-separated: container, vm, storage, network, cluster
   containerNamespace: default
   vmNamespace: default
   storageNamespace: default
+  networkNamespace: default
   externalSvcType: LoadBalancer  # NodePort for Kind/lab if needed
   clusterNamespace: clusters
   baseDomain: ""

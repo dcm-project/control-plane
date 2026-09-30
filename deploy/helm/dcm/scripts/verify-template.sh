@@ -110,7 +110,7 @@ printf '%s' "$cluster_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.
 printf '%s' "$cluster_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Deployment/ && /name: SP_PULL_SECRET/ && /name: acm-pull-secret/ {found=1} END{exit !found}' \
 	|| fail "environment-agent cluster Deployment must reference pullSecretRef via SP_PULL_SECRET"
 
-# Separate-namespace Roles for vm / storage
+# Separate-namespace Roles for vm / storage / network
 require_block "environment-agent vm Role when vmNamespace differs" \
 	'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-vm/ && /namespace: kubevirt/ {print; exit}' \
 	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=vm \
@@ -120,6 +120,15 @@ require_block "environment-agent storage Role when storageNamespace differs" \
 	'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-storage/ && /namespace: storage-ns/ {print; exit}' \
 	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=storage \
 	--set environmentAgent.storageNamespace=storage-ns --set environmentAgent.containerNamespace=default >/dev/null
+
+require_block "environment-agent network Role when networkNamespace differs" \
+	'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-network/ && /namespace: net-ns/ {print; exit}' \
+	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=network \
+	--set environmentAgent.networkNamespace=net-ns --set environmentAgent.containerNamespace=default >/dev/null
+
+storage_net_out="$(helm_out --set environmentAgent.enabled=true --set "environmentAgent.embeddedSps=storage\,network")"
+printf '%s' "$storage_net_out" | grep -Fq 'SP_STORAGE_NAMESPACE' || fail "environment-agent must set SP_STORAGE_NAMESPACE for storage SP"
+printf '%s' "$storage_net_out" | grep -Fq 'SP_NETWORK_NAMESPACE' || fail "environment-agent must set SP_NETWORK_NAMESPACE for network SP"
 
 # Environment-agent DCM auth when auth.enabled
 ea_auth_out="$(helm_out --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container --set auth.enabled=true)"

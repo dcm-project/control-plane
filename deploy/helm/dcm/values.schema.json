@@ -202,7 +202,7 @@
         },
         "embeddedSps": {
           "type": "string",
-          "description": "Comma-separated embedded SP identifiers: container, vm, storage, cluster.",
+          "description": "Comma-separated embedded SP identifiers: container, vm, storage, network, cluster.",
           "default": ""
         },
         "containerNamespace": {
@@ -246,6 +246,11 @@
           "type": "string",
           "default": "dcm-proxy",
           "description": "Keycloak client ID for DCM registration."
+        },
+        "networkNamespace": {
+          "type": "string",
+          "default": "default",
+          "description": "Namespace for network SP workloads (SP_NETWORK_NAMESPACE)."
         }
       }
     }

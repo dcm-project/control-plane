@@ -68,8 +68,8 @@ With `auth.enabled=true`, registration and heartbeats use Keycloak client creden
 (`dcm-proxy` by default).
 
 Escape commas in `--set` values (for example `container\,vm`). Workload namespaces default to
-`default`. If you change `containerNamespace`, `vmNamespace`,
-`storageNamespace`, or `clusterNamespace`, create those namespaces before install/upgrade.
+`default`. If you change `containerNamespace`, `vmNamespace`, `storageNamespace`,
+`networkNamespace`, or `clusterNamespace`, create those namespaces before install/upgrade.
 
 ```bash
 helm upgrade dcm deploy/helm/dcm --reuse-values \
@@ -90,7 +90,9 @@ When `embeddedSps` includes:
 
 1.  `vm`, ensure KubeVirt or CNV is installed and available on the cluster.
 2.  `container`, set `environmentAgent.externalSvcType=NodePort` on Kind.
-3.  `cluster`, create a pull-secret Secret and set `environmentAgent.pullSecretRef`:
+3.  `network`, workloads use `environmentAgent.networkNamespace`.
+4.  `storage`, workloads use `environmentAgent.storageNamespace`. 
+5.  `cluster`, create a pull-secret Secret and set `environmentAgent.pullSecretRef`:
 
 ```bash
 PULL_SECRET=$(oc get secret pull-secret -n openshift-config -o jsonpath='{.data.\.dockerconfigjson}')
