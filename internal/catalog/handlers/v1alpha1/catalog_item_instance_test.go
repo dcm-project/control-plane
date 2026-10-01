@@ -298,6 +298,8 @@ var _ = Describe("CatalogItemInstance Handler", func() {
 			Entry("user value path not found", service.ErrUserValuePathNotFound, int32(400), v1alpha1API.INVALIDARGUMENT, "Bad Request"),
 			Entry("user value not editable", service.ErrUserValueNotEditable, int32(400), v1alpha1API.INVALIDARGUMENT, "Bad Request"),
 			Entry("user value validation failed", service.ErrUserValueValidationFailed, int32(400), v1alpha1API.INVALIDARGUMENT, "Bad Request"),
+			Entry("invalid cpu quantity", service.ErrInvalidCPUQuantity, int32(400), v1alpha1API.INVALIDARGUMENT, "Bad Request"),
+			Entry("cpu min greater than max", service.ErrCPUMinGreaterThanMax, int32(400), v1alpha1API.INVALIDARGUMENT, "Bad Request"),
 			Entry("placement manager policy rejected", service.ErrPlacementManagerPolicyRejected, int32(406), v1alpha1API.FAILEDPRECONDITION, "Policy Rejected"),
 			Entry("placement manager provider error", service.ErrPlacementManagerProviderError, int32(422), v1alpha1API.FAILEDPRECONDITION, "Provider Error"),
 			Entry("placement manager policy dependency", service.ErrPlacementManagerPolicyDependency, int32(424), v1alpha1API.FAILEDPRECONDITION, "Policy Dependency"),
