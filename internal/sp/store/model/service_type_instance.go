@@ -35,10 +35,11 @@ type ServiceTypeInstance struct {
 	// deletion_status = 'SCHEDULED') and the default Get/List visibility
 	// filter (WHERE deletion_status IS NULL), both hot paths run on every
 	// cleanup-scheduler tick and API list call respectively.
-	DeletionStatus      *string    `gorm:"column:deletion_status;index"`
-	RetryCount          int        `gorm:"column:retry_count;default:0"`
-	LastDeletionAttempt *time.Time `gorm:"column:last_deletion_attempt"`
-	DeletionRequestedAt *time.Time `gorm:"column:deletion_requested_at"`
+	DeletionStatus       *string    `gorm:"column:deletion_status;index"`
+	RetryCount           int        `gorm:"column:retry_count;default:0"`
+	LastDeletionAttempt  *time.Time `gorm:"column:last_deletion_attempt"`
+	DeletionRequestedAt  *time.Time `gorm:"column:deletion_requested_at"`
+	DeletionClaimedUntil *time.Time `gorm:"column:deletion_claimed_until"`
 }
 
 type ServiceTypeInstanceList []ServiceTypeInstance

@@ -37,15 +37,22 @@ func defaultPublishRetryOptions() []backoff.RetryOption {
 	}
 }
 
+// DeleteDedupWindow is the JetStream duplicate-detection window for the agent
+// request stream. PublishDelete uses a stable Nats-Msg-Id (delete-<resourceID>)
+// so a second replica's republish within this window is dropped. Keep the
+// cleanup scheduler's post-publish lease TTL aligned with this value.
+const DeleteDedupWindow = 30 * time.Minute
+
 // EnsureStream creates or updates the agent request stream. Call during startup.
 // WorkQueuePolicy is used because these are point-to-point work queues (one
 // durable consumer per stream, each message consumed and acked exactly
 // once) - messages are removed once acked instead of retained forever.
 func (p *Publisher) EnsureStream(ctx context.Context) error {
 	_, err := p.js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-		Name:      StreamName,
-		Subjects:  []string{StreamSubjectBinding},
-		Retention: jetstream.WorkQueuePolicy,
+		Name:       StreamName,
+		Subjects:   []string{StreamSubjectBinding},
+		Retention:  jetstream.WorkQueuePolicy,
+		Duplicates: DeleteDedupWindow,
 	})
 	if err != nil {
 		return fmt.Errorf("ensure agent request stream: %w", err)
@@ -54,26 +61,29 @@ func (p *Publisher) EnsureStream(ctx context.Context) error {
 }
 
 func (p *Publisher) PublishCreate(ctx context.Context, subject string, payload CreatePayload) error {
-	return p.publish(ctx, subject, CETypeCreateRequest, payload.ResourceID, payload)
+	return p.publish(ctx, subject, CETypeCreateRequest, payload.ResourceID, payload, "")
 }
 
 func (p *Publisher) PublishDelete(ctx context.Context, subject string, payload DeletePayload) error {
-	return p.publish(ctx, subject, CETypeDeleteRequest, payload.ResourceID, payload)
+	// Stable id so concurrent or lease-expiry republishes of the same deletion
+	// are JetStream-deduped within DeleteDedupWindow.
+	return p.publish(ctx, subject, CETypeDeleteRequest, payload.ResourceID, payload, "delete-"+payload.ResourceID)
 }
 
 func (p *Publisher) PublishCancel(ctx context.Context, subject string, payload CancelPayload) error {
-	return p.publish(ctx, subject, CETypeCancelRequest, payload.ResourceID, payload)
+	return p.publish(ctx, subject, CETypeCancelRequest, payload.ResourceID, payload, "")
 }
 
 // publish marshals the CloudEvent envelope and publishes it with a bounded
 // retry. The CE envelope "id" is also set as the NATS Nats-Msg-Id dedup
-// header, so a retried publish (by this backoff loop, or by a caller like
-// the pending sweep re-publishing after a timeout) that reaches JetStream
-// twice within the dedup window is deduplicated server-side rather than
-// producing a duplicate create/delete/cancel request to the agent. Also
-// logs the outcome once, centrally, for every call site.
-func (p *Publisher) publish(ctx context.Context, subject, ceType, instanceID string, payload any) error {
-	ceID := uuid.New().String()
+// header, so a retried publish that reaches JetStream twice within the
+// dedup window is deduplicated server-side. When msgID is empty a fresh
+// UUID is used (create/cancel); PublishDelete passes a stable operation id.
+func (p *Publisher) publish(ctx context.Context, subject, ceType, instanceID string, payload any, msgID string) error {
+	ceID := msgID
+	if ceID == "" {
+		ceID = uuid.New().String()
+	}
 	envelope := map[string]any{
 		"specversion": CESpecVersion,
 		"type":        ceType,

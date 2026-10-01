@@ -213,6 +213,26 @@ var _ = Describe("Publisher", func() {
 
 			Expect(raw.Header.Get("Nats-Msg-Id")).To(Equal(ceID))
 		})
+
+		It("uses a stable delete-<resourceID> Msg-Id so republishes dedupe", func() {
+			Expect(js.DeleteStream(ctx, messaging.StreamName)).To(Succeed())
+			Expect(publisher.EnsureStream(ctx)).To(Succeed())
+
+			agentTopic := "dcm.agent.dedup-delete"
+			payload := messaging.DeletePayload{ResourceID: "res-del-1", ServiceType: "vm"}
+
+			Expect(publisher.PublishDelete(ctx, agentTopic, payload)).To(Succeed())
+			Expect(publisher.PublishDelete(ctx, agentTopic, payload)).To(Succeed())
+
+			stream, err := js.Stream(ctx, messaging.StreamName)
+			Expect(err).NotTo(HaveOccurred())
+			info, err := stream.Info(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.State.Msgs).To(Equal(uint64(1)))
+
+			raw := fetchMessage(stream, 1)
+			Expect(raw.Header.Get("Nats-Msg-Id")).To(Equal("delete-res-del-1"))
+		})
 	})
 
 	Describe("Publish retry (transient failures)", func() {
@@ -300,6 +320,7 @@ var _ = Describe("Publisher", func() {
 			info, err := stream.Info(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(info.Config.Retention).To(Equal(jetstream.WorkQueuePolicy))
+			Expect(info.Config.Duplicates).To(Equal(messaging.DeleteDedupWindow))
 		})
 	})
 

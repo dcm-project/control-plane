@@ -46,10 +46,17 @@ sp-subsystem-test-up:
 sp-subsystem-test-down:
 	$(COMPOSE) -f test/subsystem/$(SP_DOMAIN)/docker-compose.yaml down -v
 
+sp-subsystem-ha-replica-up:
+	$(COMPOSE) -f test/subsystem/$(SP_DOMAIN)/docker-compose.yaml --profile ha up -d control-plane-2
+
+sp-subsystem-ha-replica-down:
+	$(COMPOSE) -f test/subsystem/$(SP_DOMAIN)/docker-compose.yaml --profile ha stop control-plane-2
+
 sp-subsystem-test:
 	$(GINKGO) $(GINKGO_FLAGS) -tags=subsystem ./test/subsystem/$(SP_DOMAIN)
 
 .PHONY: generate-sp-rm-types generate-sp-rm-spec \
 	generate-sp-rm-server generate-sp-rm-client generate-sp-rm-api generate-sp-api \
 	check-sp-aep-rm check-sp-aep test-sp \
-	sp-subsystem-test-up sp-subsystem-test-down sp-subsystem-test
+	sp-subsystem-test-up sp-subsystem-test-down \
+	sp-subsystem-ha-replica-up sp-subsystem-ha-replica-down sp-subsystem-test

@@ -121,7 +121,7 @@ GINKGO_FLAGS := -r --randomize-all --fail-on-pending
 subsystem-env:
 	@test -f test/subsystem/.env || cp test/subsystem/.env.example test/subsystem/.env
 
-auth-subsystem-test-up catalog-subsystem-test-up policy-subsystem-test-up sp-subsystem-test-up: subsystem-env
+auth-subsystem-test-up catalog-subsystem-test-up policy-subsystem-test-up sp-subsystem-test-up sp-subsystem-ha-replica-up: subsystem-env
 
 lint:
 	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...
