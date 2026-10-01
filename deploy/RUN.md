@@ -3,22 +3,46 @@
 ## Prerequisites
 
 - [Podman](https://podman.io/) or [Docker](https://www.docker.com/) (the Makefile auto-detects which engine is available)
-- (Optional) A Kubernetes cluster with KubeVirt for the kubevirt-service-provider
-- (Optional) A Kubernetes cluster for the k8s-container-service-provider
-- (Optional) An OpenShift cluster with ACM/MCE and HyperShift for the acm-cluster-service-provider
+- (Optional) [Kind](https://kind.sigs.k8s.io/) with KubeVirt for the environment-agent embedded `vm` SP
+- (Optional) A Kubernetes cluster for environment-agent embedded `container` and `cluster` SPs
+- (Optional) [utilities](https://github.com/dcm-project/utilities) repo as a sibling directory for Kind helper scripts (`../utilities`)
 
 ## Quick start
 
-Start the core platform (postgres, nats, keycloak, control-plane, and dcm-ui):
+### With environment-agent (Service Providers)
+
+An [environment-agent](https://github.com/dcm-project/environment-agent) must be running and
+registered with the control-plane in order to use Service Providers. Follow the guide,
+[environment-agent-kind.md](docs/environment-agent-kind.md) for the full setup.
+
+### Control-plane and UI only
+
+If you only need the API and UI (no workload provisioning):
 
 ```bash
+cp deploy/.env.example deploy/.env
 make compose-up
+```
+
+`deploy/.env` holds database credentials and optional auth settings. Lab defaults are in
+`deploy/.env.example`; copy and edit before first start.
+
+`make compose-up` and `docker compose --env-file deploy/.env -f deploy/compose.yaml up` are
+equivalent for auth-disabled startup. For authentication, use `make compose-up AUTH=true` or
+include the auth override and profile in the direct Compose invocation:
+
+```bash
+docker compose --env-file deploy/.env \
+  -f deploy/compose.yaml -f deploy/compose.auth.yaml --profile auth up
 ```
 
 The control-plane API is at `http://localhost:8080`. DCM UI is at `http://localhost:7007`.
 
-Authentication is **disabled by default** (`AUTH_DISABLED=true`). See
+Authentication is **disabled by default** (`AUTH_DISABLED=true`). Keycloak is behind the
+`auth` compose profile and does not start with `make compose-up`. See
 [Authentication](#authentication) for enabling it and current limitations.
+
+`dcm login` requires Keycloak — use `make compose-up AUTH=true` after enabling auth in `.env`.
 
 ## CLI configuration
 
@@ -31,157 +55,40 @@ The CLI forwards bearer tokens to the control-plane API. Run `dcm login` for int
 OIDC device authorization (Keycloak `dcm-cli` client), or set `DCM_TOKEN` / `--token`
 for CI and scripting.
 
-## Running with service providers
+## Running with Environment Agent
 
-Service providers are behind compose profiles and do not start by default.
-
-### KubeVirt service provider
-
-To include the `kubevirt-service-provider`, set the required environment variables and
-activate the `kubevirt` profile:
-
-```bash
-export KUBERNETES_NAMESPACE=vms
-export KUBEVIRT_KUBECONFIG="/path/to/kubeconfig"
-make compose-up-with-providers PROFILES=kubevirt
-```
-
-### K8s container service provider
-
-To include the `k8s-container-service-provider`, set the required environment variables and
-activate the `k8s-container` profile:
-
-```bash
-export K8S_CONTAINER_SP_KUBECONFIG="/path/to/kubeconfig"
-make compose-up-with-providers PROFILES=k8s-container
-```
-
-If using Kind, see [K8s Container SP with Kind](docs/k8s-container-sp-kind.md) for additional network setup.
-
-Optionally override the provider name or external service type:
-
-```bash
-export K8S_CONTAINER_SP_NAME=my-provider
-export K8S_CONTAINER_SP_EXTERNAL_SVC_TYPE=LoadBalancer
-```
-
-### K8s storage service provider
-
-To include the `k8s-storage-service-provider`, set the required environment variables and
-activate the `storage` profile:
-
-```bash
-export K8S_STORAGE_SP_KUBECONFIG="/path/to/kubeconfig"
-make compose-up-with-providers PROFILES=storage
-```
-
-Optionally override the provider name, namespace, and default PVC behavior:
-
-```bash
-export K8S_STORAGE_SP_NAME=my-storage-provider
-export K8S_STORAGE_SP_NAMESPACE=default
-export K8S_STORAGE_SP_DEFAULT_STORAGE_CLASS=ceph-rbd
-export K8S_STORAGE_SP_DEFAULT_ACCESS_MODE=ReadWriteOnce
-```
-
-### ACM cluster service provider
-
-To include the `acm-cluster-service-provider`, set the required environment variables and
-activate the `acm-cluster` profile:
-
-```bash
-export ACM_CLUSTER_SP_KUBECONFIG="/path/to/kubeconfig"
-export ACM_CLUSTER_SP_PULL_SECRET="<base64-encoded-dockerconfigjson>"
-make compose-up-with-providers PROFILES=acm-cluster
-```
-
-Optionally override the provider name, namespace, or base domain:
-
-```bash
-export ACM_CLUSTER_SP_NAME=my-acm-provider
-export ACM_CLUSTER_SP_NAMESPACE=clusters
-export ACM_CLUSTER_SP_BASE_DOMAIN="apps.example.com"
-```
-
-For BareMetal provisioning, also set:
-
-```bash
-export ACM_CLUSTER_SP_DEFAULT_INFRA_ENV="my-infra-env"
-export ACM_CLUSTER_SP_AGENT_NAMESPACE="my-agent-namespace"
-```
-
-### Three-tier demo app service provider
-
-To include the `three-tier-demo-service-provider`, set the required environment variables and
-activate the `three-tier` profile:
-
-```bash
-export K8S_CONTAINER_SP_KUBECONFIG="/path/to/kubeconfig"
-make compose-up-with-providers PROFILES=three-tier
-```
-
-When using Kind, complete the k8s-container setup (steps 1–5 in [K8s Container
-SP with Kind](docs/k8s-container-sp-kind.md)) first.
-For Pet Clinic usage, see [Three-Tier Demo App with Kind](docs/three-tier-app-kind.md).
-
-Optionally override the provider name or cluster namespace (`K8S_CONTAINER_SP_NAMESPACE` applies
-to both k8s-container and three-tier SPs):
-
-```bash
-export THREE_TIER_SP_NAME=my-provider
-export K8S_CONTAINER_SP_NAMESPACE=default
-```
-
-### All providers
-
-To start all providers at once, set the required environment variables and run:
-
-```bash
-export KUBEVIRT_KUBECONFIG="/path/to/kubeconfig"
-export K8S_CONTAINER_SP_KUBECONFIG="/path/to/kubeconfig"
-export K8S_STORAGE_SP_KUBECONFIG="/path/to/kubeconfig"
-export ACM_CLUSTER_SP_KUBECONFIG="/path/to/kubeconfig"
-export ACM_CLUSTER_SP_PULL_SECRET="<base64-encoded-dockerconfigjson>"
-# BareMetal only:
-export ACM_CLUSTER_SP_DEFAULT_INFRA_ENV="my-infra-env"
-export ACM_CLUSTER_SP_AGENT_NAMESPACE="my-agent-namespace"
-make compose-up-with-providers
-```
-
-This defaults to the `providers` Compose profile (all service providers, including the
-three-tier demo SP). To start a single provider instead, pass `PROFILES=`:
-
-```bash
-make compose-up-with-providers PROFILES=kubevirt
-make compose-up-with-providers PROFILES=k8s-container
-make compose-up-with-providers PROFILES=storage
-make compose-up-with-providers PROFILES=acm-cluster
-make compose-up-with-providers PROFILES=three-tier
-```
+See [environment-agent-kind.md](docs/environment-agent-kind.md) for Kind setup, the
+`environment-agent` compose profile, configuration, and verification.
 
 ## Authentication
 
-The compose stack includes [Keycloak](https://www.keycloak.org/) (`:8180`) as the identity
-provider. The control-plane validates JWT bearer tokens directly against Keycloak's
-JWKS endpoint using OIDC discovery (no external auth proxy required). A proxy-header
-fallback path (`X-Auth-Proxy-Secret` + `X-Forwarded-User`) is also supported.
+Keycloak (`:8180`) is the identity provider when the `auth` compose profile is active.
+The control-plane validates JWT bearer tokens directly against Keycloak's JWKS endpoint
+using OIDC discovery (no external auth proxy required). A proxy-header fallback path
+(`X-Auth-Proxy-Secret` + `X-Forwarded-User`) is also supported.
 
 Authentication is disabled by default (`AUTH_DISABLED=true`). When enabled, the CLI
-(`dcm login` / bearer token) and direct JWT API calls work; service providers do not
-forward authentication headers yet, so SP ↔ control-plane traffic may fail.
+(`dcm login` / bearer token) and direct JWT API calls work; the environment-agent does not
+forward authentication headers yet, so SP workflows may fail.
 
 To enable authentication (Compose):
 
 ```bash
-AUTH_DISABLED=false AUTH_ISSUER_URL=http://keycloak:8080/realms/dcm make compose-up
+cp deploy/.env.example deploy/.env
+# Uncomment the "Enable authentication" block in deploy/.env
+make compose-up AUTH=true
 ```
 
-For Helm chart installs, see [helm/dcm/README.md](helm/dcm/README.md#authentication)
-(`auth.enabled=true`).
+Auth credentials live only in `deploy/.env` (see `deploy/.env.example`). Keycloak does
+not start with `make compose-up`; pass `AUTH=true` when auth is enabled in `.env`.
+With the environment-agent: `make compose-up-with-agent AUTH=true`.
 
-> **Warning:** Service providers do not forward authentication headers yet, so enabling
-> auth can break SP workflows. The CLI (`dcm login` / bearer token) and direct API
-> calls with a valid Keycloak JWT work.
+For Helm chart installs, create the `dcm-auth` Secret and set `auth.enabled=true` — see
+[helm/dcm/README.md](helm/dcm/README.md#authentication).
+
+> **Warning:** The environment-agent does not forward authentication headers yet, so enabling
+> auth can break SP workflows. The CLI (`dcm login` / bearer token) and direct API calls with a
+> valid Keycloak JWT work.
 
 When enabled, the control-plane authenticates requests via two paths (tried in order):
 
@@ -190,14 +97,18 @@ When enabled, the control-plane authenticates requests via two paths (tried in o
 
 The `/api/v1alpha1/health` endpoint is always unauthenticated.
 
-Pre-configured credentials (local dev only):
+Pre-configured lab credentials (set in `deploy/.env.example`):
 
 | Service | URL | Username | Password |
 |---|---|---|---|
-| Keycloak admin console | `http://localhost:8180` | `admin` | `admin` |
-| DCM user (Keycloak) | — | `dcm-admin` | `admin` |
+| Keycloak admin console | `http://localhost:8180` | `admin` | `admin` (`KEYCLOAK_ADMIN_PASSWORD`) |
+| DCM user (Keycloak) | — | `dcm-admin` | `admin` (`DCM_DEV_USER_PASSWORD`) |
 
-The Keycloak realm is imported from `deploy/keycloak/realm-export.json` and includes
+The Keycloak realm is imported from `deploy/keycloak/realm-export.json` at container
+start. The `dcm-admin` password is resolved from the `DCM_DEV_USER_PASSWORD` environment
+variable via Keycloak's native import placeholders (`start-dev --import-realm`).
+Prefer simple lab passwords; values with
+`"`, `\`, or `$` may break native placeholder substitution. The realm includes
 two clients: `dcm-proxy` (confidential, for service-to-service access) and `dcm-cli`
 (public, for the DCM CLI device auth grant flow).
 
@@ -221,7 +132,12 @@ authenticated request (JIT provisioning) — no manual DB setup is required.
 Check that all services are running:
 
 ```bash
-podman compose -f deploy/compose.yaml ps    # or: docker compose -f deploy/compose.yaml ps
+# Auth disabled (replace `podman compose` with `docker compose` when using Docker)
+podman compose --env-file deploy/.env -f deploy/compose.yaml ps
+
+# Auth enabled
+podman compose --env-file deploy/.env -f deploy/compose.yaml \
+  -f deploy/compose.auth.yaml --profile auth ps
 ```
 
 Check the health endpoint (unauthenticated, works regardless of `AUTH_DISABLED`):
@@ -236,10 +152,11 @@ Check health endpoint through DCM UI:
 curl http://localhost:7007/api/dcm/health
 ```
 
-When authentication is enabled, verify Keycloak is ready:
+When authentication is enabled (`make compose-up AUTH=true`), verify Keycloak is ready:
 
 ```bash
-podman compose -f deploy/compose.yaml exec keycloak curl -sf http://localhost:9000/health/ready | jq .
+podman compose --env-file deploy/.env -f deploy/compose.yaml -f deploy/compose.auth.yaml \
+  --profile auth exec keycloak curl -sf http://localhost:9000/health/ready | jq .
 ```
 
 ## Stopping services
@@ -248,55 +165,57 @@ podman compose -f deploy/compose.yaml exec keycloak curl -sf http://localhost:90
 make compose-down
 ```
 
+If authentication was enabled, pass `AUTH=true` so teardown uses the same Compose model:
+
+```bash
+make compose-down AUTH=true
+```
+
 This stops all compose services and removes volumes. If Kind was connected to
-the compose network (see [k8s-container-sp-kind.md](docs/k8s-container-sp-kind.md)),
+the compose network (see [environment-agent-kind.md](docs/environment-agent-kind.md)),
 `compose-down` disconnects external containers and removes both
 `control-plane_default` and legacy `deploy_default` networks.
 
 ## Configuration
 
+Database, auth, and ACM pull-secret credentials are defined in `deploy/.env.example`
+(copy to `deploy/.env`). The table below lists non-secret knobs and provider settings.
+
 | Variable                                   | Default                     | Description                                                                                                 |
 | ------------------------------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `AUTH_DISABLED`                             | `true`                      | Disable authentication (default `true`; see [Authentication](#authentication))                              |
-| `AUTH_ISSUER_URL`                           | _(empty)_                   | OIDC issuer URL for JWT validation (e.g. `http://keycloak:8080/realms/dcm`). Empty = JWT path disabled.     |
-| `AUTH_JWT_AUDIENCE`                         | _(empty)_                   | Expected `aud` claim in JWT tokens. Empty = audience check skipped.                                         |
-| `AUTH_PROXY_SECRET`                         | `dcm-dev-proxy-secret`      | Shared secret for proxy-header fallback auth path                                                           |
+| `AUTH_DISABLED`                             | `true`                      | Disable authentication (see [Authentication](#authentication); set in `.env`)                                 |
+| `AUTH_ISSUER_URL`                           | _(empty)_                   | OIDC issuer URL for JWT validation (e.g. `http://keycloak:8080/realms/dcm`)                                 |
+| `AUTH_JWT_AUDIENCE`                         | `dcm-api`                   | Expected `aud` claim in JWT tokens                                                                            |
+| `AUTH_PROXY_SECRET`                         | _(in `.env.example`)        | Shared secret for proxy-header fallback auth path                                                           |
 | `AUTH_CACHE_TTL`                            | `60s`                       | TTL for the actor resolution cache                                                                          |
-| `DCM_ADMIN_SUBJECT`                        | `56deb662-...` _(see below)_ | Keycloak subject UUID for the bootstrap admin actor (required when auth enabled)                            |
-| `KEYCLOAK_ADMIN_PASSWORD`                  | `admin`                     | Keycloak admin console password                                                                             |
-| `DCM_DEV_USER_PASSWORD`                     | `admin`                     | Password for the `dcm-admin` dev user in Keycloak                                                           |
-| `POSTGRES_USER`                            | `admin`                     | PostgreSQL username                                                                                         |
-| `POSTGRES_PASSWORD`                        | `adminpass`                 | PostgreSQL password                                                                                         |
-| `KUBERNETES_NAMESPACE`                     | `default`                   | Kubernetes namespace for KubeVirt VMs                                                                       |
-| `KUBEVIRT_KUBECONFIG`                      | `~/.kube/config`            | Path to kubeconfig on the host                                                                              |
-| `KUBEVIRT_PROVIDER_NAME`                   | `kubevirt-service-provider` | Provider name and Compose service `container_name`                                                          |
-| `K8S_CONTAINER_SP_KUBECONFIG`              | `~/.kube/config`            | Path to kubeconfig on the host for the k8s-container-service-provider                                       |
-| `K8S_CONTAINER_SP_NAMESPACE`               | `default`                   | Kubernetes namespace for k8s containers                                                                     |
-| `K8S_CONTAINER_SP_NAME`                    | `k8s-container-provider`    | Provider name for the k8s-container-service-provider                                                        |
-| `K8S_CONTAINER_SP_EXTERNAL_SVC_TYPE`       | `NodePort`                  | Kubernetes Service type for external ports (`NodePort` or `LoadBalancer`)                                   |
-| `K8S_STORAGE_SP_KUBECONFIG`                | `~/.kube/config`            | Path to kubeconfig on the host for the k8s-storage-service-provider                                         |
-| `K8S_STORAGE_SP_NAMESPACE`                 | `default`                   | Kubernetes namespace used by the k8s-storage-service-provider                                               |
-| `K8S_STORAGE_SP_NAME`                      | `k8s-storage-provider`      | Provider name for the k8s-storage-service-provider                                                          |
-| `K8S_STORAGE_SP_DEFAULT_STORAGE_CLASS`     | _(empty)_                   | Optional fallback StorageClass when request hints do not set one                                            |
-| `K8S_STORAGE_SP_DEFAULT_ACCESS_MODE`       | `ReadWriteOnce`             | Optional fallback access mode when request hints do not set one                                             |
-| `ACM_CLUSTER_SP_KUBECONFIG`                | `~/.kube/config`            | Path to kubeconfig on the host for the acm-cluster-service-provider                                         |
-| `ACM_CLUSTER_SP_NAMESPACE`                 | `default`                   | Kubernetes namespace for ACM hosted clusters                                                                |
-| `ACM_CLUSTER_SP_NAME`                      | `acm-cluster-sp`            | Provider name for the acm-cluster-service-provider                                                          |
-| `ACM_CLUSTER_SP_BASE_DOMAIN`               | _(none)_                    | Base DNS domain for hosted clusters; can be overridden per-request via `provider_hints.acm.base_domain`     |
-| `ACM_CLUSTER_SP_PULL_SECRET`               | _(required)_                | Base64-encoded dockerconfigjson pull secret for ACM hosted clusters                                         |
-| `ACM_CLUSTER_SP_DEFAULT_INFRA_ENV`         | _(none)_                    | **BareMetal only.** Default InfraEnv name; can be overridden per-request via `provider_hints.acm.infra_env` |
-| `ACM_CLUSTER_SP_AGENT_NAMESPACE`           | _(none)_                    | **BareMetal only.** Namespace where Agent resources are located                                             |
+| `DCM_ADMIN_SUBJECT`                        | `56deb662-...`              | Keycloak subject UUID for the bootstrap admin actor (required when auth enabled)                            |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD`      | _(in `.env.example`)        | PostgreSQL credentials (also `DB_USER`, `DB_PASS`, `DB_PASSWORD`)                                           |
+| `KEYCLOAK_ADMIN_PASSWORD`                  | _(in `.env.example`)        | Keycloak admin console password                                                                             |
+| `DCM_DEV_USER_PASSWORD`                     | _(in `.env.example`)        | Password for the `dcm-admin` dev user in Keycloak                                                           |
+| `AGENT_NAME`                               | `local-agent`               | Agent name for environment-agent profile                                                                    |
+| `AGENT_ENVIRONMENT`                        | `dev`                       | Environment classification for environment-agent                                                            |
+| `AGENT_COST`                               | `low`                       | Cost classification for environment-agent                                                                   |
+| `AGENT_PORT`                               | `8081`                      | Host port for environment-agent HTTP API                                                                    |
+| `AGENT_EMBEDDED_SPS`                       | _(empty)_                   | **Required in `deploy/.env`** when using the agent profile. Comma-separated: `container`, `vm`, `cluster`, `storage` |
+| `AGENT_KUBECONFIG_HOST`                    | `~/.kube/config`            | Host kubeconfig bind mount; use `.kube/config` in `deploy/.env` with Kind (`make kubeconfig-for-compose`) |
+| `SP_DEFAULT_KUBECONFIG`                    | `/kubeconfig`               | In-container kubeconfig path for embedded SPs (set in `compose.yaml`; do not set in `.env`)               |
+| `SP_CONTAINER_NAMESPACE`                   | `default`                   | Container SP workload namespace (environment-agent)                                                         |
+| `SP_K8S_EXTERNAL_SVC_TYPE`                 | `NodePort`                  | Container SP external service type (environment-agent)                                                      |
+| `SP_VM_NAMESPACE`                          | `default`                   | VM SP workload namespace (environment-agent)                                                                  |
+| `SP_CLUSTER_NAMESPACE`                     | _(required for cluster SP)_ | ACM cluster namespace (environment-agent cluster SP)                                                        |
+| `SP_PULL_SECRET`                           | _(required for cluster SP)_ | Base64-encoded dockerconfigjson for environment-agent cluster SP                                            |
+| `SP_BASE_DOMAIN`                           | _(none)_                    | Base domain for hosted clusters (environment-agent cluster SP)                                              |
+| `SP_STORAGE_NAMESPACE`                     | `default`                   | Storage SP workload namespace (environment-agent)                                                           |
+| `SP_K8S_DEFAULT_STORAGE_CLASS`             | _(none)_                    | Default storage class for environment-agent storage SP                                                      |
+| `SP_K8S_DEFAULT_ACCESS_MODE`               | `ReadWriteOnce`             | Default PVC access mode for environment-agent storage SP                                                    |
+| `ENVIRONMENT_AGENT_VERSION`                | `main`                      | Image tag for environment-agent                                                                             |
 | `CONTROL_PLANE_VERSION`                    | `main`                      | Image tag for control-plane monolith                                                                        |
-| `KUBEVIRT_SERVICE_PROVIDER_VERSION`        | `main`                      | Image tag for kubevirt-service-provider                                                                     |
-| `K8S_CONTAINER_SERVICE_PROVIDER_VERSION`   | `main`                      | Image tag for k8s-container-service-provider                                                                |
-| `K8S_STORAGE_SERVICE_PROVIDER_VERSION`     | `main`                      | Image tag for k8s-storage-service-provider                                                                  |
-| `ACM_CLUSTER_SERVICE_PROVIDER_VERSION`     | `main`                      | Image tag for acm-cluster-service-provider                                                                  |
-| `THREE_TIER_DEMO_SERVICE_PROVIDER_VERSION` | `main`                      | Image tag for three-tier-demo-service-provider                                                              |
-| `THREE_TIER_SP_NAME`                       | `three-tier-provider`       | Provider name for the three-tier-demo-service-provider                                                      |
 | `DCM_UI_VERSION`                           | `main`                      | Image tag for dcm-ui                                                                                        |
 
 See [Image versions](../README.md#image-versions) in the README for available tag formats and how to update.
 
 ## Kubernetes / OpenShift
 
-See [helm/dcm/README.md](helm/dcm/README.md).
+See [helm/dcm/README.md](helm/dcm/README.md). Create Kubernetes Secrets before install
+(`dcm-db` always; `dcm-auth` when `auth.enabled=true`; `dcm-acm-pull-secret` when ACM SP
+is enabled). Lab `kubectl create secret` examples are in the Helm README.

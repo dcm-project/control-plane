@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -10,11 +11,28 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/network"
 	"github.com/dcm-project/control-plane/internal/catalog/config"
 	"github.com/dcm-project/control-plane/internal/catalog/service"
 	"github.com/dcm-project/control-plane/internal/catalog/store"
 	"github.com/dcm-project/control-plane/internal/catalog/store/model"
 )
+
+var _ = Describe("NetworkSpec JSON", func() {
+	It("preserves omission of routing_level when round-tripping valid ports JSON", func() {
+		input := []byte(`{"service_type":"network","metadata":{"name":"test-network"},"ports":[{"port":80,"target_port":8080}]}`)
+
+		var spec network.NetworkSpec
+		Expect(json.Unmarshal(input, &spec)).To(Succeed())
+
+		encoded, err := json.Marshal(spec)
+		Expect(err).ToNot(HaveOccurred())
+
+		var result map[string]json.RawMessage
+		Expect(json.Unmarshal(encoded, &result)).To(Succeed())
+		Expect(result).ToNot(HaveKey("routing_level"))
+	})
+})
 
 var _ = Describe("ServiceType Service", func() {
 	var (

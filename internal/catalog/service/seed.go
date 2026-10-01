@@ -100,9 +100,8 @@ func defaultServiceTypes() []model.ServiceType {
 			ApiVersion:  "v1alpha1",
 			ServiceType: "network",
 			Spec: map[string]any{
-				"ports":         []network.NetworkPort{},
-				"routing_level": "",
-				"endpoints":     []network.NetworkEndpoint{},
+				"ports":     []network.NetworkPort{},
+				"endpoints": []network.NetworkEndpoint{},
 			},
 			Path: "service-types/network",
 		},

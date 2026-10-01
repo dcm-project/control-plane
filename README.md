@@ -36,17 +36,22 @@ Run the monolith (pick one):
 |---------|---------------|----------|------------|
 | `make run` | host | SQLite at `/tmp/control-plane.db` | NATS disabled |
 | `make run-dev` | host | Postgres (`DB_*` defaults) | Postgres + NATS running locally |
-| `make compose-up` | containers | Postgres in compose | also starts NATS, Keycloak, control-plane, and dcm-ui |
+| `make compose-up` | containers | Postgres in compose | also starts NATS, control-plane, and dcm-ui (no Keycloak) |
 
 ```bash
 make run              # SQLite, no containers
+cp deploy/.env.example deploy/.env
 make compose-up       # platform stack in containers
+make compose-up AUTH=true  # same + Keycloak and its readiness dependency
 make compose-down     # stop stack and remove volumes
+make compose-down AUTH=true  # include the auth Compose model when stopping an auth-enabled stack
 ```
 
-Compose uses `POSTGRES_USER` and `POSTGRES_PASSWORD` (defaults in compose
-are for local dev only). Override via environment or a `.env` file; see
-`deploy/.env.example`.
+Compose credentials live in `deploy/.env` (copy from `deploy/.env.example`). Authentication
+is disabled by default; `make compose-up` starts without Keycloak. To start Keycloak and make
+the control-plane wait for it to become healthy, uncomment the auth block in `.env` and run
+`make compose-up AUTH=true`. With the environment-agent: `make compose-up-with-agent AUTH=true`.
+Subsystem tests use the shared `test/subsystem/.env.example` file.
 
 Policy evaluation and placement provisioning run in-process in the monolith
 (`EvaluationService`, `PlacementService` via local clients). There is no public
@@ -67,8 +72,9 @@ Build locally:
 make image-build
 ```
 
-CI pushes to `quay.io/dcm-project/control-plane` on merges to `main` and
-`release/v*` branches (and on version tags). See
+CI pushes to `quay.io/dcm-project/control-plane` and
+`quay.io/dcm-project/dcm-gitops` (from `Containerfile.gitops`) on merges to
+`main` and `release/v*` branches (and on version tags). See
 [Releasing](https://github.com/dcm-project/shared-workflows#release-flow)
 in shared-workflows for tag behavior and version conventions.
 
@@ -76,10 +82,10 @@ in shared-workflows for tag behavior and version conventions.
 
 Full-stack Compose and Helm packaging live under `deploy/`:
 
-- **Compose:** control-plane, postgres, nats, keycloak, dcm-ui, and optional service providers
+- **Compose:** control-plane, postgres, nats, and dcm-ui; optional Keycloak auth and environment-agent profile
 - **Helm:** Kubernetes/OpenShift chart at `deploy/helm/dcm` (optional auth via `auth.enabled`)
 
-See [deploy/RUN.md](deploy/RUN.md) for local stack usage, authentication, and service provider profiles.
+See [deploy/RUN.md](deploy/RUN.md) for local stack usage, authentication, and the environment-agent profile.
 See [deploy/helm/dcm/README.md](deploy/helm/dcm/README.md) for cluster installs.
 
 Authentication is disabled by default (`AUTH_DISABLED=true`). The CLI forwards
@@ -90,7 +96,7 @@ control plane.
 | Port | Service | Notes |
 |---|---|---|
 | `:8080` | control-plane API | Direct access; validates JWT bearer tokens when auth enabled |
-| `:8180` | Keycloak | Identity provider (OIDC issuer) |
+| `:8180` | Keycloak (optional) | Identity provider (OIDC issuer; enabled with `AUTH=true`) |
 | `:7007` | dcm-ui | Web UI |
 
 ### Image versions

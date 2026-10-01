@@ -1,5 +1,4 @@
-# SP subsystem test stack. Credentials: set POSTGRES_USER and POSTGRES_PASSWORD
-# in the environment or in a .env file (see ../../../.env.example).
+# SP subsystem test stack. Shared env: test/subsystem/.env (see .env.example).
 
 x-control-plane-env: &control-plane-env
   BIND_ADDRESS: ":8080"
@@ -7,8 +6,6 @@ x-control-plane-env: &control-plane-env
   DB_HOST: postgres
   DB_PORT: "5432"
   DB_NAME: service-provider
-  DB_USER: ${POSTGRES_USER:-admin}
-  DB_PASSWORD: ${POSTGRES_PASSWORD:-adminpass}
   NATS_URL: "nats://nats:4222"
   AUTH_DISABLED: "true"
   DCM_ADMIN_SUBJECT: "test-admin-sub"
@@ -23,16 +20,15 @@ x-control-plane-env: &control-plane-env
 services:
   postgres:
     image: quay.io/sclorg/postgresql-16-c9s:latest
+    env_file: ../.env
     environment:
       POSTGRESQL_DATABASE: service-provider
-      POSTGRESQL_USER: ${POSTGRES_USER:-admin}
-      POSTGRESQL_PASSWORD: ${POSTGRES_PASSWORD:-adminpass}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/pgsql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d service-provider"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRESQL_USER\" -d service-provider"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -65,6 +61,7 @@ services:
     build:
       context: ../../..
       dockerfile: Containerfile
+    env_file: ../.env
     environment:
       <<: *control-plane-env
     ports:
@@ -88,6 +85,7 @@ services:
     build:
       context: ../../..
       dockerfile: Containerfile
+    env_file: ../.env
     environment:
       <<: *control-plane-env
     ports:

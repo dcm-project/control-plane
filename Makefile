@@ -13,9 +13,17 @@ $(error No supported container engine found. Please install podman or docker, or
 endif
 
 COMPOSE_FILE := deploy/compose.yaml
+COMPOSE_ENV_FILE := deploy/.env
+COMPOSE_DEPLOY = $(COMPOSE) --env-file $(COMPOSE_ENV_FILE) -f $(COMPOSE_FILE) $(COMPOSE_AUTH_ARGS)
 COMPOSE_PROJECT_NAME ?= control-plane
 COMPOSE_NETWORK := $(COMPOSE_PROJECT_NAME)_default
-PROFILES ?= providers
+AUTH ?=
+COMPOSE_AUTH_ARGS := $(if $(filter true,$(AUTH)),-f deploy/compose.auth.yaml --profile auth,)
+UTILITIES_DIR ?= ../utilities
+KIND_SCRIPTS_DIR ?= $(UTILITIES_DIR)/scripts/kind
+COMPOSE_SCRIPTS_DIR ?= $(UTILITIES_DIR)/scripts/compose
+KUBEVIRT_SCRIPTS_DIR ?= $(UTILITIES_DIR)/scripts/kubevirt
+COMPOSE_NETWORKS ?= deploy_default $(COMPOSE_NETWORK)
 
 COMPOSE ?= $(shell command -v podman-compose >/dev/null 2>&1 && echo podman-compose || \
 	(command -v docker-compose >/dev/null 2>&1 && echo docker-compose || \
@@ -54,41 +62,43 @@ run-dev:
 	go run ./cmd/$(BINARY_NAME)
 
 # Platform stack: Postgres, NATS, control-plane, and dcm-ui (see deploy/compose.yaml).
+# Optional: AUTH=true to also start Keycloak (uncomment auth vars in deploy/.env first).
 compose-up:
-	$(COMPOSE) -f $(COMPOSE_FILE) up -d --build
+	$(COMPOSE_DEPLOY) up -d --build
 
-# Platform stack with optional service providers (see deploy/RUN.md).
-compose-up-with-providers:
-	$(COMPOSE) -f $(COMPOSE_FILE) --profile $(PROFILES) up -d --build
+# Platform stack + environment-agent profile (see deploy/RUN.md).
+# Optional: AUTH=true to also start Keycloak.
+compose-up-with-agent:
+	$(COMPOSE_DEPLOY) --profile environment-agent up -d --build
 
-# Tear down the compose stack. Kind (or other externals) joined to the compose
-# network block "compose down" from removing it — disconnect them first.
-# Network cleanup uses podman- or docker-specific commands (not portable flags).
-compose-down:
-	@for network in deploy_default $(COMPOSE_NETWORK); do \
-		if [ "$(CONTAINER_ENGINE)" = podman ]; then \
-			if podman network exists "$$network" 2>/dev/null; then \
-				for c in $$(podman ps -a --filter network=$$network -q 2>/dev/null); do \
-					podman network disconnect -f "$$network" "$$c" 2>/dev/null || true; \
-				done; \
-			fi; \
-		elif [ "$(CONTAINER_ENGINE)" = docker ]; then \
-			if docker network inspect "$$network" >/dev/null 2>&1; then \
-				for c in $$(docker ps -a --filter network=$$network -q 2>/dev/null); do \
-					docker network disconnect "$$network" "$$c" --force 2>/dev/null || true; \
-				done; \
-			fi; \
-		fi; \
-	done; \
-	COMPOSE_PROJECT_NAME=deploy $(COMPOSE) -f $(COMPOSE_FILE) down -v --remove-orphans 2>/dev/null || true; \
-	$(COMPOSE) -f $(COMPOSE_FILE) down -v --remove-orphans; \
-	for network in deploy_default $(COMPOSE_NETWORK); do \
-		if [ "$(CONTAINER_ENGINE)" = podman ]; then \
-			podman network rm -f "$$network" 2>/dev/null || true; \
-		elif [ "$(CONTAINER_ENGINE)" = docker ]; then \
-			docker network rm "$$network" 2>/dev/null || true; \
-		fi; \
-	done
+# Local dev helpers (scripts in dcm-project/utilities — see deploy/docs/environment-agent-kind.md).
+install-kubevirt:
+	bash $(KUBEVIRT_SCRIPTS_DIR)/install-kubevirt.sh
+
+kubeconfig-for-compose:
+	DEPLOY_ROOT="$(CURDIR)" bash $(KIND_SCRIPTS_DIR)/kubeconfig-for-compose.sh
+
+kind-connect:
+	COMPOSE_NETWORK=$(COMPOSE_NETWORK) CONTAINER_ENGINE=$(CONTAINER_ENGINE) \
+		bash $(KIND_SCRIPTS_DIR)/kind-connect.sh
+
+kind-disconnect:
+	@COMPOSE_NETWORK=$(COMPOSE_NETWORK) CONTAINER_ENGINE=$(CONTAINER_ENGINE) \
+		bash $(KIND_SCRIPTS_DIR)/kind-disconnect.sh || true
+
+disconnect-compose-networks:
+	@COMPOSE_NETWORKS="$(COMPOSE_NETWORKS)" CONTAINER_ENGINE=$(CONTAINER_ENGINE) \
+		bash $(COMPOSE_SCRIPTS_DIR)/network-teardown.sh disconnect || true
+
+remove-compose-networks:
+	@COMPOSE_NETWORKS="$(COMPOSE_NETWORKS)" CONTAINER_ENGINE=$(CONTAINER_ENGINE) \
+		bash $(COMPOSE_SCRIPTS_DIR)/network-teardown.sh remove || true
+
+# Tear down the compose stack. Disconnect Kind and other externals first so networks can be removed.
+compose-down: kind-disconnect disconnect-compose-networks
+	@COMPOSE_PROJECT_NAME=deploy $(COMPOSE_DEPLOY) down -v --remove-orphans 2>/dev/null || true; \
+	$(COMPOSE_DEPLOY) down -v --remove-orphans; \
+	$(MAKE) remove-compose-networks
 
 image-build:
 	$(CONTAINER_ENGINE) build -f Containerfile -t $(CONTAINER_IMAGE_NAME):$(CONTAINER_IMAGE_TAG) .
@@ -107,6 +117,12 @@ GOLANGCI_LINT_VERSION ?= v2.12.2
 GINKGO := go run github.com/onsi/ginkgo/v2/ginkgo
 GINKGO_FLAGS := -r --randomize-all --fail-on-pending
 
+# Subsystem compose stacks read credentials from gitignored test/subsystem/.env.
+subsystem-env:
+	@test -f test/subsystem/.env || cp test/subsystem/.env.example test/subsystem/.env
+
+auth-subsystem-test-up catalog-subsystem-test-up policy-subsystem-test-up sp-subsystem-test-up sp-subsystem-ha-replica-up: subsystem-env
+
 lint:
 	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...
 
@@ -116,6 +132,8 @@ test:
 tidy:
 	go mod tidy
 
-.PHONY: build build-gitops run run-dev compose-up compose-up-with-providers compose-down image-build \
-	clean fmt vet lint test test-catalog test-placement test-policy test-sp test-gitops tidy \
+.PHONY: build build-gitops run run-dev compose-up compose-up-with-agent compose-down \
+	install-kubevirt kubeconfig-for-compose kind-connect kind-disconnect \
+	disconnect-compose-networks remove-compose-networks \
+	image-build clean fmt vet lint test test-catalog test-placement test-policy test-sp test-gitops tidy subsystem-env \
 	helm-chart-sync helm-chart-verify-sync helm-chart-verify-admin-subject helm-chart-verify helm-chart-verify-schema helm-chart-lint helm-chart-template helm-chart-check
