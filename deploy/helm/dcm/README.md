@@ -60,10 +60,24 @@ Then open:
 
 Manages virtual machines via KubeVirt.
 
+**Cluster access**: When `kubeconfigRef` is omitted, the chart creates a ServiceAccount with a
+Role/RoleBinding in `kubevirtServiceProvider.namespace` granting the KubeVirt VirtualMachine and
+VirtualMachineInstance APIs (in-cluster auth). To manage VMs on another cluster, create a Secret
+with key `kubeconfig` and set `kubevirtServiceProvider.kubeconfigRef`.
+
 ```bash
+# In-cluster mode (SA + RBAC created by chart):
 helm upgrade dcm deploy/helm/dcm --reuse-values \
   --set kubevirtServiceProvider.enabled=true \
   --set kubevirtServiceProvider.namespace=default
+
+# External kubeconfig mode (pre-existing Secret):
+kubectl create secret generic my-kubeconfig-secret \
+  --from-file=kubeconfig=/path/to/kubeconfig
+helm upgrade dcm deploy/helm/dcm --reuse-values \
+  --set kubevirtServiceProvider.enabled=true \
+  --set kubevirtServiceProvider.namespace=default \
+  --set kubevirtServiceProvider.kubeconfigRef=my-kubeconfig-secret
 ```
 
 ### ACM Cluster Service Provider
