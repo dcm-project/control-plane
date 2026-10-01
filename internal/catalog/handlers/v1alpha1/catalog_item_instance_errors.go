@@ -30,6 +30,8 @@ func mapCreateCatalogItemInstanceErrorToHTTP(err error) server.CreateCatalogItem
 		errors.Is(err, service.ErrUserValueNotEditable),
 		errors.Is(err, service.ErrUserValueValidationFailed),
 		errors.Is(err, service.ErrUserValueDependsOnViolation),
+		errors.Is(err, service.ErrInvalidCPUQuantity),
+		errors.Is(err, service.ErrCPUMinGreaterThanMax),
 		errors.Is(err, service.ErrUserValueResourceRequired),
 		errors.Is(err, service.ErrUserValueResourceNotFound),
 		errors.Is(err, service.ErrInvalidCELExpression),
