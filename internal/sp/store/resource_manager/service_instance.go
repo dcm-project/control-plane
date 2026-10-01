@@ -65,6 +65,7 @@ type ServiceTypeInstance interface { //nolint:interfacebloat
 	// worker. Only one replica wins each row (DB-backed claiming).
 	ClaimPendingDeletions(ctx context.Context, now, claimUntil time.Time, limit int) ([]model.ServiceTypeInstance, error)
 	ReleaseDeletionClaim(ctx context.Context, id string) error
+	RenewDeletionClaim(ctx context.Context, id string, claimUntil time.Time) error
 	IncrementDeletionRetry(ctx context.Context, id string) error
 	MarkDeletionFailed(ctx context.Context, id string) error
 	MarkDeletionComplete(ctx context.Context, id string) error
@@ -431,6 +432,19 @@ func (s *ServiceTypeInstanceStore) ReleaseDeletionClaim(ctx context.Context, id 
 		Model(&model.ServiceTypeInstance{}).
 		Where("id = ? AND deletion_status = ?", id, DeletionStatusScheduled).
 		Update("deletion_claimed_until", nil)
+	if result.Error != nil {
+		return result.Error
+	}
+	return nil
+}
+
+// RenewDeletionClaim extends an active SCHEDULED deletion lease (e.g. after a
+// successful publish while awaiting agent ack). No-op when not SCHEDULED.
+func (s *ServiceTypeInstanceStore) RenewDeletionClaim(ctx context.Context, id string, claimUntil time.Time) error {
+	result := s.db.WithContext(ctx).
+		Model(&model.ServiceTypeInstance{}).
+		Where("id = ? AND deletion_status = ?", id, DeletionStatusScheduled).
+		Update("deletion_claimed_until", claimUntil)
 	if result.Error != nil {
 		return result.Error
 	}

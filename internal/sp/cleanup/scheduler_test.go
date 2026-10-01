@@ -194,6 +194,12 @@ var _ = Describe("Scheduler", func() {
 
 			schedulerWithAgent.ProcessPendingDeletions(ctx)
 
+			found, err := dataStore.ServiceTypeInstance().Get(ctx, inst.ID, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.DeletionClaimedUntil).NotTo(BeNil())
+			// Renewed to deletionAwaitAckTTL (30m), not the short claim TTL.
+			Expect(found.DeletionClaimedUntil.After(time.Now().Add(25 * time.Minute))).To(BeTrue())
+
 			now := time.Now()
 			secondClaim, err := dataStore.ServiceTypeInstance().ClaimPendingDeletions(ctx, now, now.Add(5*time.Minute), 0)
 			Expect(err).NotTo(HaveOccurred())

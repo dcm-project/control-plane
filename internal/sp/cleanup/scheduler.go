@@ -23,6 +23,11 @@ import (
 // worker publishes to the agent. Expired leases become claimable again.
 const deletionClaimTTL = 5 * time.Minute
 
+// deletionAwaitAckTTL holds the row after a successful publish until the
+// agent acknowledges (or the lease expires for crash recovery). Aligned with
+// messaging.DeleteDedupWindow so JetStream dedup covers the same window.
+const deletionAwaitAckTTL = messaging.DeleteDedupWindow
+
 type Scheduler struct {
 	store      store.Store
 	publisher  *messaging.Publisher
@@ -174,6 +179,12 @@ func (s *Scheduler) processOne(ctx context.Context, instance model.ServiceTypeIn
 			log.Error("Failed to release deletion claim after publish failure", "instance_id", instance.ID, "error", err)
 		}
 		return
+	}
+
+	// Renew from publish time so a slow agent ack cannot free the row for
+	// reclaim while the first delete is still in flight.
+	if err := s.store.ServiceTypeInstance().RenewDeletionClaim(ctx, instance.ID, time.Now().Add(deletionAwaitAckTTL)); err != nil {
+		log.Error("Failed to renew deletion claim after publish", "instance_id", instance.ID, "error", err)
 	}
 
 	log.Info("cleanup: delete published, awaiting agent acknowledgement", "instance_id", instance.ID)

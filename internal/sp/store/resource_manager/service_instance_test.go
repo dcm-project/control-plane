@@ -784,6 +784,25 @@ var _ = Describe("ServiceTypeInstance Store", func() {
 		})
 	})
 
+	Describe("RenewDeletionClaim", func() {
+		It("extends the lease so reclaim stays blocked until the new expiry", func() {
+			inst := addInstanceToStore(newServiceTypeInstance("renew-claim", map[string]any{}))
+			Expect(s.MarkForDeletion(ctx, inst.ID)).To(Succeed())
+
+			now := time.Now()
+			Expect(s.ClaimPendingDeletions(ctx, now, now.Add(time.Minute), 0)).To(HaveLen(1))
+
+			renewUntil := now.Add(30 * time.Minute)
+			Expect(s.RenewDeletionClaim(ctx, inst.ID, renewUntil)).To(Succeed())
+
+			// Past the original one-minute claim, still within the renewed lease.
+			later := now.Add(2 * time.Minute)
+			second, err := s.ClaimPendingDeletions(ctx, later, later.Add(time.Minute), 0)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(second).To(BeEmpty())
+		})
+	})
+
 	Describe("IncrementDeletionRetry", func() {
 		It("increments retry count and sets last_deletion_attempt", func() {
 			inst := addInstanceToStore(newServiceTypeInstance("retry-inst", map[string]any{}))
