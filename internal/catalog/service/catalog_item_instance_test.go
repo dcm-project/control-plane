@@ -1090,6 +1090,10 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			err := svc.CatalogItemInstance().Delete(ctx, instanceID)
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrPlacementManagerProviderError)).To(BeTrue())
+
+			result, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
+			Expect(getErr).ToNot(HaveOccurred())
+			Expect(result).ToNot(BeNil())
 		})
 
 		It("should return ErrPlacementManagerPolicyDependency when PM delete returns 424", func() {
@@ -1103,6 +1107,10 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			err := svc.CatalogItemInstance().Delete(ctx, instanceID)
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrPlacementManagerPolicyDependency)).To(BeTrue())
+
+			result, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
+			Expect(getErr).ToNot(HaveOccurred())
+			Expect(result).ToNot(BeNil())
 		})
 	})
 })
