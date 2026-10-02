@@ -191,29 +191,94 @@ var _ = Describe("ResponseConsumer", func() {
 		))
 	})
 
-	It("transitions to FAILED on error event", func() {
+	It("logs and persists provider diagnostics for an accepted creation failure", func() {
+		instance := createPendingInstance(ctx, db)
+
+		var buf syncBuffer
+		prevLogger := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+		defer slog.SetDefault(prevLogger)
+
+		Expect(rc.Start(ctx)).To(Succeed())
+		publishAgentErrorEvent(js, instance.ID, testAgentName, "provider_error", map[string]any{
+			"message": "creation failed",
+			"provider_error": map[string]any{
+				"status_code": 429,
+				"message":     "quota exceeded",
+			},
+		})
+
+		Eventually(func() string {
+			return currentStatusMessage(db, instance.ID)
+		}, 2*time.Second, 20*time.Millisecond).Should(Equal("quota exceeded"))
+		Expect(currentStatus(db, instance.ID)).To(Equal("failed"))
+		Eventually(buf.String, 2*time.Second, 20*time.Millisecond).Should(SatisfyAll(
+			ContainSubstring("agent reported error"),
+			ContainSubstring("instance_id="+instance.ID),
+			ContainSubstring("agent_name="+testAgentName),
+			ContainSubstring("error_classification=provider_error"),
+			ContainSubstring("details_message=\"creation failed\""),
+			ContainSubstring("provider_status_code=429"),
+			ContainSubstring("provider_error_message=\"quota exceeded\""),
+		))
+	})
+
+	It("falls back to details.message when provider error diagnostics are absent", func() {
 		instance := createPendingInstance(ctx, db)
 
 		Expect(rc.Start(ctx)).To(Succeed())
+		publishAgentErrorEvent(js, instance.ID, testAgentName, "provider_error", map[string]any{
+			"message": "request was rejected",
+		})
 
-		publishAgentEvent(js, "dcm.agent.error", instance.ID, testAgentName)
+		Eventually(func() string {
+			return currentStatusMessage(db, instance.ID)
+		}, 2*time.Second, 20*time.Millisecond).Should(Equal("request was rejected"))
+	})
+
+	It("falls back to the error classification when detail messages are absent", func() {
+		instance := createPendingInstance(ctx, db)
+
+		Expect(rc.Start(ctx)).To(Succeed())
+		publishAgentErrorEvent(js, instance.ID, testAgentName, "provider_unavailable", map[string]any{})
+
+		Eventually(func() string {
+			return currentStatusMessage(db, instance.ID)
+		}, 2*time.Second, 20*time.Millisecond).Should(Equal("provider_unavailable"))
+	})
+
+	It("keeps existing status-message behavior for non-error response events", func() {
+		instance := createPendingInstance(ctx, db)
+		Expect(db.Model(&instance).Update("status_message", "previous error").Error).NotTo(HaveOccurred())
+
+		Expect(rc.Start(ctx)).To(Succeed())
+		publishAgentEvent(js, "dcm.agent.creation-acknowledged", instance.ID, testAgentName)
 
 		Eventually(func() string {
 			return currentStatus(db, instance.ID)
-		}, 2*time.Second, 20*time.Millisecond).Should(Equal("failed"))
+		}, 2*time.Second, 20*time.Millisecond).Should(Equal("provisioning"))
+		Eventually(func() string {
+			return currentStatusMessage(db, instance.ID)
+		}, 2*time.Second, 20*time.Millisecond).Should(BeEmpty())
 	})
 
 	// Same mismatch treatment as creation-acknowledged, for the error event.
 	It("ignores an error event from a superseded agent even though status still matches (identity check)", func() {
 		instance := createPendingInstance(ctx, db)
+		Expect(db.Model(&instance).Update("status_message", "existing message").Error).NotTo(HaveOccurred())
 
 		Expect(rc.Start(ctx)).To(Succeed())
-
-		publishAgentEvent(js, "dcm.agent.error", instance.ID, staleAgentName)
+		publishAgentErrorEvent(js, instance.ID, staleAgentName, "provider_error", map[string]any{
+			"message":        "stale details",
+			"provider_error": map[string]any{"message": "stale provider details"},
+		})
 
 		Consistently(func() string {
 			return currentStatus(db, instance.ID)
 		}, 300*time.Millisecond, 20*time.Millisecond).Should(Equal("pending"))
+		Consistently(func() string {
+			return currentStatusMessage(db, instance.ID)
+		}, 300*time.Millisecond, 20*time.Millisecond).Should(Equal("existing message"))
 	})
 
 	It("transitions to QUEUED and resets the pending timer on request-queued", func() {
@@ -736,6 +801,12 @@ func currentStatus(db *gorm.DB, id string) string {
 	return updated.Status
 }
 
+func currentStatusMessage(db *gorm.DB, id string) string {
+	var updated model.ServiceTypeInstance
+	Expect(db.First(&updated, "id = ?", id).Error).NotTo(HaveOccurred())
+	return updated.StatusMessage
+}
+
 func createPendingInstance(_ context.Context, db *gorm.DB) model.ServiceTypeInstance {
 	agentName := testAgentName
 	now := time.Now()
@@ -764,12 +835,24 @@ const testAgentName = "test-agent"
 const staleAgentName = "stale-agent"
 
 func publishAgentEvent(js jetstream.JetStream, eventType string, resourceID string, agentName string) {
+	publishAgentEventData(js, eventType, map[string]any{"resource_id": resourceID, "agent_name": agentName})
+}
+
+func publishAgentErrorEvent(js jetstream.JetStream, resourceID string, agentName string, classification string, details map[string]any) {
+	data := map[string]any{"resource_id": resourceID, "agent_name": agentName, "error": classification}
+	if details != nil {
+		data["details"] = details
+	}
+	publishAgentEventData(js, "dcm.agent.error", data)
+}
+
+func publishAgentEventData(js jetstream.JetStream, eventType string, eventData map[string]any) {
 	data, err := json.Marshal(map[string]any{
 		"specversion": "1.0",
 		"type":        eventType,
 		"source":      "test",
 		"id":          uuid.New().String(),
-		"data":        map[string]any{"resource_id": resourceID, "agent_name": agentName},
+		"data":        eventData,
 	})
 	Expect(err).NotTo(HaveOccurred())
 	ctx := context.Background()
