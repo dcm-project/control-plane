@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -1025,6 +1026,21 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			Expect(getErr).To(Equal(service.ErrCatalogItemInstanceNotFound))
 		})
 
+		It("should delete the local record when PM run is already missing", func() {
+			instanceID := "pm-delete-missing-run"
+			seedCatalogItemInstance(ctx, str, instanceID)
+			mockPM.deleteFunc = func(_ context.Context, _ string) error {
+				return &placement.PlacementError{StatusCode: http.StatusNotFound, Body: "run not found"}
+			}
+
+			err := svc.CatalogItemInstance().Delete(ctx, instanceID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(mockPM.deleteCalls).To(Equal(1))
+
+			_, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
+			Expect(getErr).To(Equal(service.ErrCatalogItemInstanceNotFound))
+		})
+
 		It("should not delete local record when PM delete fails", func() {
 			instanceID := "pm-delete-fail"
 			seedCatalogItemInstance(ctx, str, instanceID)
@@ -1074,6 +1090,10 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			err := svc.CatalogItemInstance().Delete(ctx, instanceID)
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrPlacementManagerProviderError)).To(BeTrue())
+
+			result, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
+			Expect(getErr).ToNot(HaveOccurred())
+			Expect(result).ToNot(BeNil())
 		})
 
 		It("should return ErrPlacementManagerPolicyDependency when PM delete returns 424", func() {
@@ -1087,6 +1107,10 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			err := svc.CatalogItemInstance().Delete(ctx, instanceID)
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrPlacementManagerPolicyDependency)).To(BeTrue())
+
+			result, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
+			Expect(getErr).ToNot(HaveOccurred())
+			Expect(result).ToNot(BeNil())
 		})
 	})
 })
