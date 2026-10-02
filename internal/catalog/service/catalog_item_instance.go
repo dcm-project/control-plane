@@ -270,11 +270,13 @@ func (s *catalogItemInstanceService) Delete(ctx context.Context, id string) erro
 	}
 	s.logger.DebugContext(ctx, "Calling placement manager to delete run", "id", id, "run_id", instance.RunID)
 	if err := s.pmClient.DeleteRun(ctx, instance.RunID); err != nil {
-		s.logger.ErrorContext(ctx, "Placement manager delete failed", "id", id, "error", err)
-		// mapPlacementError, not a direct wrap: distinguishes
-		// policy-rejected/provider-error/policy-dependency (406/422/424)
-		// from a generic placement failure, matching create/rehydrate.
-		return mapPlacementError(err, ErrPlacementManagerDeleteFailed)
+		if isPlacementNotFound(err) {
+			s.logger.WarnContext(ctx, "Placement run already absent, proceeding with delete",
+				"id", id, "run_id", instance.RunID)
+		} else {
+			s.logger.ErrorContext(ctx, "Placement manager delete failed", "id", id, "error", err)
+			return mapPlacementError(err, ErrPlacementManagerDeleteFailed)
+		}
 	}
 
 	err = s.store.CatalogItemInstance().Delete(ctx, id)
@@ -318,4 +320,11 @@ func mapPlacementError(err error, genericSentinel error) error {
 		}
 	}
 	return fmt.Errorf("%w: %s", genericSentinel, err.Error())
+}
+
+// isPlacementNotFound reports whether the error is a 404 from the placement manager,
+// meaning the run is already absent.
+func isPlacementNotFound(err error) bool {
+	var pmErr *placement.PlacementError
+	return errors.As(err, &pmErr) && pmErr.StatusCode == http.StatusNotFound
 }

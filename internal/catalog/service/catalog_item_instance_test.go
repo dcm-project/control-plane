@@ -1088,5 +1088,20 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, service.ErrPlacementManagerPolicyDependency)).To(BeTrue())
 		})
+
+		It("should succeed when PM delete returns 404 (run already absent)", func() {
+			instanceID := "delete-run-already-gone"
+			seedCatalogItemInstance(ctx, str, instanceID)
+
+			mockPM.deleteFunc = func(_ context.Context, _ string) error {
+				return &placement.PlacementError{StatusCode: 404, Body: "run not found"}
+			}
+
+			err := svc.CatalogItemInstance().Delete(ctx, instanceID)
+			Expect(err).ToNot(HaveOccurred())
+
+			_, getErr := svc.CatalogItemInstance().Get(ctx, instanceID)
+			Expect(getErr).To(Equal(service.ErrCatalogItemInstanceNotFound))
+		})
 	})
 })
