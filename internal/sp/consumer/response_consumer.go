@@ -243,7 +243,7 @@ func (c *ResponseConsumer) handleMessage(msg jetstream.Msg) {
 		if data.Details.ProviderError.Message != "" {
 			attrs = append(attrs, "provider_error_message", data.Details.ProviderError.Message)
 		}
-		slog.Error("agent reported error", attrs...)
+		slog.Warn("agent reported error", attrs...)
 	case messaging.CETypeCancelAcknowledged:
 		newStatus = model.StatusCancelled
 		fromStatuses = []string{model.StatusQueued}
