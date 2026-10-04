@@ -76,5 +76,15 @@ expect_lint_fail "capabilities typo dropp instead of drop" \
 expect_lint_fail "seccompProfile typo typ instead of type" \
 	--set 'controlPlane.securityContext.seccompProfile.typ=RuntimeDefault'
 
+# Test (g): gitops poll interval must be a positive integer
+expect_lint_pass "gitops.enabled=true with pollInterval" \
+	--set 'gitops.enabled=true,gitops.pollInterval=30'
+
+expect_lint_fail "gitops.pollInterval below 1" \
+	--set 'gitops.pollInterval=0'
+
+expect_lint_fail "gitops.pollInterval as a duration string" \
+	--set 'gitops.pollInterval=15s'
+
 echo ""
 echo "All schema negative tests passed!"
