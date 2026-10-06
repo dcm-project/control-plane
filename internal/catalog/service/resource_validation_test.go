@@ -44,6 +44,9 @@ var _ = Describe("Resolved spec CPU validation", func() {
 		Entry("whitespace", " 500m", "1000m", service.ErrInvalidCPUQuantity),
 		Entry("out of range cores", "99999999999999999999", "1", service.ErrInvalidCPUQuantity),
 		Entry("non-string value", float64(0.5), "1000m", service.ErrInvalidCPUQuantity),
+		Entry("explicit null min", nil, "1000m", service.ErrInvalidCPUQuantity),
+		Entry("explicit null max", "500m", nil, service.ErrInvalidCPUQuantity),
+		Entry("malformed CEL reference", "${db.cpu_min", "1000m", service.ErrInvalidCELExpression),
 		Entry("min greater than max in millicores", "1000m", "500m", service.ErrCPUMinGreaterThanMax),
 		Entry("min greater than max across units", "2", "1000m", service.ErrCPUMinGreaterThanMax),
 	)
@@ -57,9 +60,13 @@ var _ = Describe("Resolved spec CPU validation", func() {
 		Entry("mixed units", "500m", "1"),
 		Entry("equal values", "1000m", "1"),
 		Entry("unset template values", "", ""),
-		Entry("absent values", nil, nil),
 		Entry("CEL references bound at apply time", "${db.cpu_min}", "${db.cpu_max}"),
 	)
+
+	It("accepts a cpu object with no min/max keys", func() {
+		spec := map[string]any{"resources": map[string]any{"cpu": map[string]any{}}}
+		Expect(service.ValidateResolvedSpec(spec)).To(Succeed())
+	})
 
 	It("validates cpu objects nested in arrays", func() {
 		spec := map[string]any{
@@ -77,6 +84,20 @@ var _ = Describe("Resolved spec CPU validation", func() {
 		spec := map[string]any{
 			"nodes": map[string]any{
 				"control_plane": map[string]any{"cpu": float64(4)},
+			},
+		}
+		Expect(service.ValidateResolvedSpec(spec)).To(Succeed())
+	})
+
+	It("ignores cpu objects under provider_hints", func() {
+		spec := map[string]any{
+			"resources": map[string]any{
+				"cpu": map[string]any{"min": "500m", "max": "1000m"},
+			},
+			"provider_hints": map[string]any{
+				"kubernetes": map[string]any{
+					"cpu": map[string]any{"min": float64(1), "max": float64(2)},
+				},
 			},
 		}
 		Expect(service.ValidateResolvedSpec(spec)).To(Succeed())
@@ -118,6 +139,7 @@ var _ = Describe("CatalogItemInstance Create with container CPU values", func() 
 			{Path: "image.reference", Default: "quay.io/dcm/app:v1", Editable: false},
 			{Path: "resources.cpu.min", Default: "500m", Editable: true},
 			{Path: "resources.cpu.max", Default: "1000m", Editable: true},
+			{Path: "resources.cpu", Editable: true},
 		})
 	})
 
@@ -151,6 +173,32 @@ var _ = Describe("CatalogItemInstance Create with container CPU values", func() 
 		Entry(`min="1000m", max="500m"`, "1000m", "500m", service.ErrCPUMinGreaterThanMax),
 		Entry(`min="0m", max="1000m"`, "0m", "1000m", service.ErrInvalidCPUQuantity),
 		Entry(`min="0.5", max="1"`, "0.5", "1", service.ErrInvalidCPUQuantity),
+	)
+
+	// An object-valued override replaces the whole cpu object at once, so the
+	// per-field CEL and schema checks never see its min/max strings.
+	createWithCPUObject := func(cpu any) error {
+		_, err := svc.CatalogItemInstance().Create(ctx, &service.CreateCatalogItemInstanceRequest{
+			ApiVersion:  "v1alpha1",
+			DisplayName: "CPU Instance",
+			Spec: v1alpha1.CatalogItemInstanceSpec{
+				CatalogItemId: catalogItemID,
+				UserValues: []v1alpha1.UserValue{
+					{Resource: testutil.DefaultResourceName, Path: "resources.cpu", Value: cpu},
+				},
+			},
+		})
+		return err
+	}
+
+	DescribeTable("rejects an object-valued resources.cpu override",
+		func(cpu any, expected error) {
+			Expect(createWithCPUObject(cpu)).To(MatchError(expected))
+			Expect(pm.createCalls).To(Equal(0))
+		},
+		Entry("malformed CEL reference", map[string]any{"min": "${bad", "max": "1000m"}, service.ErrInvalidCELExpression),
+		Entry("null min", map[string]any{"min": nil, "max": "1000m"}, service.ErrInvalidCPUQuantity),
+		Entry("min greater than max", map[string]any{"min": "2", "max": "1000m"}, service.ErrCPUMinGreaterThanMax),
 	)
 
 	It("creates the instance for valid CPU values", func() {
