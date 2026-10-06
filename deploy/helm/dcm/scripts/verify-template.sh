@@ -31,6 +31,26 @@ require_block() {
 	printf '%s' "$block"
 }
 
+# Assert a Role/ClusterRole block grants a rule whose apiGroups, resources and
+# verbs all match exactly. Comparing the whole verb list (not just the resource)
+# means a dropped verb and a widened one both fail.
+require_rule() {
+	local name="$1" block="$2" group="$3" resources="$4" verbs="$5"
+	printf '%s' "$block" | awk -v want="$group|$resources|$verbs" '
+		function norm(s) {
+			sub(/^[^:]*:[ \t]*/, "", s)
+			gsub(/^[ \t\[]+|[ \t\]]+$/, "", s)
+			gsub(/"/, "", s)
+			gsub(/,[ \t]*/, ",", s)
+			return s
+		}
+		/^[ \t]*-[ \t]*apiGroups:/ { g = norm($0); r = ""; next }
+		/^[ \t]*resources:/ { r = norm($0); next }
+		/^[ \t]*verbs:/ { if (g "|" r "|" norm($0) == want) { found = 1 } next }
+		END { exit !found }
+	' || fail "$name must grant apiGroups=[$group] resources=[$resources] with exactly verbs=[$verbs]"
+}
+
 require_template_failure() {
 	local name="$1"
 	local msg="$2"
@@ -83,7 +103,16 @@ db_ref_count="$(printf '%s' "$db_ref_out" | grep -c 'name: dcm-db')"
 # Environment agent
 require_block "environment-agent Deployment when enabled" 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Deployment/ {print; exit}' --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container >/dev/null
 require_block "environment-agent ServiceAccount when enabled" 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: ServiceAccount/ {print; exit}' --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container >/dev/null
-require_block "environment-agent workload Role when enabled" 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-workloads/ {print; exit}' --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container >/dev/null
+workloads_role="$(require_block "environment-agent workload Role when enabled" 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-workloads/ {print; exit}' --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container)"
+require_rule "environment-agent container core rule" "$workloads_role" "" \
+	"pods,services,configmaps,secrets,persistentvolumeclaims,events" "get,list,watch,create,update,patch,delete"
+require_rule "environment-agent container apps rule" "$workloads_role" "apps" \
+	"deployments,statefulsets,replicasets" "get,list,watch,create,update,patch,delete"
+
+# VM SP sharing containerNamespace folds its rule into the workload Role.
+vm_shared_role="$(require_block "environment-agent workload Role when vmNamespace matches containerNamespace" 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-workloads/ {print; exit}' --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=vm)"
+require_rule "environment-agent shared-namespace kubevirt rule" "$vm_shared_role" "kubevirt.io" \
+	"virtualmachines,virtualmachineinstances" "get,list,watch,create,update,patch,delete"
 
 ea_out="$(helm_out --set environmentAgent.enabled=true --set environmentAgent.embeddedSps=container)"
 if printf '%s' "$ea_out" | grep -Fq 'SP_DEFAULT_KUBECONFIG'; then
@@ -105,26 +134,44 @@ require_template_failure "environment-agent cluster without pullSecretRef" \
 	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=cluster --set environmentAgent.pullSecretRef=
 
 cluster_out="$(helm_out --set environmentAgent.enabled=true --set "environmentAgent.embeddedSps=container\,cluster" --set environmentAgent.pullSecretRef=acm-pull-secret)"
-printf '%s' "$cluster_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-cluster/ {found=1} END{exit !found}' \
-	|| fail "missing environment-agent cluster Role when cluster embedded"
+cluster_role="$(yaml_block 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-cluster/ {print; exit}' "$cluster_out")"
+[ -n "$cluster_role" ] || fail "missing environment-agent cluster Role when cluster embedded"
+require_rule "environment-agent cluster Role secrets rule" "$cluster_role" "" "secrets" "get,create,update"
+require_rule "environment-agent cluster Role hypershift rule" "$cluster_role" "hypershift.openshift.io" \
+	"hostedclusters,nodepools" "list,watch,create,delete"
+
+cluster_clusterrole="$(yaml_block 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: ClusterRole/ && /environment-agent-cluster/ {print; exit}' "$cluster_out")"
+[ -n "$cluster_clusterrole" ] || fail "missing environment-agent cluster ClusterRole when cluster embedded"
+require_rule "environment-agent ClusterRole clusterimagesets rule" "$cluster_clusterrole" "hive.openshift.io" "clusterimagesets" "list"
+require_rule "environment-agent ClusterRole hostedclusters rule" "$cluster_clusterrole" "hypershift.openshift.io" "hostedclusters" "list"
+require_rule "environment-agent ClusterRole kubevirt rule" "$cluster_clusterrole" "kubevirt.io" "virtualmachineinstances" "list"
+require_rule "environment-agent ClusterRole agents rule" "$cluster_clusterrole" "agent-install.openshift.io" "agents" "list"
 printf '%s' "$cluster_out" | awk 'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Deployment/ && /name: SP_PULL_SECRET/ && /name: acm-pull-secret/ {found=1} END{exit !found}' \
 	|| fail "environment-agent cluster Deployment must reference pullSecretRef via SP_PULL_SECRET"
 
 # Separate-namespace Roles for vm / storage / network
-require_block "environment-agent vm Role when vmNamespace differs" \
+vm_role="$(require_block "environment-agent vm Role when vmNamespace differs" \
 	'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-vm/ && /namespace: kubevirt/ {print; exit}' \
 	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=vm \
-	--set environmentAgent.vmNamespace=kubevirt --set environmentAgent.containerNamespace=default >/dev/null
+	--set environmentAgent.vmNamespace=kubevirt --set environmentAgent.containerNamespace=default)"
+require_rule "environment-agent vm Role kubevirt rule" "$vm_role" "kubevirt.io" \
+	"virtualmachines,virtualmachineinstances" "get,list,watch,create,update,patch,delete"
 
-require_block "environment-agent storage Role when storageNamespace differs" \
+storage_role="$(require_block "environment-agent storage Role when storageNamespace differs" \
 	'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-storage/ && /namespace: storage-ns/ {print; exit}' \
 	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=storage \
-	--set environmentAgent.storageNamespace=storage-ns --set environmentAgent.containerNamespace=default >/dev/null
+	--set environmentAgent.storageNamespace=storage-ns --set environmentAgent.containerNamespace=default)"
+require_rule "environment-agent storage Role core rule" "$storage_role" "" \
+	"pods,services,configmaps,secrets,persistentvolumeclaims,events" "get,list,watch,create,update,patch,delete"
+require_rule "environment-agent storage Role apps rule" "$storage_role" "apps" \
+	"deployments,statefulsets,replicasets" "get,list,watch,create,update,patch,delete"
 
-require_block "environment-agent network Role when networkNamespace differs" \
+network_role="$(require_block "environment-agent network Role when networkNamespace differs" \
 	'BEGIN{RS="---"} /templates\/environment-agent.yaml/ && /kind: Role/ && /environment-agent-network/ && /namespace: net-ns/ {print; exit}' \
 	--set environmentAgent.enabled=true --set environmentAgent.embeddedSps=network \
-	--set environmentAgent.networkNamespace=net-ns --set environmentAgent.containerNamespace=default >/dev/null
+	--set environmentAgent.networkNamespace=net-ns --set environmentAgent.containerNamespace=default)"
+require_rule "environment-agent network Role core rule" "$network_role" "" \
+	"services,events" "get,list,watch,create,update,patch,delete"
 
 storage_net_out="$(helm_out --set environmentAgent.enabled=true --set "environmentAgent.embeddedSps=storage\,network")"
 printf '%s' "$storage_net_out" | grep -Fq 'SP_STORAGE_NAMESPACE' || fail "environment-agent must set SP_STORAGE_NAMESPACE for storage SP"
