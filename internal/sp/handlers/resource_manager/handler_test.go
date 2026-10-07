@@ -27,7 +27,7 @@ func responseJSON(response any) map[string]any {
 	return object
 }
 
-func createHandlerInstance(db *gorm.DB, status string, health *agentmodel.AgentHealthStatus) string {
+func createHandlerInstance(db *gorm.DB, health *agentmodel.AgentHealthStatus) string {
 	var agentName *string
 	if health != nil {
 		name := "health-agent"
@@ -44,7 +44,7 @@ func createHandlerInstance(db *gorm.DB, status string, health *agentmodel.AgentH
 		ID:          instanceID,
 		ServiceType: "vm",
 		AgentName:   agentName,
-		Status:      status,
+		Status:      "running",
 		Spec:        map[string]any{"service_type": "vm"},
 	}).Error).To(Succeed())
 	return instanceID
@@ -167,7 +167,7 @@ var _ = Describe("Resource Manager Handler", func() {
 
 		It("Given a running instance with an unavailable agent, when fetched, then serializes both statuses", func() {
 			health := agentmodel.AgentHealthStatusUnavailable
-			instanceID := createHandlerInstance(db, "running", &health)
+			instanceID := createHandlerInstance(db, &health)
 
 			resp, err := handler.GetInstance(ctx, server.GetInstanceRequestObject{InstanceId: instanceID})
 
@@ -180,7 +180,7 @@ var _ = Describe("Resource Manager Handler", func() {
 		})
 
 		It("Given an unassigned instance, when fetched, then its serialized response has no agent health", func() {
-			instanceID := createHandlerInstance(db, "running", nil)
+			instanceID := createHandlerInstance(db, nil)
 
 			resp, err := handler.GetInstance(ctx, server.GetInstanceRequestObject{InstanceId: instanceID})
 
@@ -237,7 +237,7 @@ var _ = Describe("Resource Manager Handler", func() {
 
 		It("Given a running instance with an unavailable agent, when listed, then serializes both statuses", func() {
 			health := agentmodel.AgentHealthStatusUnavailable
-			createHandlerInstance(db, "running", &health)
+			createHandlerInstance(db, &health)
 
 			resp, err := handler.ListInstances(ctx, server.ListInstancesRequestObject{})
 
@@ -250,7 +250,7 @@ var _ = Describe("Resource Manager Handler", func() {
 		})
 
 		It("Given an unassigned instance, when listed, then its serialized response has no agent health", func() {
-			createHandlerInstance(db, "running", nil)
+			createHandlerInstance(db, nil)
 
 			resp, err := handler.ListInstances(ctx, server.ListInstancesRequestObject{})
 
