@@ -2,6 +2,7 @@ package resource_manager_test
 
 import (
 	"context"
+	"encoding/json"
 
 	agentstore "github.com/dcm-project/control-plane/internal/agent/store/agent"
 	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
@@ -17,6 +18,14 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+func responseJSON(response any) map[string]any {
+	body, err := json.Marshal(response)
+	Expect(err).NotTo(HaveOccurred())
+	var object map[string]any
+	Expect(json.Unmarshal(body, &object)).To(Succeed())
+	return object
+}
 
 var _ = Describe("Resource Manager Handler", func() {
 	var (
@@ -127,6 +136,52 @@ var _ = Describe("Resource Manager Handler", func() {
 			Expect(*jsonResp.Id).To(Equal(instanceID))
 		})
 
+		It("Given a running instance with an unavailable agent, when fetched, then serializes both statuses", func() {
+			agentName := "health-unavailable"
+			Expect(db.Create(&agentmodel.Agent{
+				ID:           uuid.New().String(),
+				Name:         agentName,
+				TopicName:    "dcm.agent." + agentName,
+				HealthStatus: agentmodel.AgentHealthStatusUnavailable,
+			}).Error).NotTo(HaveOccurred())
+			instanceID := uuid.New().String()
+			Expect(db.Create(&model.ServiceTypeInstance{
+				ID:          instanceID,
+				ServiceType: "vm",
+				AgentName:   &agentName,
+				Status:      "running",
+				Spec:        map[string]any{"service_type": "vm"},
+			}).Error).NotTo(HaveOccurred())
+
+			resp, err := handler.GetInstance(ctx, server.GetInstanceRequestObject{InstanceId: instanceID})
+
+			Expect(err).NotTo(HaveOccurred())
+			jsonResp, ok := resp.(server.GetInstance200JSONResponse)
+			Expect(ok).To(BeTrue())
+			body := responseJSON(jsonResp)
+			Expect(body["status"]).To(Equal("running"))
+			Expect(body["agent_health_status"]).To(Equal("unavailable"))
+		})
+
+		It("Given an unassigned instance, when fetched, then its serialized response has no agent health", func() {
+			instanceID := uuid.New().String()
+			Expect(db.Create(&model.ServiceTypeInstance{
+				ID:          instanceID,
+				ServiceType: "vm",
+				Status:      "running",
+				Spec:        map[string]any{"service_type": "vm"},
+			}).Error).NotTo(HaveOccurred())
+
+			resp, err := handler.GetInstance(ctx, server.GetInstanceRequestObject{InstanceId: instanceID})
+
+			Expect(err).NotTo(HaveOccurred())
+			jsonResp, ok := resp.(server.GetInstance200JSONResponse)
+			Expect(ok).To(BeTrue())
+			body := responseJSON(jsonResp)
+			Expect(body["status"]).To(Equal("running"))
+			Expect(body["agent_health_status"]).To(BeNil())
+		})
+
 		It("returns 404 for non-existent instance", func() {
 			req := server.GetInstanceRequestObject{
 				InstanceId: uuid.New().String(),
@@ -168,6 +223,56 @@ var _ = Describe("Resource Manager Handler", func() {
 			jsonResp, ok := resp.(server.ListInstances200JSONResponse)
 			Expect(ok).To(BeTrue())
 			Expect(*jsonResp.Instances).To(HaveLen(3))
+		})
+
+		It("Given a running instance with an unavailable agent, when listed, then serializes both statuses", func() {
+			agentName := "health-unavailable"
+			Expect(db.Create(&agentmodel.Agent{
+				ID:           uuid.New().String(),
+				Name:         agentName,
+				TopicName:    "dcm.agent." + agentName,
+				HealthStatus: agentmodel.AgentHealthStatusUnavailable,
+			}).Error).NotTo(HaveOccurred())
+			Expect(db.Create(&model.ServiceTypeInstance{
+				ID:          uuid.New().String(),
+				ServiceType: "vm",
+				AgentName:   &agentName,
+				Status:      "running",
+				Spec:        map[string]any{"service_type": "vm"},
+			}).Error).NotTo(HaveOccurred())
+
+			resp, err := handler.ListInstances(ctx, server.ListInstancesRequestObject{})
+
+			Expect(err).NotTo(HaveOccurred())
+			jsonResp, ok := resp.(server.ListInstances200JSONResponse)
+			Expect(ok).To(BeTrue())
+			body := responseJSON(jsonResp)
+			instances := body["instances"].([]any)
+			Expect(instances).To(HaveLen(1))
+			instance := instances[0].(map[string]any)
+			Expect(instance["status"]).To(Equal("running"))
+			Expect(instance["agent_health_status"]).To(Equal("unavailable"))
+		})
+
+		It("Given an unassigned instance, when listed, then its serialized response has no agent health", func() {
+			Expect(db.Create(&model.ServiceTypeInstance{
+				ID:          uuid.New().String(),
+				ServiceType: "vm",
+				Status:      "running",
+				Spec:        map[string]any{"service_type": "vm"},
+			}).Error).NotTo(HaveOccurred())
+
+			resp, err := handler.ListInstances(ctx, server.ListInstancesRequestObject{})
+
+			Expect(err).NotTo(HaveOccurred())
+			jsonResp, ok := resp.(server.ListInstances200JSONResponse)
+			Expect(ok).To(BeTrue())
+			body := responseJSON(jsonResp)
+			instances := body["instances"].([]any)
+			Expect(instances).To(HaveLen(1))
+			instance := instances[0].(map[string]any)
+			Expect(instance["status"]).To(Equal("running"))
+			Expect(instance["agent_health_status"]).To(BeNil())
 		})
 
 		It("filters by service type and agent name independently, without swapping them", func() {
