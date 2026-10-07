@@ -27,7 +27,7 @@ import (
 type mockPMClient struct {
 	createFunc     func(ctx context.Context, req placement.CreateRunRequest) (*placement.Run, error)
 	deleteFunc     func(ctx context.Context, runID string) error
-	rehydrateFunc  func(ctx context.Context, runID string, newRunID string) (*placement.Resource, error)
+	rehydrateFunc  func(ctx context.Context, runID string, newRunID string) (*placement.Run, error)
 	createCalls    int
 	deleteCalls    int
 	rehydrateCalls int
@@ -64,12 +64,17 @@ func (m *mockPMClient) DeleteRun(ctx context.Context, runID string) error {
 	return nil
 }
 
-func (m *mockPMClient) RehydrateResource(ctx context.Context, runID string, newRunID string) (*placement.Resource, error) {
+func (m *mockPMClient) RehydrateResource(ctx context.Context, runID string, newRunID string) (*placement.Run, error) {
 	m.rehydrateCalls++
 	if m.rehydrateFunc != nil {
 		return m.rehydrateFunc(ctx, runID, newRunID)
 	}
-	return &placement.Resource{ID: "rehydrated-" + newRunID}, nil
+	return &placement.Run{
+		RunID: newRunID,
+		Resources: []placement.Resource{
+			{ID: "rehydrated-" + newRunID},
+		},
+	}, nil
 }
 
 func seedCatalogItemInstance(ctx context.Context, str store.Store, id string) string {
@@ -222,6 +227,8 @@ var _ = Describe("CatalogItemInstance Service", func() {
 				Expect(result.RunId).ToNot(BeNil())
 				Expect(*result.RunId).To(MatchRegexp(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`))
 				Expect(mockPM.createCalls).To(Equal(1))
+				Expect(result.ResourceIds).ToNot(BeNil())
+				Expect(*result.ResourceIds).To(ConsistOf("pm-0"))
 			})
 		})
 
@@ -583,10 +590,13 @@ var _ = Describe("CatalogItemInstance Service", func() {
 				instanceID := "multi-resource-rehydrate"
 				var capturedOldRunID string
 				var capturedNewRunID string
-				mockPM.rehydrateFunc = func(_ context.Context, runID string, newRunID string) (*placement.Resource, error) {
+				mockPM.rehydrateFunc = func(_ context.Context, runID string, newRunID string) (*placement.Run, error) {
 					capturedOldRunID = runID
 					capturedNewRunID = newRunID
-					return &placement.Resource{ID: "rehydrated"}, nil
+					return &placement.Run{
+						RunID:     newRunID,
+						Resources: []placement.Resource{{ID: "rehydrated"}},
+					}, nil
 				}
 				created, err := svc.CatalogItemInstance().Create(ctx, &service.CreateCatalogItemInstanceRequest{
 					ID:          &instanceID,
@@ -866,10 +876,13 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 		It("should CAS update run_id then call PM rehydrate", func() {
 			var capturedOldRunID string
 			var capturedNewRunID string
-			mockPM.rehydrateFunc = func(_ context.Context, runID string, newRunID string) (*placement.Resource, error) {
+			mockPM.rehydrateFunc = func(_ context.Context, runID string, newRunID string) (*placement.Run, error) {
 				capturedOldRunID = runID
 				capturedNewRunID = newRunID
-				return &placement.Resource{ID: "rehydrated"}, nil
+				return &placement.Run{
+					RunID:     newRunID,
+					Resources: []placement.Resource{{ID: "rehydrated"}},
+				}, nil
 			}
 
 			instanceID := "rehydrate-instance"
@@ -888,10 +901,15 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 			Expect(capturedNewRunID).To(Equal(*result.RunId))
 			Expect(mockPM.rehydrateCalls).To(Equal(1))
 
+			Expect(result.ResourceIds).ToNot(BeNil())
+			Expect(*result.ResourceIds).To(ConsistOf("rehydrated"))
+
 			// Verify persisted
 			got, err := svc.CatalogItemInstance().Get(ctx, instanceID)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(*got.RunId).To(Equal(*result.RunId))
+			Expect(got.ResourceIds).ToNot(BeNil())
+			Expect(*got.ResourceIds).To(ConsistOf("rehydrated"))
 		})
 
 		It("should return ErrCatalogItemInstanceNotFound for non-existent instance", func() {
@@ -943,7 +961,7 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 		It("should rollback run_id when PM rehydrate fails", func() {
 			instanceID := "rehydrate-pm-fail"
 			oldRunID := seedCatalogItemInstance(ctx, str, instanceID)
-			mockPM.rehydrateFunc = func(_ context.Context, _ string, _ string) (*placement.Resource, error) {
+			mockPM.rehydrateFunc = func(_ context.Context, _ string, _ string) (*placement.Run, error) {
 				return nil, errors.New("PM rehydrate unavailable")
 			}
 
@@ -960,7 +978,7 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 		It("should return ErrPlacementManagerPolicyRejected when PM rehydrate returns 406", func() {
 			instanceID := "rehydrate-policy-fail"
 			oldRunID := seedCatalogItemInstance(ctx, str, instanceID)
-			mockPM.rehydrateFunc = func(_ context.Context, _ string, _ string) (*placement.Resource, error) {
+			mockPM.rehydrateFunc = func(_ context.Context, _ string, _ string) (*placement.Run, error) {
 				return nil, &placement.PlacementError{StatusCode: 406, Body: "policy rejected"}
 			}
 
@@ -976,7 +994,7 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 		It("should return ErrPlacementManagerProviderError when PM rehydrate returns 422", func() {
 			instanceID := "rehydrate-provider-fail"
 			oldRunID := seedCatalogItemInstance(ctx, str, instanceID)
-			mockPM.rehydrateFunc = func(_ context.Context, _ string, _ string) (*placement.Resource, error) {
+			mockPM.rehydrateFunc = func(_ context.Context, _ string, _ string) (*placement.Run, error) {
 				return nil, &placement.PlacementError{StatusCode: 422, Body: "provider error"}
 			}
 
@@ -992,7 +1010,7 @@ var _ = Describe("CatalogItemInstance Service with Placement Manager", func() {
 		It("should return ErrPlacementManagerPolicyDependency when PM rehydrate returns 424", func() {
 			instanceID := "rehydrate-dependency-fail"
 			oldRunID := seedCatalogItemInstance(ctx, str, instanceID)
-			mockPM.rehydrateFunc = func(_ context.Context, _ string, _ string) (*placement.Resource, error) {
+			mockPM.rehydrateFunc = func(_ context.Context, _ string, _ string) (*placement.Run, error) {
 				return nil, &placement.PlacementError{StatusCode: 424, Body: "policy dependency"}
 			}
 
