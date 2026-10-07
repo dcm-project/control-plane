@@ -105,9 +105,13 @@ type CommonFields struct {
 // CpuResources CPU allocation in whole cores or millicores (e.g. 2, 500m, 1000m = 1 core)
 type CpuResources struct {
 	// Max Maximum allowed CPU in whole cores or millicores
+	//
+	// Example: 1000m
 	Max string `json:"max"`
 
 	// Min Minimum guaranteed CPU in whole cores or millicores
+	//
+	// Example: 500m
 	Min                  string                 `json:"min"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
@@ -115,14 +119,20 @@ type CpuResources struct {
 // MemoryResources Memory allocation
 type MemoryResources struct {
 	// Max Maximum allowed memory with unit suffix
+	//
+	// Example: 2GB
 	Max string `json:"max"`
 
 	// Min Minimum guaranteed memory with unit suffix
+	//
+	// Example: 1GB
 	Min                  string                 `json:"min"`
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
 // NetworkPort Port number inside container
+//
+// Example: 8080
 type NetworkPort = int
 
 // ProviderHints Optional provider-specific configuration.
