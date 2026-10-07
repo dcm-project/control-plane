@@ -27,10 +27,36 @@ import (
 // agent-routed CreateInstance/ReassignAgent paths without a real NATS server.
 type stubJetStream struct {
 	jetstream.JetStream
+	subjects []string
 }
 
-func (s *stubJetStream) Publish(_ context.Context, _ string, _ []byte, _ ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
+func (s *stubJetStream) Publish(_ context.Context, subject string, _ []byte, _ ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
+	s.subjects = append(s.subjects, subject)
 	return &jetstream.PubAck{}, nil
+}
+
+type agentLookupResult struct {
+	agent *agentmodel.Agent
+	err   error
+}
+
+type sequencedAgentStore struct {
+	agentstore.Agent
+	results  []agentLookupResult
+	calls    int
+	onLookup func(call int)
+}
+
+func (s *sequencedAgentStore) GetByName(_ context.Context, _ string) (*agentmodel.Agent, error) {
+	call := s.calls
+	s.calls++
+	if s.onLookup != nil {
+		s.onLookup(call)
+	}
+	if call >= len(s.results) {
+		return nil, errors.New("unexpected agent lookup")
+	}
+	return s.results[call].agent, s.results[call].err
 }
 
 func ptrString(s string) *string { return &s }
@@ -107,6 +133,73 @@ var _ = Describe("InstanceService", func() {
 			var stored model.ServiceTypeInstance
 			Expect(db.First(&stored, "id = ?", *result.Id).Error).NotTo(HaveOccurred())
 			Expect(stored.Status).To(Equal("pending"))
+		})
+
+		It("publishes create to the current agent topic after it changes", func() {
+			oldAgent := &agentmodel.Agent{
+				Name:         "test-agent",
+				TopicName:    "dcm.agent.old-topic",
+				HealthStatus: agentmodel.AgentHealthStatusReady,
+				ServiceTypes: []string{"vm"},
+			}
+			currentAgent := *oldAgent
+			currentAgent.TopicName = "dcm.agent.current-topic"
+			sequencedStore := &sequencedAgentStore{results: []agentLookupResult{
+				{agent: oldAgent},
+				{agent: &currentAgent},
+			}}
+			jetStream := &stubJetStream{}
+			instanceService = rmsvc.NewInstanceService(dataStore, messaging.NewPublisher(jetStream), sequencedStore)
+			req := &resource_manager.ServiceTypeInstance{
+				Spec: map[string]interface{}{"cpu": 2, "service_type": "vm"},
+			}
+
+			_, err := instanceService.CreateInstance(ctx, req, nil, "test-agent")
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sequencedStore.calls).To(Equal(2))
+			Expect(jetStream.subjects).To(Equal([]string{"dcm.agent.current-topic"}))
+		})
+
+		It("rolls back the created instance when resolving the current agent topic fails", func() {
+			instanceID := uuid.New().String()
+			validatedAgent := &agentmodel.Agent{
+				Name:         "test-agent",
+				TopicName:    "dcm.agent.test-agent",
+				HealthStatus: agentmodel.AgentHealthStatusReady,
+				ServiceTypes: []string{"vm"},
+			}
+			instanceExistedDuringResolution := false
+			sequencedStore := &sequencedAgentStore{
+				results: []agentLookupResult{
+					{agent: validatedAgent},
+					{err: agentstore.ErrAgentNotFound},
+				},
+				onLookup: func(call int) {
+					if call != 1 {
+						return
+					}
+					var stored model.ServiceTypeInstance
+					instanceExistedDuringResolution = db.First(&stored, "id = ?", instanceID).Error == nil
+				},
+			}
+			jetStream := &stubJetStream{}
+			instanceService = rmsvc.NewInstanceService(dataStore, messaging.NewPublisher(jetStream), sequencedStore)
+			req := &resource_manager.ServiceTypeInstance{
+				Spec: map[string]interface{}{"cpu": 2, "service_type": "vm"},
+			}
+
+			_, err := instanceService.CreateInstance(ctx, req, &instanceID, "test-agent")
+
+			var svcErr *service.ServiceError
+			Expect(errors.As(err, &svcErr)).To(BeTrue())
+			Expect(svcErr.Code).To(Equal(service.ErrCodeProvisioningError))
+			Expect(sequencedStore.calls).To(Equal(2))
+			Expect(instanceExistedDuringResolution).To(BeTrue())
+			var count int64
+			Expect(db.Model(&model.ServiceTypeInstance{}).Where("id = ?", instanceID).Count(&count).Error).To(Succeed())
+			Expect(count).To(BeZero())
+			Expect(jetStream.subjects).To(BeEmpty())
 		})
 
 		It("sets service_type from spec", func() {
