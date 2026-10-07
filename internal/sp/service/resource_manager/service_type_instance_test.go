@@ -59,6 +59,15 @@ func (s *sequencedAgentStore) GetByName(_ context.Context, _ string) (*agentmode
 	return s.results[call].agent, s.results[call].err
 }
 
+func readyVMTestAgent(topic string) *agentmodel.Agent {
+	return &agentmodel.Agent{
+		Name:         "test-agent",
+		TopicName:    topic,
+		HealthStatus: agentmodel.AgentHealthStatusReady,
+		ServiceTypes: []string{"vm"},
+	}
+}
+
 func ptrString(s string) *string { return &s }
 
 type batchHealthLookup interface {
@@ -136,17 +145,11 @@ var _ = Describe("InstanceService", func() {
 		})
 
 		It("publishes create to the current agent topic after it changes", func() {
-			oldAgent := &agentmodel.Agent{
-				Name:         "test-agent",
-				TopicName:    "dcm.agent.old-topic",
-				HealthStatus: agentmodel.AgentHealthStatusReady,
-				ServiceTypes: []string{"vm"},
-			}
-			currentAgent := *oldAgent
-			currentAgent.TopicName = "dcm.agent.current-topic"
+			oldAgent := readyVMTestAgent("dcm.agent.old-topic")
+			currentAgent := readyVMTestAgent("dcm.agent.current-topic")
 			sequencedStore := &sequencedAgentStore{results: []agentLookupResult{
 				{agent: oldAgent},
-				{agent: &currentAgent},
+				{agent: currentAgent},
 			}}
 			jetStream := &stubJetStream{}
 			instanceService = rmsvc.NewInstanceService(dataStore, messaging.NewPublisher(jetStream), sequencedStore)
@@ -163,12 +166,7 @@ var _ = Describe("InstanceService", func() {
 
 		It("rolls back the created instance when resolving the current agent topic fails", func() {
 			instanceID := uuid.New().String()
-			validatedAgent := &agentmodel.Agent{
-				Name:         "test-agent",
-				TopicName:    "dcm.agent.test-agent",
-				HealthStatus: agentmodel.AgentHealthStatusReady,
-				ServiceTypes: []string{"vm"},
-			}
+			validatedAgent := readyVMTestAgent("dcm.agent.test-agent")
 			instanceExistedDuringResolution := false
 			sequencedStore := &sequencedAgentStore{
 				results: []agentLookupResult{
