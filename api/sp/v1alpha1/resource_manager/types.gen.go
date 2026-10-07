@@ -7,6 +7,27 @@ import (
 	"time"
 )
 
+// Defines values for ServiceTypeInstanceAgentHealthStatus.
+const (
+	Congested   ServiceTypeInstanceAgentHealthStatus = "congested"
+	Ready       ServiceTypeInstanceAgentHealthStatus = "ready"
+	Unavailable ServiceTypeInstanceAgentHealthStatus = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the ServiceTypeInstanceAgentHealthStatus enum.
+func (e ServiceTypeInstanceAgentHealthStatus) Valid() bool {
+	switch e {
+	case Congested:
+		return true
+	case Ready:
+		return true
+	case Unavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ServiceTypeInstanceDeletionStatus.
 const (
 	DELETED   ServiceTypeInstanceDeletionStatus = "DELETED"
@@ -58,6 +79,12 @@ type Error struct {
 
 // ServiceTypeInstance Full service type instance resource representation
 type ServiceTypeInstance struct {
+	// AgentHealthStatus Current health status of the agent managing this instance. This
+	// describes agent health, separately from the Service Type Instance
+	// lifecycle status. Absent or null when the instance has no associated
+	// agent.
+	AgentHealthStatus *ServiceTypeInstanceAgentHealthStatus `json:"agent_health_status,omitempty"`
+
 	// AgentName Name of the agent managing this instance. Absent or null when the
 	// instance was created without agent routing.
 	//
@@ -97,6 +124,12 @@ type ServiceTypeInstance struct {
 	// UpdateTime Timestamp when the instance was last updated
 	UpdateTime *time.Time `json:"update_time,omitempty"`
 }
+
+// ServiceTypeInstanceAgentHealthStatus Current health status of the agent managing this instance. This
+// describes agent health, separately from the Service Type Instance
+// lifecycle status. Absent or null when the instance has no associated
+// agent.
+type ServiceTypeInstanceAgentHealthStatus string
 
 // ServiceTypeInstanceDeletionStatus Deletion status for deferred deletions. Absent for active
 // instances. SCHEDULED indicates the instance is queued for cleanup.

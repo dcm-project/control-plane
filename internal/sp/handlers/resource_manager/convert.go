@@ -25,6 +25,11 @@ func convertAPIToServer(src *resource_manager.ServiceTypeInstance) server.Servic
 		UpdateTime: src.UpdateTime,
 	}
 
+	if src.AgentHealthStatus != nil {
+		healthStatus := server.ServiceTypeInstanceAgentHealthStatus(*src.AgentHealthStatus)
+		result.AgentHealthStatus = &healthStatus
+	}
+
 	if src.DeletionStatus != nil {
 		ds := server.ServiceTypeInstanceDeletionStatus(*src.DeletionStatus)
 		result.DeletionStatus = &ds
