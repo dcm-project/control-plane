@@ -86,7 +86,12 @@ func (s *InstanceService) CreateInstance(ctx context.Context, request *resource_
 		return nil, service.NewInternalError(fmt.Sprintf("failed to create database record for instance %s: %v", *instanceID, err))
 	}
 
-	subject := validatedAgent.TopicName
+	subject, err := s.resolveAgentSubject(ctx, agentName)
+	if err != nil {
+		log.Error("Failed to resolve agent topic, rolling back instance", "instance_id", created.ID, "error", err)
+		_ = s.store.ServiceTypeInstance().HardDelete(ctx, created.ID)
+		return nil, service.NewProvisioningError(fmt.Sprintf("agent '%s' topic resolution failed: %v", agentName, err))
+	}
 
 	pubErr := s.publisher.PublishCreate(ctx, subject, messaging.CreatePayload{
 		ResourceID:  created.ID,
