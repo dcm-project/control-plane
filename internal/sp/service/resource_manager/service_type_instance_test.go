@@ -2,10 +2,12 @@ package resource_manager_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/dcm-project/control-plane/api/sp/v1alpha1/resource_manager"
-	agentStoreImpl "github.com/dcm-project/control-plane/internal/agent/store/agent"
+	agentstore "github.com/dcm-project/control-plane/internal/agent/store/agent"
 	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
 	"github.com/dcm-project/control-plane/internal/sp/messaging"
 	"github.com/dcm-project/control-plane/internal/sp/service"
@@ -33,12 +35,41 @@ func (s *stubJetStream) Publish(_ context.Context, _ string, _ []byte, _ ...jets
 
 func ptrString(s string) *string { return &s }
 
+type batchHealthLookup interface {
+	GetHealthByNames(ctx context.Context, names []string) (map[string]agentmodel.AgentHealthStatus, error)
+}
+
+type batchHealthAgentStore struct {
+	agentstore.Agent
+	calls int
+	names [][]string
+}
+
+func (s *batchHealthAgentStore) GetHealthByNames(ctx context.Context, names []string) (map[string]agentmodel.AgentHealthStatus, error) {
+	s.calls++
+	s.names = append(s.names, append([]string(nil), names...))
+	lookup, ok := s.Agent.(batchHealthLookup)
+	if !ok {
+		return nil, errors.New("underlying agent store does not support batch health lookup")
+	}
+	return lookup.GetHealthByNames(ctx, names)
+}
+
+func responseObject(response any) map[string]any {
+	body, err := json.Marshal(response)
+	Expect(err).NotTo(HaveOccurred())
+	var object map[string]any
+	Expect(json.Unmarshal(body, &object)).To(Succeed())
+	return object
+}
+
 var _ = Describe("InstanceService", func() {
 	var (
 		db              *gorm.DB
 		dataStore       store.Store
 		instanceService *rmsvc.InstanceService
 		ctx             context.Context
+		agentStore      agentstore.Agent
 	)
 
 	BeforeEach(func() {
@@ -52,7 +83,8 @@ var _ = Describe("InstanceService", func() {
 
 		dataStore = store.NewStore(db)
 		pub := messaging.NewPublisher(&stubJetStream{})
-		instanceService = rmsvc.NewInstanceService(dataStore, pub, agentStoreImpl.NewAgent(db))
+		agentStore = agentstore.NewAgent(db)
+		instanceService = rmsvc.NewInstanceService(dataStore, pub, agentStore)
 		ctx = context.Background()
 	})
 
@@ -360,6 +392,114 @@ var _ = Describe("InstanceService", func() {
 			result, err = instanceService.ListInstances(ctx, nil, &agentB, false, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(*result.Instances).To(HaveLen(1))
+		})
+	})
+
+	Describe("health-enriched responses", func() {
+		It("Given a page with different agents and repeated ownership, when listed, then each page item has its current health and STI status is unchanged", func() {
+			agents := []agentmodel.Agent{
+				{ID: uuid.New().String(), Name: "health-unavailable", TopicName: "dcm.agent.health-unavailable", HealthStatus: agentmodel.AgentHealthStatusUnavailable, ServiceTypes: []string{"vm"}},
+				{ID: uuid.New().String(), Name: "health-congested", TopicName: "dcm.agent.health-congested", HealthStatus: agentmodel.AgentHealthStatusCongested, ServiceTypes: []string{"vm"}},
+				{ID: uuid.New().String(), Name: "health-outside-page", TopicName: "dcm.agent.health-outside-page", HealthStatus: agentmodel.AgentHealthStatusReady, ServiceTypes: []string{"vm"}},
+			}
+			for i := range agents {
+				Expect(db.Create(&agents[i]).Error).NotTo(HaveOccurred())
+			}
+
+			baseTime := time.Now().Add(-4 * time.Minute)
+			instances := []model.ServiceTypeInstance{
+				{ID: "health-page-1", ServiceType: "vm", Status: "running", InstanceName: "running-unavailable", Spec: map[string]any{"cpu": 1}, AgentName: ptrString("health-unavailable"), CreateTime: baseTime},
+				{ID: "health-page-2", ServiceType: "vm", Status: "pending", InstanceName: "pending-congested", Spec: map[string]any{"cpu": 2}, AgentName: ptrString("health-congested"), CreateTime: baseTime.Add(time.Minute)},
+				{ID: "health-page-3", ServiceType: "vm", Status: "queued", InstanceName: "queued-unavailable", Spec: map[string]any{"cpu": 3}, AgentName: ptrString("health-unavailable"), CreateTime: baseTime.Add(2 * time.Minute)},
+				{ID: "health-page-4", ServiceType: "vm", Status: "running", InstanceName: "outside-page-ready", Spec: map[string]any{"cpu": 4}, AgentName: ptrString("health-outside-page"), CreateTime: baseTime.Add(3 * time.Minute)},
+			}
+			for i := range instances {
+				Expect(db.Create(&instances[i]).Error).NotTo(HaveOccurred())
+			}
+
+			spy := &batchHealthAgentStore{Agent: agentStore}
+			instanceService = rmsvc.NewInstanceService(dataStore, messaging.NewPublisher(&stubJetStream{}), spy)
+			pageSize := 3
+			result, err := instanceService.ListInstances(ctx, nil, nil, false, &pageSize, nil)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(*result.Instances).To(HaveLen(3))
+			Expect(result.NextPageToken).NotTo(BeNil())
+			Expect(spy.calls).To(Equal(1))
+			Expect(spy.names).To(Equal([][]string{{"health-unavailable", "health-congested"}}))
+
+			listJSON := responseObject(result)
+			items := listJSON["instances"].([]any)
+			byID := make(map[string]map[string]any, len(items))
+			for _, item := range items {
+				instance := item.(map[string]any)
+				byID[instance["id"].(string)] = instance
+			}
+			Expect(byID["health-page-1"]["agent_health_status"]).To(Equal("unavailable"))
+			Expect(byID["health-page-1"]["status"]).To(Equal("running"))
+			Expect(byID["health-page-2"]["agent_health_status"]).To(Equal("congested"))
+			Expect(byID["health-page-2"]["status"]).To(Equal("pending"))
+			Expect(byID["health-page-3"]["agent_health_status"]).To(Equal("unavailable"))
+			Expect(byID).NotTo(HaveKey("health-page-4"))
+		})
+
+		It("Given an associated agent whose health changes, when fetched, then the response reports current health without changing STI status", func() {
+			inst := model.ServiceTypeInstance{ID: uuid.New().String(), ServiceType: "vm", Status: "running", InstanceName: "current-health", Spec: map[string]any{"cpu": 2}, AgentName: ptrString("test-agent")}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+			Expect(db.Model(&agentmodel.Agent{}).Where("name = ?", "test-agent").Update("health_status", agentmodel.AgentHealthStatusCongested).Error).NotTo(HaveOccurred())
+
+			result, err := instanceService.GetInstance(ctx, inst.ID, false)
+
+			Expect(err).NotTo(HaveOccurred())
+			got := responseObject(result)
+			Expect(got["agent_health_status"]).To(Equal("congested"))
+			Expect(got["status"]).To(Equal("running"))
+		})
+
+		It("Given a ready agent and accepted create request, when created, then the response includes ready separately from pending STI status", func() {
+			request := &resource_manager.ServiceTypeInstance{Spec: map[string]any{"service_type": "vm", "cpu": 1}}
+
+			result, err := instanceService.CreateInstance(ctx, request, nil, "test-agent")
+
+			Expect(err).NotTo(HaveOccurred())
+			got := responseObject(result)
+			Expect(got["agent_health_status"]).To(Equal("ready"))
+			Expect(got["status"]).To(Equal("pending"))
+		})
+
+		It("Given an STI without agent_name, when listed and fetched, then it remains available without agent health", func() {
+			inst := model.ServiceTypeInstance{ID: uuid.New().String(), ServiceType: "vm", Status: "running", InstanceName: "no-agent", Spec: map[string]any{"cpu": 1}}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+			spy := &batchHealthAgentStore{Agent: agentStore}
+			instanceService = rmsvc.NewInstanceService(dataStore, messaging.NewPublisher(&stubJetStream{}), spy)
+
+			list, listErr := instanceService.ListInstances(ctx, nil, nil, false, nil, nil)
+			Expect(listErr).NotTo(HaveOccurred())
+			listJSON := responseObject(list)
+			items := listJSON["instances"].([]any)
+			Expect(items).To(HaveLen(1))
+			listed := items[0].(map[string]any)
+			Expect(listed["agent_health_status"]).To(BeNil())
+			Expect(spy.calls).To(BeZero())
+
+			got, getErr := instanceService.GetInstance(ctx, inst.ID, false)
+			Expect(getErr).NotTo(HaveOccurred())
+			Expect(responseObject(got)["agent_health_status"]).To(BeNil())
+		})
+
+		It("Given agent health lookup database errors, when listed or fetched, then the service returns an internal error", func() {
+			inst := model.ServiceTypeInstance{ID: uuid.New().String(), ServiceType: "vm", Status: "running", InstanceName: "lookup-error", Spec: map[string]any{"cpu": 1}, AgentName: ptrString("test-agent")}
+			Expect(db.Create(&inst).Error).NotTo(HaveOccurred())
+			Expect(db.Migrator().DropTable(&agentmodel.Agent{})).To(Succeed())
+
+			_, listErr := instanceService.ListInstances(ctx, nil, nil, false, nil, nil)
+			_, getErr := instanceService.GetInstance(ctx, inst.ID, false)
+			for _, err := range []error{listErr, getErr} {
+				Expect(err).To(HaveOccurred())
+				var svcErr *service.ServiceError
+				Expect(errors.As(err, &svcErr)).To(BeTrue())
+				Expect(svcErr.Code).To(Equal(service.ErrCodeInternal))
+			}
 		})
 	})
 

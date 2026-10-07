@@ -3,7 +3,6 @@ SP_DOMAIN := sp
 SP_RM_API := api/$(SP_DOMAIN)/v1alpha1/resource_manager
 SP_RM_SERVER_DIR := internal/$(SP_DOMAIN)/api/resource_manager
 SP_RM_CLIENT_DIR := pkg/$(SP_DOMAIN)/client/resource_manager
-
 generate-sp-rm-types:
 	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
 		--config=$(SP_RM_API)/types.gen.cfg \

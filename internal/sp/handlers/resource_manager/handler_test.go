@@ -3,6 +3,7 @@ package resource_manager_test
 import (
 	"context"
 
+	agentstore "github.com/dcm-project/control-plane/internal/agent/store/agent"
 	agentmodel "github.com/dcm-project/control-plane/internal/agent/store/model"
 	server "github.com/dcm-project/control-plane/internal/sp/api/resource_manager"
 	rmhandlers "github.com/dcm-project/control-plane/internal/sp/handlers/resource_manager"
@@ -33,7 +34,7 @@ var _ = Describe("Resource Manager Handler", func() {
 		Expect(db.AutoMigrate(&agentmodel.Agent{}, &model.ServiceTypeInstance{})).To(Succeed())
 
 		dataStore := store.NewStore(db)
-		instanceService := rmsvc.NewInstanceService(dataStore, nil, nil)
+		instanceService := rmsvc.NewInstanceService(dataStore, nil, agentstore.NewAgent(db))
 		handler = rmhandlers.NewHandler(instanceService)
 		ctx = context.Background()
 	})
@@ -171,6 +172,14 @@ var _ = Describe("Resource Manager Handler", func() {
 
 		It("filters by service type and agent name independently, without swapping them", func() {
 			agentA, agentB := "agent-a", "agent-b"
+			for _, name := range []string{agentA, agentB} {
+				Expect(db.Create(&agentmodel.Agent{
+					ID:           uuid.New().String(),
+					Name:         name,
+					TopicName:    "dcm.agent." + name,
+					HealthStatus: agentmodel.AgentHealthStatusReady,
+				}).Error).NotTo(HaveOccurred())
+			}
 			vmID, dbID := uuid.New().String(), uuid.New().String()
 			db.Create(&model.ServiceTypeInstance{
 				ID:          vmID,

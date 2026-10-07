@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/dcm-project/control-plane/internal/agent/store/agent"
@@ -13,6 +14,20 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+type agentHealthLookup interface {
+	GetHealthByNames(ctx context.Context, names []string) (map[string]model.AgentHealthStatus, error)
+}
+
+type queryRecorder struct {
+	logger.Interface
+	statements []string
+}
+
+func (r *queryRecorder) Trace(_ context.Context, _ time.Time, fc func() (string, int64), _ error) {
+	query, _ := fc()
+	r.statements = append(r.statements, query)
+}
 
 var _ = Describe("Agent Store", func() {
 	var (
@@ -107,6 +122,60 @@ var _ = Describe("Agent Store", func() {
 			_, err := agentStore.GetByName(ctx, "non-existent")
 
 			Expect(err).To(Equal(agent.ErrAgentNotFound))
+		})
+	})
+
+	Describe("GetHealthByNames", func() {
+		It("Given known and unknown agent names, when health is requested, then it maps known health and omits unknown names", func() {
+			for name, health := range map[string]model.AgentHealthStatus{
+				"ready-agent":       model.AgentHealthStatusReady,
+				"congested-agent":   model.AgentHealthStatusCongested,
+				"unavailable-agent": model.AgentHealthStatusUnavailable,
+			} {
+				a := newAgent(name)
+				a.HealthStatus = health
+				_, err := agentStore.Create(ctx, a)
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			lookup, ok := agentStore.(agentHealthLookup)
+			Expect(ok).To(BeTrue(), "AgentStore should expose the batch health lookup")
+			got, err := lookup.GetHealthByNames(ctx, []string{"ready-agent", "congested-agent", "unavailable-agent", "missing-agent"})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(Equal(map[string]model.AgentHealthStatus{
+				"ready-agent":       model.AgentHealthStatusReady,
+				"congested-agent":   model.AgentHealthStatusCongested,
+				"unavailable-agent": model.AgentHealthStatusUnavailable,
+			}))
+		})
+
+		It("Given no agent names, when health is requested, then it returns an empty result", func() {
+			lookup, ok := agentStore.(agentHealthLookup)
+			Expect(ok).To(BeTrue(), "AgentStore should expose the batch health lookup")
+			got, err := lookup.GetHealthByNames(ctx, nil)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(BeEmpty())
+		})
+
+		It("Given several names, when health is requested, then one SELECT projects only name and health_status", func() {
+			for _, name := range []string{"query-agent-one", "query-agent-two"} {
+				_, err := agentStore.Create(ctx, newAgent(name))
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			recorder := &queryRecorder{Interface: logger.Default.LogMode(logger.Silent)}
+			db.Config.Logger = recorder
+			lookup, ok := agentStore.(agentHealthLookup)
+			Expect(ok).To(BeTrue(), "AgentStore should expose the batch health lookup")
+			got, err := lookup.GetHealthByNames(ctx, []string{"query-agent-one", "query-agent-two"})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(HaveLen(2))
+			Expect(recorder.statements).To(HaveLen(1))
+			normalized := strings.ToLower(strings.NewReplacer(string(rune(96)), "", "\"", "", " ", "").Replace(recorder.statements[0]))
+			Expect(normalized).To(HavePrefix("selectname,health_statusfromagentswhere"))
 		})
 	})
 
