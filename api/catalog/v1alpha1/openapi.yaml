@@ -988,6 +988,18 @@ components:
             Placement run id. Output-only on the API.
           example: 7c4e8f2a-1b3d-4e5f-9a6b-0c1d2e3f4a5b
 
+        resource_ids:
+          type: array
+          readOnly: true
+          description: |
+            Service type instance IDs created by the placement run.
+            Output-only on the API.
+          items:
+            type: string
+          example:
+            - 97d5efc1-a1b2-4c3d-8e4f-5a6b7c8d9e0f
+            - b426b23c-f1e2-3d4c-5b6a-7890abcdef12
+
         create_time:
           type: string
           format: date-time
