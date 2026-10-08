@@ -275,7 +275,7 @@
         "tag": {
           "type": "string",
           "description": "Image tag. Empty defaults to global.imageTag.",
-          "default": "m2-rc1"
+          "default": "mc-r2"
         },
         "securityContext": {
           "$ref": "#/definitions/securityContext"

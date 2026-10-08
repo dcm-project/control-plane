@@ -17,7 +17,7 @@ nats:
 # -- Control-plane monolith (catalog, policy, placement, SP manager)
 controlPlane:
   image: quay.io/dcm-project/control-plane
-  tag: m2-rc1  # empty defaults to global.imageTag
+  tag: mc-r2  # empty defaults to global.imageTag
   securityContext:
     runAsNonRoot: true
     allowPrivilegeEscalation: false
