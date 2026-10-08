@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/container"
-	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/database"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/network"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/three_tier_app_demo"
 	"github.com/dcm-project/control-plane/api/catalog/v1alpha1/servicetypes/vm"
@@ -60,18 +59,6 @@ func defaultServiceTypes() []model.ServiceType {
 				"endpoints": []container.ContainerEndpoint{},
 			},
 			Path: "service-types/container",
-		},
-		{
-			ID:          "database",
-			ApiVersion:  "v1alpha1",
-			ServiceType: "database",
-			Spec: map[string]any{
-				"engine":            "",
-				"version":           "",
-				"resources":         database.DatabaseResources{},
-				"connection_string": "",
-			},
-			Path: "service-types/database",
 		},
 		{
 			ID:          "cluster",

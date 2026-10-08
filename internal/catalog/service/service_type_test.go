@@ -101,18 +101,6 @@ var _ = Describe("ServiceType Service", func() {
 				Expect(result.ServiceType).To(Equal("cluster"))
 			})
 
-			It("should create a service type with 'database'", func() {
-				req := &service.CreateServiceTypeRequest{
-					ApiVersion:  "v1alpha1",
-					ServiceType: "database",
-					Spec:        map[string]any{"engine": "postgres"},
-				}
-
-				result, err := svc.ServiceType().Create(ctx, req)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(result.ServiceType).To(Equal("database"))
-			})
-
 			It("should create a service type with 'storage'", func() {
 				req := &service.CreateServiceTypeRequest{
 					ApiVersion:  "v1alpha1",
@@ -345,7 +333,7 @@ var _ = Describe("ServiceType Service", func() {
 
 			result, err := svc.ServiceType().List(ctx, &service.ServiceTypeListOptions{})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.ServiceTypes).To(HaveLen(7))
+			Expect(result.ServiceTypes).To(HaveLen(6))
 
 			types := make([]string, len(result.ServiceTypes))
 			for i, st := range result.ServiceTypes {
@@ -353,6 +341,7 @@ var _ = Describe("ServiceType Service", func() {
 			}
 			Expect(types).To(ContainElement("storage"))
 			Expect(types).To(ContainElement("network"))
+			Expect(types).ToNot(ContainElement("database"))
 		})
 
 		It("should list service types", func() {
@@ -378,7 +367,7 @@ var _ = Describe("ServiceType Service", func() {
 		})
 
 		It("should paginate with page size and offset token", func() {
-			for _, st := range []string{"vm", "container", "cluster", "database"} {
+			for _, st := range []string{"vm", "container", "cluster", "storage"} {
 				_, err := svc.ServiceType().Create(ctx, &service.CreateServiceTypeRequest{
 					ApiVersion:  "v1alpha1",
 					ServiceType: st,
