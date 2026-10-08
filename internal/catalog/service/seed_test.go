@@ -61,18 +61,18 @@ var _ = Describe("Seed", func() {
 				var serviceTypes []model.ServiceType
 				err = db.Find(&serviceTypes).Error
 				Expect(err).ToNot(HaveOccurred())
-				Expect(serviceTypes).To(HaveLen(7))
+				Expect(serviceTypes).To(HaveLen(6))
 
 				ids := make([]string, len(serviceTypes))
 				for i, st := range serviceTypes {
 					ids[i] = st.ID
 				}
-				Expect(ids).To(ConsistOf("three-tier-app-demo", "vm", "container", "database", "cluster", "storage", "network"))
+				Expect(ids).To(ConsistOf("three-tier-app-demo", "vm", "container", "cluster", "storage", "network"))
 			})
 
 			It("inserts missing service types when upgrading a partially seeded database", func() {
 				ctx := context.Background()
-				legacyIDs := []string{"three-tier-app-demo", "vm", "container", "database", "cluster", "storage"}
+				legacyIDs := []string{"three-tier-app-demo", "vm", "container", "cluster", "storage"}
 				for _, id := range legacyIDs {
 					st := model.ServiceType{
 						ID:          id,
@@ -91,7 +91,7 @@ var _ = Describe("Seed", func() {
 				var count int64
 				err = db.Model(&model.ServiceType{}).Count(&count).Error
 				Expect(err).ToNot(HaveOccurred())
-				Expect(count).To(Equal(int64(7)))
+				Expect(count).To(Equal(int64(6)))
 
 				network, err := dataStore.ServiceType().Get(ctx, "network")
 				Expect(err).ToNot(HaveOccurred())
@@ -104,7 +104,7 @@ var _ = Describe("Seed", func() {
 
 				err = db.Model(&model.ServiceType{}).Count(&count).Error
 				Expect(err).ToNot(HaveOccurred())
-				Expect(count).To(Equal(int64(7)))
+				Expect(count).To(Equal(int64(6)))
 			})
 
 			It("omits routing_level from the freshly seeded network service type", func() {
@@ -137,7 +137,6 @@ var _ = Describe("Seed", func() {
 				},
 				Entry("vm", "vm", []string{"vcpu", "memory", "storage", "guest_os", "access", "ip"}),
 				Entry("container", "container", []string{"image", "resources", "process", "network", "endpoints"}),
-				Entry("database", "database", []string{"engine", "version", "resources", "connection_string"}),
 				Entry("cluster", "cluster", []string{"version", "api_endpoint", "console_url", "kubeconfig"}),
 				Entry("storage", "storage", []string{"capacity", "volume_name"}),
 				Entry("network", "network", []string{"ports", "endpoints"}),

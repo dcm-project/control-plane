@@ -95,7 +95,7 @@ type ServiceTypeInstance struct {
 	Path *string `json:"path,omitempty"`
 
 	// Spec Service specification following one of the supported service type
-	// schemas (VMSpec, ContainerSpec, DatabaseSpec, or ClusterSpec).
+	// schemas (VMSpec, ContainerSpec, ClusterSpec, StorageSpec, or NetworkSpec).
 	Spec map[string]interface{} `json:"spec"`
 
 	// Status Status of the instance

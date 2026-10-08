@@ -13,7 +13,6 @@ import (
 const (
 	Cluster          ServiceType = "cluster"
 	Container        ServiceType = "container"
-	Database         ServiceType = "database"
 	Network          ServiceType = "network"
 	Storage          ServiceType = "storage"
 	ThreeTierAppDemo ServiceType = "three-tier-app-demo"
@@ -26,8 +25,6 @@ func (e ServiceType) Valid() bool {
 	case Cluster:
 		return true
 	case Container:
-		return true
-	case Database:
 		return true
 	case Network:
 		return true

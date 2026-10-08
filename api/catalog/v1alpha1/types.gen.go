@@ -238,7 +238,7 @@ type CatalogResource struct {
 
 	// ServiceType The Service type for this resource.
 	// Immutable after creation.
-	// (vm, container, database, cluster, storage, network).
+	// (vm, container, cluster, storage, network).
 	//
 	//
 	// Example: vm
@@ -391,7 +391,7 @@ type ServiceType struct {
 	Path *string `json:"path,omitempty"`
 
 	// ServiceType Classification of the service type.
-	// Common values include: vm, container, database, cluster, storage, network.
+	// Common values include: vm, container, cluster, storage, network.
 	// Administrators may define custom types beyond these.
 	//
 	//
@@ -404,7 +404,6 @@ type ServiceType struct {
 	// Examples by service type:
 	// - VM: vcpu, memory, storage, guest_os, access
 	// - Container: image, resources, process, network
-	// - Database: engine, version, resources
 	// - Cluster: version, nodes (control plane, workers)
 	// - Storage: capacity
 	// - Network: ports, routing_level
