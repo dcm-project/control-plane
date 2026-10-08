@@ -17,7 +17,7 @@ nats:
 # -- Control-plane monolith (catalog, policy, placement, SP manager)
 controlPlane:
   image: quay.io/dcm-project/control-plane
-  tag: ""  # defaults to global.imageTag
+  tag: mc-r2  # empty defaults to global.imageTag
   securityContext:
     runAsNonRoot: true
     allowPrivilegeEscalation: false
@@ -67,7 +67,7 @@ auth:
 dcmUi:
   enabled: true
   image: quay.io/dcm-project/dcm-ui
-  tag: ""
+  tag: m2-rc1  # empty defaults to global.imageTag
   route:
     enabled: true
     host: ""
@@ -82,7 +82,7 @@ dcmUi:
 environmentAgent:
   enabled: false
   image: quay.io/dcm-project/environment-agent
-  tag: ""  # defaults to global.imageTag
+  tag: m2-rc1  # empty defaults to global.imageTag
   agentName: cluster-agent
   environment: dev
   cost: medium
