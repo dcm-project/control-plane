@@ -67,7 +67,7 @@ auth:
 dcmUi:
   enabled: true
   image: quay.io/dcm-project/dcm-ui
-  tag: ""
+  tag: m2-rc1  # empty defaults to global.imageTag
   route:
     enabled: true
     host: ""
