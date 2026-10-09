@@ -49,6 +49,12 @@ var (
 	// ErrFieldDefaultValidationFailed indicates a catalog item field default failed validation_schema
 	ErrFieldDefaultValidationFailed = errors.New("field default validation failed")
 
+	// ErrInvalidCPUQuantity indicates a resolved cpu min/max value is not whole cores or millicores
+	ErrInvalidCPUQuantity = errors.New(`invalid cpu quantity: must be whole cores or millicores matching ^[1-9][0-9]*m?$`)
+
+	// ErrCPUMinGreaterThanMax indicates a resolved cpu.min exceeds its cpu.max
+	ErrCPUMinGreaterThanMax = errors.New("invalid cpu range: min must be less than or equal to max")
+
 	// ErrDependsOnCycleDetected indicates the catalog item's field configurations contain a cyclic depends_on reference
 	ErrDependsOnCycleDetected = errors.New("depends_on cycle detected in field configurations")
 
