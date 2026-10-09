@@ -23,6 +23,14 @@ type mockCatalogItemInstanceService struct {
 	getFunc       func(ctx context.Context, id string) (*v1alpha1API.CatalogItemInstance, error)
 	deleteFunc    func(ctx context.Context, id string) error
 	rehydrateFunc func(ctx context.Context, id string) (*v1alpha1API.CatalogItemInstance, error)
+	validateFunc  func(ctx context.Context, spec v1alpha1API.CatalogItemInstanceSpec) error
+}
+
+func (m *mockCatalogItemInstanceService) ValidateSpec(ctx context.Context, spec v1alpha1API.CatalogItemInstanceSpec) error {
+	if m.validateFunc != nil {
+		return m.validateFunc(ctx, spec)
+	}
+	return nil
 }
 
 func (m *mockCatalogItemInstanceService) List(ctx context.Context, opts service.CatalogItemInstanceListOptions) (*service.CatalogItemInstanceListResult, error) {
