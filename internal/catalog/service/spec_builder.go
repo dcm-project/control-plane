@@ -166,6 +166,12 @@ func (b *specBuilder) buildResourceSpecFromFields(
 		}
 	}
 
+	// 7. Validate the merged spec against the quantity contracts the catalog item
+	// cannot express per field (cpu min/max format and ordering).
+	if err := validateResolvedSpec(specMap); err != nil {
+		return nil, err
+	}
+
 	return specMap, nil
 }
 

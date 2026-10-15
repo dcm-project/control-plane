@@ -17,6 +17,11 @@ func NewSpecBuilderForTest(s store.Store) *SpecBuilder {
 	return &SpecBuilder{inner: newSpecBuilder(s)}
 }
 
+// ValidateResolvedSpec exposes resolved-spec validation to external test packages.
+func ValidateResolvedSpec(spec map[string]any) error {
+	return validateResolvedSpec(spec)
+}
+
 // BuildResourceGraph delegates to the unexported specBuilder.
 func (b *SpecBuilder) BuildResourceGraph(ctx context.Context, catalogItemId string, userValues []v1alpha1.UserValue) ([]ResolvedResource, error) {
 	return b.inner.BuildResourceGraph(ctx, catalogItemId, userValues)
