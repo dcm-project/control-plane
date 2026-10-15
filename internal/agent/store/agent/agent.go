@@ -56,6 +56,8 @@ type Agent interface {
 	Create(ctx context.Context, agent model.Agent) (*model.Agent, error)
 	Get(ctx context.Context, id string) (*model.Agent, error)
 	GetByName(ctx context.Context, name string) (*model.Agent, error)
+	// GetHealthByNames returns current health for matching names; unknown names are omitted.
+	GetHealthByNames(ctx context.Context, names []string) (map[string]model.AgentHealthStatus, error)
 	// List returns agents matching filter, paginated per pagination. Pass
 	// pagination.PageToken from a prior AgentListResult.NextPageToken to
 	// fetch the next page; ErrInvalidPageToken is returned if it can't be
@@ -117,6 +119,28 @@ func (s *AgentStore) GetByName(ctx context.Context, name string) (*model.Agent, 
 		return nil, err
 	}
 	return &agent, nil
+}
+
+func (s *AgentStore) GetHealthByNames(ctx context.Context, names []string) (map[string]model.AgentHealthStatus, error) {
+	healthByName := make(map[string]model.AgentHealthStatus, len(names))
+	if len(names) == 0 {
+		return healthByName, nil
+	}
+
+	var agents []struct {
+		Name         string
+		HealthStatus model.AgentHealthStatus
+	}
+	if err := s.db.WithContext(ctx).Model(&model.Agent{}).
+		Select("name", "health_status").
+		Where("name IN ?", names).
+		Scan(&agents).Error; err != nil {
+		return nil, err
+	}
+	for _, agent := range agents {
+		healthByName[agent.Name] = agent.HealthStatus
+	}
+	return healthByName, nil
 }
 
 // defaultListPageSize is used when pagination is nil or its Limit is <= 0,

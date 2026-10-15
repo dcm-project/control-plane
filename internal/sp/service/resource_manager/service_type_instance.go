@@ -57,7 +57,8 @@ func (s *InstanceService) CreateInstance(ctx context.Context, request *resource_
 	if s.publisher == nil {
 		return nil, service.NewUnavailableError("nats publisher unavailable, cannot dispatch to agent")
 	}
-	if err := s.validateAgent(ctx, agentName, serviceType); err != nil {
+	validatedAgent, err := s.validateAgent(ctx, agentName, serviceType)
+	if err != nil {
 		return nil, err
 	}
 
@@ -85,14 +86,14 @@ func (s *InstanceService) CreateInstance(ctx context.Context, request *resource_
 		return nil, service.NewInternalError(fmt.Sprintf("failed to create database record for instance %s: %v", *instanceID, err))
 	}
 
-	subject, pubErr := s.resolveAgentSubject(ctx, agentName)
-	if pubErr != nil {
-		log.Error("Failed to resolve agent topic, rolling back instance", "agent_name", agentName, "error", pubErr)
+	subject, err := s.resolveAgentSubject(ctx, agentName)
+	if err != nil {
+		log.Error("Failed to resolve agent topic, rolling back instance", "instance_id", created.ID, "error", err)
 		_ = s.store.ServiceTypeInstance().HardDelete(ctx, created.ID)
-		return nil, service.NewProvisioningError(fmt.Sprintf("agent '%s' topic resolution failed: %v", agentName, pubErr))
+		return nil, service.NewProvisioningError(fmt.Sprintf("agent '%s' topic resolution failed: %v", agentName, err))
 	}
 
-	pubErr = s.publisher.PublishCreate(ctx, subject, messaging.CreatePayload{
+	pubErr := s.publisher.PublishCreate(ctx, subject, messaging.CreatePayload{
 		ResourceID:  created.ID,
 		ServiceType: serviceType,
 		Spec:        request.Spec,
@@ -104,7 +105,9 @@ func (s *InstanceService) CreateInstance(ctx context.Context, request *resource_
 	}
 
 	log.Info("Instance created", "instance_id", created.ID, "status", created.Status, "agent_name", agentName)
-	return ModelToAPI(created), nil
+	response := ModelToAPI(created)
+	setAgentHealthStatus(response, validatedAgent.HealthStatus)
+	return response, nil
 }
 
 // ReassignAgent re-points an existing instance at a new agent and re-triggers
@@ -129,7 +132,7 @@ func (s *InstanceService) ReassignAgent(ctx context.Context, instanceID string, 
 		return service.NewInternalError(fmt.Sprintf("failed to retrieve instance: %v", err))
 	}
 
-	if err := s.validateAgent(ctx, agentName, instance.ServiceType); err != nil {
+	if _, err := s.validateAgent(ctx, agentName, instance.ServiceType); err != nil {
 		return err
 	}
 
@@ -173,31 +176,31 @@ func (s *InstanceService) resolveAgentSubject(ctx context.Context, agentName str
 	return agent.TopicName, nil
 }
 
-func (s *InstanceService) validateAgent(ctx context.Context, agentName string, serviceType string) error {
+func (s *InstanceService) validateAgent(ctx context.Context, agentName string, serviceType string) (*agentmodel.Agent, error) {
 	if strings.TrimSpace(agentName) == "" {
-		return service.NewValidationError("agent_name is required and must not be empty")
+		return nil, service.NewValidationError("agent_name is required and must not be empty")
 	}
 	if s.agentStore == nil {
-		return service.NewUnavailableError("agent store unavailable, cannot validate or dispatch to agent")
+		return nil, service.NewUnavailableError("agent store unavailable, cannot validate or dispatch to agent")
 	}
 	agent, err := s.agentStore.GetByName(ctx, agentName)
 	if err != nil {
 		if errors.Is(err, agentstore.ErrAgentNotFound) {
-			return service.NewNotFoundError(fmt.Sprintf("agent '%s' not found", agentName))
+			return nil, service.NewNotFoundError(fmt.Sprintf("agent '%s' not found", agentName))
 		}
-		return service.NewInternalError(fmt.Sprintf("failed to look up agent '%s': %v", agentName, err))
+		return nil, service.NewInternalError(fmt.Sprintf("failed to look up agent '%s': %v", agentName, err))
 	}
 
 	if agent.HealthStatus != agentmodel.AgentHealthStatusReady {
-		return service.NewUnavailableError(fmt.Sprintf("agent '%s' is %s", agentName, agent.HealthStatus))
+		return nil, service.NewUnavailableError(fmt.Sprintf("agent '%s' is %s", agentName, agent.HealthStatus))
 	}
 
 	for _, st := range agent.ServiceTypes {
 		if st == serviceType {
-			return nil
+			return agent, nil
 		}
 	}
-	return service.NewValidationError(fmt.Sprintf("agent '%s' does not serve service type '%s'", agentName, serviceType))
+	return nil, service.NewValidationError(fmt.Sprintf("agent '%s' does not serve service type '%s'", agentName, serviceType))
 }
 
 func (s *InstanceService) GetInstance(ctx context.Context, instanceID string, showDeleted bool) (*resource_manager.ServiceTypeInstance, error) {
@@ -208,7 +211,38 @@ func (s *InstanceService) GetInstance(ctx context.Context, instanceID string, sh
 	if err != nil {
 		return nil, err
 	}
-	return ModelToAPI(instance), nil
+	response := ModelToAPI(instance)
+	if instance.AgentName == nil {
+		return response, nil
+	}
+	healthByName, err := s.getAgentHealthByNames(ctx, []string{*instance.AgentName})
+	if err != nil {
+		return nil, err
+	}
+	if healthStatus, ok := healthByName[*instance.AgentName]; ok {
+		setAgentHealthStatus(response, healthStatus)
+	}
+	return response, nil
+}
+
+func (s *InstanceService) getAgentHealthByNames(ctx context.Context, names []string) (map[string]agentmodel.AgentHealthStatus, error) {
+	if len(names) == 0 {
+		return map[string]agentmodel.AgentHealthStatus{}, nil
+	}
+	if s.agentStore == nil {
+		return nil, service.NewInternalError("failed to retrieve agent health: agent store unavailable")
+	}
+	healthByName, err := s.agentStore.GetHealthByNames(ctx, names)
+	if err != nil {
+		logging.FromContext(ctx).Error("Failed to look up agent health", "agent_names", names, "error", err)
+		return nil, service.NewInternalError(fmt.Sprintf("failed to retrieve agent health: %v", err))
+	}
+	return healthByName, nil
+}
+
+func setAgentHealthStatus(response *resource_manager.ServiceTypeInstance, healthStatus agentmodel.AgentHealthStatus) {
+	apiHealthStatus := resource_manager.ServiceTypeInstanceAgentHealthStatus(healthStatus)
+	response.AgentHealthStatus = &apiHealthStatus
 }
 
 func (s *InstanceService) getInstanceModel(ctx context.Context, instanceID string, showDeleted bool) (*model.ServiceTypeInstance, error) {
@@ -271,8 +305,28 @@ func (s *InstanceService) ListInstances(ctx context.Context, serviceType, agentN
 	}
 
 	apiInstances := make([]resource_manager.ServiceTypeInstance, len(result.Instances))
+	agentNames := make([]string, 0, len(result.Instances))
+	seenAgentNames := make(map[string]struct{}, len(result.Instances))
 	for i, inst := range result.Instances {
 		apiInstances[i] = *ModelToAPI(&inst)
+		if inst.AgentName != nil {
+			if _, seen := seenAgentNames[*inst.AgentName]; !seen {
+				seenAgentNames[*inst.AgentName] = struct{}{}
+				agentNames = append(agentNames, *inst.AgentName)
+			}
+		}
+	}
+
+	healthByName, err := s.getAgentHealthByNames(ctx, agentNames)
+	if err != nil {
+		return nil, err
+	}
+	for i, inst := range result.Instances {
+		if inst.AgentName != nil {
+			if healthStatus, ok := healthByName[*inst.AgentName]; ok {
+				setAgentHealthStatus(&apiInstances[i], healthStatus)
+			}
+		}
 	}
 
 	log.Debug("Instances listed",
